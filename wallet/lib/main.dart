@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:wallet/pages/accounts_page.dart';
+import 'package:wallet/pages/history_page.dart';
+import 'package:wallet/pages/analytics_page.dart';
+import 'package:wallet/pages/profile_page.dart';
 
 void main() {
   runApp(const MyApp());
@@ -11,6 +15,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Wallet',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
         useMaterial3: true,
@@ -30,17 +35,15 @@ class WalletHomePage extends StatefulWidget {
 class _WalletHomePageState extends State<WalletHomePage> {
   int _selectedIndex = 0;
 
-  static const List<String> _pageTitles = [
-    'Accounts',
-    'History',
-    'Analytics',
-    'Profile',
+  static const List<Widget> _pages = [
+    AccountsPage(),
+    HistoryPage(),
+    AnalyticsPage(),
+    ProfilePage(),
   ];
 
   void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
+    setState(() => _selectedIndex = index);
   }
 
   @override
@@ -49,21 +52,96 @@ class _WalletHomePageState extends State<WalletHomePage> {
 
     return Scaffold(
       backgroundColor: theme.colorScheme.surface,
+      drawer: Drawer(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            DrawerHeader(
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primaryContainer,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Icon(
+                    Icons.account_balance_wallet,
+                    size: 36,
+                    color: theme.colorScheme.onPrimaryContainer,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Wallet',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.onPrimaryContainer,
+                    ),
+                  ),
+                  Text(
+                    'Manage your money',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onPrimaryContainer.withValues(
+                        alpha: 0.7,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.account_balance_wallet_outlined),
+              title: const Text('Accounts'),
+              selected: _selectedIndex == 0,
+              onTap: () {
+                _onItemTapped(0);
+                Navigator.pop(context);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.history_outlined),
+              title: const Text('History'),
+              selected: _selectedIndex == 1,
+              onTap: () {
+                _onItemTapped(1);
+                Navigator.pop(context);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.show_chart_outlined),
+              title: const Text('Analytics'),
+              selected: _selectedIndex == 2,
+              onTap: () {
+                _onItemTapped(2);
+                Navigator.pop(context);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.person_outline),
+              title: const Text('Profile'),
+              selected: _selectedIndex == 3,
+              onTap: () {
+                _onItemTapped(3);
+                Navigator.pop(context);
+              },
+            ),
+          ],
+        ),
+      ),
       body: SafeArea(
         child: Column(
           children: [
-            // ── Header bar ──────────────────────────────────────────────
+            // ── Header ────────────────────────────────────────────────
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
               child: Row(
                 children: [
-                  // Hamburger menu
-                  IconButton(
-                    icon: const Icon(Icons.menu),
-                    onPressed: () {},
-                    tooltip: 'Menu',
+                  Builder(
+                    builder: (ctx) => IconButton(
+                      icon: const Icon(Icons.menu),
+                      onPressed: () => Scaffold.of(ctx).openDrawer(),
+                      tooltip: 'Menu',
+                    ),
                   ),
-                  // Logo + name
                   Container(
                     decoration: BoxDecoration(
                       color: theme.colorScheme.primaryContainer,
@@ -96,7 +174,6 @@ class _WalletHomePageState extends State<WalletHomePage> {
                     ],
                   ),
                   const Spacer(),
-                  // Search icon
                   IconButton(
                     icon: const Icon(Icons.search),
                     onPressed: () {},
@@ -105,15 +182,8 @@ class _WalletHomePageState extends State<WalletHomePage> {
                 ],
               ),
             ),
-            // ── Page content ─────────────────────────────────────────────
-            Expanded(
-              child: Center(
-                child: Text(
-                  _pageTitles[_selectedIndex],
-                  style: theme.textTheme.headlineSmall,
-                ),
-              ),
-            ),
+            // ── Page content ──────────────────────────────────────────
+            Expanded(child: _pages[_selectedIndex]),
           ],
         ),
       ),
