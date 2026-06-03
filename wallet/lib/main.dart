@@ -48,45 +48,64 @@ class _WalletHomePageState extends State<WalletHomePage> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      backgroundColor: theme.colorScheme.background,
+      backgroundColor: theme.colorScheme.surface,
       body: SafeArea(
         child: Column(
           children: [
-            const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.primaryContainer,
-                    shape: BoxShape.circle,
+            // ── Header bar ──────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+              child: Row(
+                children: [
+                  // Hamburger menu
+                  IconButton(
+                    icon: const Icon(Icons.menu),
+                    onPressed: () {},
+                    tooltip: 'Menu',
                   ),
-                  padding: const EdgeInsets.all(14),
-                  child: Icon(
-                    Icons.account_balance_wallet,
-                    size: 32,
-                    color: theme.colorScheme.onPrimaryContainer,
+                  // Logo + name
+                  Container(
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primaryContainer,
+                      shape: BoxShape.circle,
+                    ),
+                    padding: const EdgeInsets.all(6),
+                    child: Icon(
+                      Icons.account_balance_wallet,
+                      size: 18,
+                      color: theme.colorScheme.onPrimaryContainer,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Wallet',
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
+                  const SizedBox(width: 8),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Wallet',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                    ),
-                    Text(
-                      'Manage your money',
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                  ],
-                ),
-              ],
+                      Text(
+                        'Manage your money',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Spacer(),
+                  // Search icon
+                  IconButton(
+                    icon: const Icon(Icons.search),
+                    onPressed: () {},
+                    tooltip: 'Search',
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 32),
+            // ── Page content ─────────────────────────────────────────────
             Expanded(
               child: Center(
                 child: Text(
