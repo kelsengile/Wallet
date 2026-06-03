@@ -29,9 +29,7 @@ class DatabaseHelper {
     );
   }
 
-  /// Called once when the database is first created on the device.
   Future<void> _onCreate(Database db, int version) async {
-    // Accounts table
     await db.execute('''
       CREATE TABLE accounts (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -43,7 +41,6 @@ class DatabaseHelper {
       )
     ''');
 
-    // Transactions table
     await db.execute('''
       CREATE TABLE transactions (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -58,7 +55,6 @@ class DatabaseHelper {
       )
     ''');
 
-    // Seed one default account so the app isn't empty on first launch
     await db.insert('accounts', {
       'name': 'Cash',
       'balance': 0.0,
@@ -68,14 +64,7 @@ class DatabaseHelper {
     });
   }
 
-  /// Called when you bump the version number in the future.
-  /// Add ALTER TABLE statements here instead of changing _onCreate.
-  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // Example for a future version 2:
-    // if (oldVersion < 2) {
-    //   await db.execute('ALTER TABLE transactions ADD COLUMN receipt_url TEXT');
-    // }
-  }
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {}
 
   // ── Account CRUD ───────────────────────────────────────────────────────────
 
@@ -114,10 +103,11 @@ class DatabaseHelper {
 
   Future<int> deleteAccount(int id) async {
     final db = await database;
+    // Also remove associated transactions
+    await db.delete('transactions', where: 'account_id = ?', whereArgs: [id]);
     return await db.delete('accounts', where: 'id = ?', whereArgs: [id]);
   }
 
-  /// Adjust balance by a delta (positive = add, negative = subtract)
   Future<void> adjustAccountBalance(int accountId, double delta) async {
     final db = await database;
     await db.rawUpdate(
@@ -128,21 +118,16 @@ class DatabaseHelper {
 
   // ── Transaction CRUD ───────────────────────────────────────────────────────
 
+  /// Insert a transaction and update account balance atomically.
   Future<int> insertTransaction(WalletTransaction tx) async {
     final db = await database;
-    final id = await db.insert('transactions', tx.toMap());
-    // Keep account balance in sync
-    if (tx.type == 'income') {
-      await adjustAccountBalance(
-        tx.toMap()['account_id'] as int? ?? 1,
-        tx.amount,
-      );
-    } else {
-      await adjustAccountBalance(
-        tx.toMap()['account_id'] as int? ?? 1,
-        -tx.amount,
-      );
-    }
+    final map = tx.toMap();
+    final id = await db.insert('transactions', map);
+    final accountId = tx.accountId ?? 1;
+    await adjustAccountBalance(
+      accountId,
+      tx.type == 'income' ? tx.amount : -tx.amount,
+    );
     return id;
   }
 
@@ -153,8 +138,7 @@ class DatabaseHelper {
   }
 
   Future<List<WalletTransaction>> getTransactionsByAccount(
-    int accountId,
-  ) async {
+      int accountId) async {
     final db = await database;
     final rows = await db.query(
       'transactions',
@@ -165,47 +149,59 @@ class DatabaseHelper {
     return rows.map(WalletTransaction.fromMap).toList();
   }
 
-  Future<List<WalletTransaction>> getTransactionsByType(String type) async {
+  Future<List<WalletTransaction>> getTransactionsByMonth(
+    int year,
+    int month,
+  ) async {
     final db = await database;
+    final prefix =
+        '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}';
     final rows = await db.query(
       'transactions',
-      where: 'type = ?',
-      whereArgs: [type],
+      where: "date LIKE ?",
+      whereArgs: ['$prefix%'],
       orderBy: 'date DESC',
     );
     return rows.map(WalletTransaction.fromMap).toList();
   }
 
-  Future<int> updateTransaction(WalletTransaction tx) async {
+  /// Update a transaction, reversing old balance effect and applying new one.
+  Future<int> updateTransaction(
+    WalletTransaction oldTx,
+    WalletTransaction newTx,
+  ) async {
     final db = await database;
+
+    // Reverse old
+    await adjustAccountBalance(
+      oldTx.accountId ?? 1,
+      oldTx.type == 'income' ? -oldTx.amount : oldTx.amount,
+    );
+    // Apply new
+    await adjustAccountBalance(
+      newTx.accountId ?? 1,
+      newTx.type == 'income' ? newTx.amount : -newTx.amount,
+    );
+
     return await db.update(
       'transactions',
-      tx.toMap(),
+      newTx.toMap(),
       where: 'id = ?',
-      whereArgs: [tx.id],
+      whereArgs: [newTx.id],
     );
   }
 
   Future<int> deleteTransaction(WalletTransaction tx) async {
     final db = await database;
-    // Reverse the balance effect before deleting
-    if (tx.type == 'income') {
-      await adjustAccountBalance(
-        tx.toMap()['account_id'] as int? ?? 1,
-        -tx.amount,
-      );
-    } else {
-      await adjustAccountBalance(
-        tx.toMap()['account_id'] as int? ?? 1,
-        tx.amount,
-      );
-    }
+    await adjustAccountBalance(
+      tx.accountId ?? 1,
+      tx.type == 'income' ? -tx.amount : tx.amount,
+    );
     return await db.delete('transactions', where: 'id = ?', whereArgs: [tx.id]);
   }
 
-  // ── Analytics helpers ──────────────────────────────────────────────────────
+  // ── Analytics ──────────────────────────────────────────────────────────────
 
-  /// Total income across all transactions
   Future<double> getTotalIncome() async {
     final db = await database;
     final result = await db.rawQuery(
@@ -214,7 +210,6 @@ class DatabaseHelper {
     return (result.first['total'] as num?)?.toDouble() ?? 0.0;
   }
 
-  /// Total expenses across all transactions
   Future<double> getTotalExpenses() async {
     final db = await database;
     final result = await db.rawQuery(
@@ -223,7 +218,28 @@ class DatabaseHelper {
     return (result.first['total'] as num?)?.toDouble() ?? 0.0;
   }
 
-  /// Spending per category
+  Future<double> getMonthlyIncome(int year, int month) async {
+    final db = await database;
+    final prefix =
+        '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}';
+    final result = await db.rawQuery(
+      "SELECT SUM(amount) as total FROM transactions WHERE type = 'income' AND date LIKE ?",
+      ['$prefix%'],
+    );
+    return (result.first['total'] as num?)?.toDouble() ?? 0.0;
+  }
+
+  Future<double> getMonthlyExpenses(int year, int month) async {
+    final db = await database;
+    final prefix =
+        '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}';
+    final result = await db.rawQuery(
+      "SELECT SUM(amount) as total FROM transactions WHERE type = 'expense' AND date LIKE ?",
+      ['$prefix%'],
+    );
+    return (result.first['total'] as num?)?.toDouble() ?? 0.0;
+  }
+
   Future<List<Map<String, dynamic>>> getExpensesByCategory() async {
     final db = await database;
     return await db.rawQuery('''
@@ -235,9 +251,39 @@ class DatabaseHelper {
     ''');
   }
 
+  Future<List<Map<String, dynamic>>> getExpensesByCategoryForMonth(
+    int year,
+    int month,
+  ) async {
+    final db = await database;
+    final prefix =
+        '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}';
+    return await db.rawQuery('''
+      SELECT category, SUM(amount) as total
+      FROM transactions
+      WHERE type = 'expense' AND date LIKE ?
+      GROUP BY category
+      ORDER BY total DESC
+    ''', ['$prefix%']);
+  }
+
+  /// Returns last 6 months of [{ month, income, expenses }]
+  Future<List<Map<String, dynamic>>> getLast6MonthsSummary() async {
+    final db = await database;
+    return await db.rawQuery('''
+      SELECT
+        strftime('%Y-%m', date) as month,
+        SUM(CASE WHEN type = 'income'  THEN amount ELSE 0 END) as income,
+        SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) as expenses
+      FROM transactions
+      GROUP BY month
+      ORDER BY month DESC
+      LIMIT 6
+    ''');
+  }
+
   // ── Utility ────────────────────────────────────────────────────────────────
 
-  /// Wipe everything — useful for a "reset app" feature
   Future<void> clearAllData() async {
     final db = await database;
     await db.delete('transactions');

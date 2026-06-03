@@ -2,7 +2,7 @@ class Account {
   final int? id;
   final String name;
   final double balance;
-  final String type; // e.g. 'cash', 'bank', 'e-wallet'
+  final String type; // 'cash', 'bank', 'e-wallet'
   final String colorHex;
   final String icon;
 
@@ -14,6 +14,24 @@ class Account {
     required this.colorHex,
     required this.icon,
   });
+
+  Account copyWith({
+    int? id,
+    String? name,
+    double? balance,
+    String? type,
+    String? colorHex,
+    String? icon,
+  }) {
+    return Account(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      balance: balance ?? this.balance,
+      type: type ?? this.type,
+      colorHex: colorHex ?? this.colorHex,
+      icon: icon ?? this.icon,
+    );
+  }
 
   Map<String, dynamic> toMap() {
     return {

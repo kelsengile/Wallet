@@ -6,6 +6,7 @@ class WalletTransaction {
   final String type; // 'income' or 'expense'
   final String category;
   final String? note;
+  final int? accountId;
 
   WalletTransaction({
     this.id,
@@ -15,9 +16,31 @@ class WalletTransaction {
     required this.type,
     required this.category,
     this.note,
+    this.accountId,
   });
 
-  /// Convert to a Map for inserting into SQLite
+  WalletTransaction copyWith({
+    int? id,
+    String? title,
+    double? amount,
+    String? date,
+    String? type,
+    String? category,
+    String? note,
+    int? accountId,
+  }) {
+    return WalletTransaction(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      amount: amount ?? this.amount,
+      date: date ?? this.date,
+      type: type ?? this.type,
+      category: category ?? this.category,
+      note: note ?? this.note,
+      accountId: accountId ?? this.accountId,
+    );
+  }
+
   Map<String, dynamic> toMap() {
     return {
       if (id != null) 'id': id,
@@ -27,10 +50,10 @@ class WalletTransaction {
       'type': type,
       'category': category,
       'note': note ?? '',
+      if (accountId != null) 'account_id': accountId,
     };
   }
 
-  /// Create a WalletTransaction from a SQLite row Map
   factory WalletTransaction.fromMap(Map<String, dynamic> map) {
     return WalletTransaction(
       id: map['id'] as int?,
@@ -40,6 +63,7 @@ class WalletTransaction {
       type: map['type'] as String,
       category: map['category'] as String,
       note: map['note'] as String?,
+      accountId: map['account_id'] as int?,
     );
   }
 }
