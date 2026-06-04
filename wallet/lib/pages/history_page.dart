@@ -16,6 +16,32 @@ class _HistoryPageState extends State<HistoryPage> {
   List<Account> _accounts = [];
   bool _loading = true;
 
+  // Date filter state
+  String _filterMode = 'all'; // 'all' | 'month' | 'range'
+  DateTime _selectedMonth = DateTime(DateTime.now().year, DateTime.now().month);
+  DateTimeRange? _selectedRange;
+
+  List<WalletTransaction> get _filtered {
+    if (_filterMode == 'month') {
+      return _transactions.where((tx) {
+        final d = DateTime.tryParse(tx.date);
+        return d != null &&
+            d.year == _selectedMonth.year &&
+            d.month == _selectedMonth.month;
+      }).toList();
+    } else if (_filterMode == 'range' && _selectedRange != null) {
+      final start = _selectedRange!.start;
+      final end = _selectedRange!.end.add(const Duration(days: 1));
+      return _transactions.where((tx) {
+        final d = DateTime.tryParse(tx.date);
+        return d != null &&
+            d.isAfter(start.subtract(const Duration(seconds: 1))) &&
+            d.isBefore(end);
+      }).toList();
+    }
+    return _transactions;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -31,6 +57,121 @@ class _HistoryPageState extends State<HistoryPage> {
       _accounts = accounts;
       _loading = false;
     });
+  }
+
+  Future<void> _pickMonth() async {
+    // Simple month/year picker using a dialog
+    int year = _selectedMonth.year;
+    int month = _selectedMonth.month;
+    final now = DateTime.now();
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          title: const Text('Select Month'),
+          content: SizedBox(
+            width: 280,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.chevron_left),
+                      onPressed: () => setS(() {
+                        if (month == 1) {
+                          month = 12;
+                          year--;
+                        } else {
+                          month--;
+                        }
+                      }),
+                    ),
+                    Text(
+                      '${_monthName(month)} $year',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.chevron_right),
+                      onPressed: (year == now.year && month == now.month)
+                          ? null
+                          : () => setS(() {
+                                if (month == 12) {
+                                  month = 1;
+                                  year++;
+                                } else {
+                                  month++;
+                                }
+                              }),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () {
+                setState(() {
+                  _selectedMonth = DateTime(year, month);
+                  _filterMode = 'month';
+                });
+                Navigator.pop(ctx);
+              },
+              child: const Text('Apply'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickRange() async {
+    final range = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      initialDateRange: _selectedRange,
+    );
+    if (range != null) {
+      setState(() {
+        _selectedRange = range;
+        _filterMode = 'range';
+      });
+    }
+  }
+
+  String _monthName(int m) => const [
+        '',
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec'
+      ][m];
+
+  String get _filterLabel {
+    if (_filterMode == 'month') {
+      return '${_monthName(_selectedMonth.month)} ${_selectedMonth.year}';
+    } else if (_filterMode == 'range' && _selectedRange != null) {
+      final s = _selectedRange!.start;
+      final e = _selectedRange!.end;
+      return '${s.day}/${s.month} – ${e.day}/${e.month}';
+    }
+    return 'All time';
   }
 
   /// Opens the shared bottom-sheet form from [WalletTransaction.showDialog]
@@ -90,15 +231,57 @@ class _HistoryPageState extends State<HistoryPage> {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
+          // ── Date filter chips ──────────────────────────────────────────
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                FilterChip(
+                  label: const Text('All time'),
+                  selected: _filterMode == 'all',
+                  onSelected: (_) => setState(() => _filterMode = 'all'),
+                ),
+                const SizedBox(width: 8),
+                FilterChip(
+                  avatar: _filterMode == 'month'
+                      ? null
+                      : const Icon(Icons.calendar_month, size: 16),
+                  label: Text(
+                    _filterMode == 'month' ? _filterLabel : 'By month',
+                  ),
+                  selected: _filterMode == 'month',
+                  onSelected: (_) => _pickMonth(),
+                ),
+                const SizedBox(width: 8),
+                FilterChip(
+                  avatar: _filterMode == 'range'
+                      ? null
+                      : const Icon(Icons.date_range, size: 16),
+                  label: Text(
+                    _filterMode == 'range' ? _filterLabel : 'Date range',
+                  ),
+                  selected: _filterMode == 'range',
+                  onSelected: (_) => _pickRange(),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
           Expanded(
-            child: _transactions.isEmpty
-                ? const Center(child: Text('No transactions yet. Add one!'))
+            child: _filtered.isEmpty
+                ? Center(
+                    child: Text(
+                      _transactions.isEmpty
+                          ? 'No transactions yet. Add one!'
+                          : 'No transactions for this period.',
+                    ),
+                  )
                 : ListView.separated(
-                    itemCount: _transactions.length,
+                    itemCount: _filtered.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
                     itemBuilder: (_, i) {
-                      final tx = _transactions[i];
+                      final tx = _filtered[i];
                       final isIncome = tx.type == 'income';
                       return Dismissible(
                         key: Key('tx_${tx.id}'),
