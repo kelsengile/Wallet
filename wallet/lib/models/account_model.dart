@@ -1,8 +1,20 @@
+/// Account categories — displayed in the "New / Edit Account" form.
+const kAccountCategories = [
+  'personal',
+  'business',
+  'family',
+  'savings goal',
+  'emergency fund',
+  'travel',
+  'other',
+];
+
 class Account {
   final int? id;
   final String name;
   final double balance;
-  final String type; // 'cash', 'bank', 'e-wallet'
+  final String type; // 'cash', 'bank', 'e-wallet', etc.
+  final String category; // 'personal', 'business', etc.
   final String colorHex;
   final String icon;
 
@@ -11,6 +23,7 @@ class Account {
     required this.name,
     required this.balance,
     required this.type,
+    this.category = 'personal',
     required this.colorHex,
     required this.icon,
   });
@@ -20,6 +33,7 @@ class Account {
     String? name,
     double? balance,
     String? type,
+    String? category,
     String? colorHex,
     String? icon,
   }) {
@@ -28,6 +42,7 @@ class Account {
       name: name ?? this.name,
       balance: balance ?? this.balance,
       type: type ?? this.type,
+      category: category ?? this.category,
       colorHex: colorHex ?? this.colorHex,
       icon: icon ?? this.icon,
     );
@@ -39,6 +54,7 @@ class Account {
       'name': name,
       'balance': balance,
       'type': type,
+      'category': category,
       'color_hex': colorHex,
       'icon': icon,
     };
@@ -50,6 +66,7 @@ class Account {
       name: map['name'] as String,
       balance: (map['balance'] as num).toDouble(),
       type: map['type'] as String,
+      category: (map['category'] as String?) ?? 'personal',
       colorHex: map['color_hex'] as String,
       icon: map['icon'] as String,
     );
