@@ -1,19 +1,72 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../database/database_helper.dart';
 import '../models/account_model.dart';
 import '../models/transaction_model.dart';
+
+// ── Type metadata ──────────────────────────────────────────────────────────────
 
 const _typeColors = {
   'cash': Color(0xFF22C55E),
   'bank': Color(0xFF3B82F6),
   'e-wallet': Color(0xFFA855F7),
+  'credit': Color(0xFFEF4444),
+  'loan': Color(0xFFF97316),
+  'investment': Color(0xFF0EA5E9),
+  'savings': Color(0xFF14B8A6),
 };
 
 const _typeIcons = {
   'cash': Icons.payments_outlined,
   'bank': Icons.account_balance_outlined,
   'e-wallet': Icons.phone_android_outlined,
+  'credit': Icons.credit_card_outlined,
+  'loan': Icons.handshake_outlined,
+  'investment': Icons.trending_up_outlined,
+  'savings': Icons.savings_outlined,
 };
+
+const _typeGradients = {
+  'cash': [Color(0xFF16A34A), Color(0xFF4ADE80)],
+  'bank': [Color(0xFF1D4ED8), Color(0xFF60A5FA)],
+  'e-wallet': [Color(0xFF7C3AED), Color(0xFFC084FC)],
+  'credit': [Color(0xFFB91C1C), Color(0xFFF87171)],
+  'loan': [Color(0xFFC2410C), Color(0xFFFB923C)],
+  'investment': [Color(0xFF0369A1), Color(0xFF38BDF8)],
+  'savings': [Color(0xFF0F766E), Color(0xFF2DD4BF)],
+};
+
+const _typeLabels = {
+  'cash': 'Cash',
+  'bank': 'Bank',
+  'e-wallet': 'E-Wallet',
+  'credit': 'Credits',
+  'loan': 'Loans',
+  'investment': 'Investments',
+  'savings': 'Savings',
+};
+
+const _typeColorHexMap = {
+  'cash': '#22C55E',
+  'bank': '#3B82F6',
+  'e-wallet': '#A855F7',
+  'credit': '#EF4444',
+  'loan': '#F97316',
+  'investment': '#0EA5E9',
+  'savings': '#14B8A6',
+};
+
+const _allTypes = [
+  'cash',
+  'bank',
+  'e-wallet',
+  'credit',
+  'loan',
+  'investment',
+  'savings'
+];
+
+// ── Page ───────────────────────────────────────────────────────────────────────
 
 class AccountsPage extends StatefulWidget {
   const AccountsPage({super.key});
@@ -25,6 +78,8 @@ class AccountsPage extends StatefulWidget {
 class _AccountsPageState extends State<AccountsPage> {
   final _db = DatabaseHelper.instance;
   List<Account> _accounts = [];
+  Map<String, List<Account>> _grouped = {};
+  double _totalBalance = 0;
   bool _loading = true;
 
   @override
@@ -35,15 +90,22 @@ class _AccountsPageState extends State<AccountsPage> {
 
   Future<void> _loadAccounts() async {
     final accounts = await _db.getAllAccounts();
-    if (mounted) {
-      setState(() {
-        _accounts = accounts;
-        _loading = false;
-      });
-    }
-  }
+    if (!mounted) return;
 
-  double get _totalBalance => _accounts.fold(0.0, (sum, a) => sum + a.balance);
+    final grouped = <String, List<Account>>{};
+    double total = 0;
+    for (final a in accounts) {
+      total += a.balance;
+      (grouped[a.type] ??= []).add(a);
+    }
+
+    setState(() {
+      _accounts = accounts;
+      _grouped = grouped;
+      _totalBalance = total;
+      _loading = false;
+    });
+  }
 
   void _showAddAccountDialog({Account? existing}) {
     final nameCtrl = TextEditingController(text: existing?.name ?? '');
@@ -51,6 +113,7 @@ class _AccountsPageState extends State<AccountsPage> {
       text: existing != null ? existing.balance.toStringAsFixed(2) : '',
     );
     String selectedType = existing?.type ?? 'cash';
+    String selectedCategory = existing?.category ?? 'personal';
 
     showModalBottomSheet(
       context: context,
@@ -60,17 +123,14 @@ class _AccountsPageState extends State<AccountsPage> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS) => Padding(
+        builder: (ctx, setS) => SingleChildScrollView(
           padding: EdgeInsets.fromLTRB(
-            20,
-            16,
-            20,
-            MediaQuery.of(ctx).viewInsets.bottom + 24,
-          ),
+              20, 16, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Handle bar
               Center(
                 child: Container(
                   width: 40,
@@ -84,11 +144,14 @@ class _AccountsPageState extends State<AccountsPage> {
               ),
               Text(
                 existing != null ? 'Edit Account' : 'New Account',
-                style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                style: Theme.of(ctx)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 20),
+
+              // Name
               TextField(
                 controller: nameCtrl,
                 textCapitalization: TextCapitalization.words,
@@ -99,11 +162,16 @@ class _AccountsPageState extends State<AccountsPage> {
                 ),
               ),
               const SizedBox(height: 12),
+
+              // Initial balance (add only)
               if (existing == null) ...[
                 TextField(
                   controller: balanceCtrl,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))
+                  ],
                   decoration: const InputDecoration(
                     labelText: 'Initial Balance (₱)',
                     border: OutlineInputBorder(),
@@ -112,51 +180,85 @@ class _AccountsPageState extends State<AccountsPage> {
                 ),
                 const SizedBox(height: 12),
               ],
-              // Type selector
-              Text(
-                'Account Type',
-                style: Theme.of(ctx).textTheme.labelLarge,
-              ),
+
+              // Account type grid
+              Text('Account Type', style: Theme.of(ctx).textTheme.labelLarge),
               const SizedBox(height: 8),
-              Row(
-                children: ['cash', 'bank', 'e-wallet'].map((t) {
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _allTypes.map((t) {
                   final selected = selectedType == t;
                   final color = _typeColors[t]!;
-                  return Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: GestureDetector(
-                        onTap: () => setS(() => selectedType = t),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          decoration: BoxDecoration(
-                            color: selected
-                                ? color.withValues(alpha: 0.15)
-                                : Theme.of(ctx)
-                                    .colorScheme
-                                    .surfaceContainerHighest,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: selected ? color : Colors.transparent,
-                              width: 2,
+                  return GestureDetector(
+                    onTap: () => setS(() => selectedType = t),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      width: (MediaQuery.of(ctx).size.width - 40 - 24) / 4,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? color.withValues(alpha: 0.15)
+                            : Theme.of(ctx).colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: selected ? color : Colors.transparent,
+                          width: 2,
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Icon(_typeIcons[t],
+                              color: selected ? color : null, size: 20),
+                          const SizedBox(height: 3),
+                          Text(
+                            _typeLabels[t]!,
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              color: selected ? color : null,
                             ),
+                            textAlign: TextAlign.center,
                           ),
-                          child: Column(
-                            children: [
-                              Icon(_typeIcons[t],
-                                  color: selected ? color : null),
-                              const SizedBox(height: 4),
-                              Text(
-                                t.toUpperCase(),
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: selected ? color : null,
-                                ),
-                              ),
-                            ],
-                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 16),
+
+              // Account category picker
+              Text('Category', style: Theme.of(ctx).textTheme.labelLarge),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: kAccountCategories.map((cat) {
+                  final selected = selectedCategory == cat;
+                  final color = Theme.of(ctx).colorScheme.primary;
+                  return GestureDetector(
+                    onTap: () => setS(() => selectedCategory = cat),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? color.withValues(alpha: 0.12)
+                            : Theme.of(ctx).colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: selected ? color : Colors.transparent,
+                          width: 2,
+                        ),
+                      ),
+                      child: Text(
+                        _capitalize(cat),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: selected ? color : null,
                         ),
                       ),
                     ),
@@ -164,6 +266,8 @@ class _AccountsPageState extends State<AccountsPage> {
                 }).toList(),
               ),
               const SizedBox(height: 20),
+
+              // Submit
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
@@ -171,29 +275,26 @@ class _AccountsPageState extends State<AccountsPage> {
                   label:
                       Text(existing != null ? 'Save Changes' : 'Add Account'),
                   style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
+                      padding: const EdgeInsets.symmetric(vertical: 14)),
                   onPressed: () async {
                     if (nameCtrl.text.trim().isEmpty) return;
                     if (existing != null) {
-                      await _db.updateAccount(
-                        existing.copyWith(
-                          name: nameCtrl.text.trim(),
-                          type: selectedType,
-                          colorHex: _typeColorHex(selectedType),
-                        ),
-                      );
+                      await _db.updateAccount(existing.copyWith(
+                        name: nameCtrl.text.trim(),
+                        type: selectedType,
+                        category: selectedCategory,
+                        colorHex: _typeColorHexMap[selectedType] ?? '#6366F1',
+                      ));
                     } else {
-                      await _db.insertAccount(
-                        Account(
-                          name: nameCtrl.text.trim(),
-                          balance:
-                              double.tryParse(balanceCtrl.text.trim()) ?? 0.0,
-                          type: selectedType,
-                          colorHex: _typeColorHex(selectedType),
-                          icon: 'wallet',
-                        ),
-                      );
+                      await _db.insertAccount(Account(
+                        name: nameCtrl.text.trim(),
+                        balance:
+                            double.tryParse(balanceCtrl.text.trim()) ?? 0.0,
+                        type: selectedType,
+                        category: selectedCategory,
+                        colorHex: _typeColorHexMap[selectedType] ?? '#6366F1',
+                        icon: 'wallet',
+                      ));
                     }
                     if (ctx.mounted) Navigator.pop(ctx);
                     _loadAccounts();
@@ -207,14 +308,8 @@ class _AccountsPageState extends State<AccountsPage> {
     );
   }
 
-  String _typeColorHex(String type) {
-    const map = {
-      'cash': '#22C55E',
-      'bank': '#3B82F6',
-      'e-wallet': '#A855F7',
-    };
-    return map[type] ?? '#6366F1';
-  }
+  String _capitalize(String s) =>
+      s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
 
   Future<void> _deleteAccount(Account account) async {
     final confirmed = await showDialog<bool>(
@@ -222,13 +317,11 @@ class _AccountsPageState extends State<AccountsPage> {
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Account'),
         content: Text(
-          'Delete "${account.name}" and all its transactions? This cannot be undone.',
-        ),
+            'Delete "${account.name}" and all its transactions? This cannot be undone.'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () => Navigator.pop(ctx, true),
@@ -249,8 +342,7 @@ class _AccountsPageState extends State<AccountsPage> {
       isScrollControlled: true,
       useSafeArea: true,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (ctx) => _AccountDetailSheet(account: account),
     );
   }
@@ -263,255 +355,509 @@ class _AccountsPageState extends State<AccountsPage> {
       return const Center(child: CircularProgressIndicator());
     }
 
+    final presentTypes =
+        _allTypes.where((t) => _grouped.containsKey(t)).toList();
+
     return RefreshIndicator(
       onRefresh: _loadAccounts,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Total balance card
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    theme.colorScheme.primary,
-                    theme.colorScheme.tertiary,
+      child: CustomScrollView(
+        slivers: [
+          // ── Hero header — seamlessly continues the nav bar gradient ───
+          SliverToBoxAdapter(
+            child: _TotalBalanceHero(
+              totalBalance: _totalBalance,
+              accountCount: _accounts.length,
+              onAddAccount: _showAddAccountDialog,
+            ),
+          ),
+
+          // ── "My Accounts" label ───────────────────────────────────────
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('My Accounts',
+                      style: theme.textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.bold)),
+                  FilledButton.tonalIcon(
+                    onPressed: _showAddAccountDialog,
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Add'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // ── Empty state ───────────────────────────────────────────────
+          if (_accounts.isEmpty)
+            SliverFillRemaining(
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.account_balance_wallet_outlined,
+                        size: 56, color: theme.colorScheme.outlineVariant),
+                    const SizedBox(height: 12),
+                    Text('No accounts yet',
+                        style: theme.textTheme.titleSmall
+                            ?.copyWith(color: theme.colorScheme.outline)),
+                    const SizedBox(height: 4),
+                    Text('Tap "Add" to create your first account',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.outlineVariant)),
                   ],
                 ),
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: theme.colorScheme.primary.withValues(alpha: 0.3),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Total Balance',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: Colors.white70,
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white24,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          '${_accounts.length} account${_accounts.length != 1 ? 's' : ''}',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '₱ ${_totalBalance.toStringAsFixed(2)}',
-                    style: theme.textTheme.headlineLarge?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: -1,
-                    ),
-                  ),
-                ],
+            )
+          else
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (_, i) {
+                  final type = presentTypes[i];
+                  return _AccountCategoryCarousel(
+                    type: type,
+                    accounts: _grouped[type]!,
+                    onTap: _showAccountDetail,
+                    onLongPress: (a) => _showAddAccountDialog(existing: a),
+                    onDelete: _deleteAccount,
+                  );
+                },
+                childCount: presentTypes.length,
               ),
             ),
-            const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'My Accounts',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                FilledButton.tonalIcon(
-                  onPressed: _showAddAccountDialog,
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Add'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Expanded(
-              child: _accounts.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.account_balance_wallet_outlined,
-                            size: 56,
-                            color: theme.colorScheme.outlineVariant,
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            'No accounts yet',
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              color: theme.colorScheme.outline,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Tap "Add" to create your first account',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.outlineVariant,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  : ListView.separated(
-                      itemCount: _accounts.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 10),
-                      itemBuilder: (_, i) {
-                        final a = _accounts[i];
-                        final typeColor =
-                            _typeColors[a.type] ?? theme.colorScheme.primary;
-                        return Dismissible(
-                          key: Key('acc_${a.id}'),
-                          direction: DismissDirection.endToStart,
-                          confirmDismiss: (_) async {
-                            await _deleteAccount(a);
-                            return false; // We handle it ourselves
-                          },
-                          background: Container(
-                            alignment: Alignment.centerRight,
-                            padding: const EdgeInsets.only(right: 20),
-                            decoration: BoxDecoration(
-                              color: Colors.red.shade100,
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: const Icon(Icons.delete, color: Colors.red),
-                          ),
-                          child: Card(
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              side: BorderSide(
-                                color: theme.colorScheme.outlineVariant
-                                    .withValues(alpha: 0.5),
-                              ),
-                            ),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(16),
-                              onTap: () => _showAccountDetail(a),
-                              onLongPress: () =>
-                                  _showAddAccountDialog(existing: a),
-                              child: Padding(
-                                padding: const EdgeInsets.all(16),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 48,
-                                      height: 48,
-                                      decoration: BoxDecoration(
-                                        color:
-                                            typeColor.withValues(alpha: 0.15),
-                                        borderRadius: BorderRadius.circular(14),
-                                      ),
-                                      child: Icon(
-                                        _typeIcons[a.type] ??
-                                            Icons.account_balance_wallet,
-                                        color: typeColor,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 14),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            a.name,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: 15,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 2,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: typeColor.withValues(
-                                                  alpha: 0.1),
-                                              borderRadius:
-                                                  BorderRadius.circular(20),
-                                            ),
-                                            child: Text(
-                                              a.type.toUpperCase(),
-                                              style: TextStyle(
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.bold,
-                                                color: typeColor,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.end,
-                                      children: [
-                                        Text(
-                                          '₱ ${a.balance.toStringAsFixed(2)}',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 16,
-                                            color: a.balance >= 0
-                                                ? Colors.green.shade700
-                                                : Colors.red,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          'Tap to view',
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            color: theme
-                                                .colorScheme.outlineVariant,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
+
+          const SliverToBoxAdapter(child: SizedBox(height: 32)),
+        ],
       ),
     );
   }
 }
+
+// ── Hero header — seamlessly continues the nav bar gradient ───────────────────
+
+class _TotalBalanceHero extends StatelessWidget {
+  final double totalBalance;
+  final int accountCount;
+  final VoidCallback onAddAccount;
+
+  const _TotalBalanceHero({
+    required this.totalBalance,
+    required this.accountCount,
+    required this.onAddAccount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final primary = theme.colorScheme.primary;
+    final tertiary = theme.colorScheme.tertiary;
+
+    return Container(
+      width: double.infinity,
+      // No top padding — the nav bar above shares the same gradient colours,
+      // so both containers form one continuous surface. The 0 top padding
+      // closes any pixel gap that would otherwise appear as a line.
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 36),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [primary, tertiary],
+        ),
+        borderRadius: const BorderRadius.vertical(
+          bottom: Radius.circular(32),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: primary.withValues(alpha: 0.35),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Total Balance',
+                style: theme.textTheme.bodyMedium
+                    ?.copyWith(color: Colors.white70, letterSpacing: 0.5),
+              ),
+              _PillBadge(
+                label: '$accountCount account${accountCount != 1 ? 's' : ''}',
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '₱ ${totalBalance.toStringAsFixed(2)}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 38,
+              fontWeight: FontWeight.bold,
+              letterSpacing: -1.5,
+            ),
+          ),
+          const SizedBox(height: 14),
+          GestureDetector(
+            onTap: onAddAccount,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.add, color: Colors.white, size: 16),
+                  SizedBox(width: 6),
+                  Text(
+                    'Add Account',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PillBadge extends StatelessWidget {
+  final String label;
+  const _PillBadge({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
+      ),
+    );
+  }
+}
+
+// ── Category carousel ──────────────────────────────────────────────────────────
+
+class _AccountCategoryCarousel extends StatelessWidget {
+  final String type;
+  final List<Account> accounts;
+  final void Function(Account) onTap;
+  final void Function(Account) onLongPress;
+  final void Function(Account) onDelete;
+
+  const _AccountCategoryCarousel({
+    required this.type,
+    required this.accounts,
+    required this.onTap,
+    required this.onLongPress,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final typeColor = _typeColors[type] ?? theme.colorScheme.primary;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Section header
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: typeColor.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(_typeIcons[type] ?? Icons.wallet,
+                      color: typeColor, size: 15),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  _typeLabels[type] ?? type,
+                  style: theme.textTheme.titleSmall
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(width: 6),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: typeColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '${accounts.length}',
+                    style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: typeColor),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Carousel
+          SizedBox(
+            height: 172,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              cacheExtent: 520,
+              itemCount: accounts.length,
+              itemBuilder: (_, i) {
+                final a = accounts[i];
+                return Padding(
+                  padding:
+                      EdgeInsets.only(right: i < accounts.length - 1 ? 14 : 0),
+                  child: _AccountCard(
+                    account: a,
+                    onTap: () => onTap(a),
+                    onLongPress: () => onLongPress(a),
+                    onDelete: () => onDelete(a),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Account card ───────────────────────────────────────────────────────────────
+
+class _AccountCard extends StatelessWidget {
+  final Account account;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+  final VoidCallback onDelete;
+
+  const _AccountCard({
+    required this.account,
+    required this.onTap,
+    required this.onLongPress,
+    required this.onDelete,
+  });
+
+  BorderRadius _borderRadius() {
+    switch (account.type) {
+      case 'cash':
+        return BorderRadius.zero;
+      case 'e-wallet':
+        return BorderRadius.circular(24);
+      default:
+        return BorderRadius.circular(18);
+    }
+  }
+
+  bool get _isEwallet => account.type == 'e-wallet';
+
+  @override
+  Widget build(BuildContext context) {
+    final gradients = _typeGradients[account.type] ??
+        [const Color(0xFF6366F1), const Color(0xFF818CF8)];
+    final br = _borderRadius();
+
+    Widget card = Container(
+      width: 255,
+      height: 155,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: gradients,
+        ),
+        borderRadius: _isEwallet ? null : br,
+        boxShadow: [
+          BoxShadow(
+            color: gradients[0].withValues(alpha: 0.38),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          // Decorative circles
+          Positioned(
+            right: -22,
+            top: -22,
+            child: Container(
+              width: 100,
+              height: 100,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.09),
+              ),
+            ),
+          ),
+          Positioned(
+            left: -10,
+            bottom: -22,
+            child: Container(
+              width: 75,
+              height: 75,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.06),
+              ),
+            ),
+          ),
+          // Card body
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      child: Icon(
+                        _typeIcons[account.type] ??
+                            Icons.account_balance_wallet,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: onDelete,
+                      child: Container(
+                        width: 26,
+                        height: 26,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(7),
+                        ),
+                        child: const Icon(Icons.delete_outline,
+                            color: Colors.white70, size: 15),
+                      ),
+                    ),
+                  ],
+                ),
+                const Spacer(),
+                Text(
+                  account.name,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.2,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '₱ ${account.balance.toStringAsFixed(2)}',
+                  style: TextStyle(
+                    color: account.balance >= 0
+                        ? Colors.white
+                        : Colors.red.shade200,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    (_typeLabels[account.type] ?? account.type).toUpperCase(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 8,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (_isEwallet) {
+      card = ClipPath(
+        clipper: _OctagonClipper(),
+        child: card,
+      );
+    }
+
+    return GestureDetector(
+      onTap: onTap,
+      onLongPress: onLongPress,
+      child: card,
+    );
+  }
+}
+
+class _OctagonClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    const cut = 22.0;
+    return Path()
+      ..moveTo(cut, 0)
+      ..lineTo(size.width - cut, 0)
+      ..lineTo(size.width, cut)
+      ..lineTo(size.width, size.height - cut)
+      ..lineTo(size.width - cut, size.height)
+      ..lineTo(cut, size.height)
+      ..lineTo(0, size.height - cut)
+      ..lineTo(0, cut)
+      ..close();
+  }
+
+  @override
+  bool shouldReclip(_OctagonClipper old) => false;
+}
+
+// ── Account detail bottom sheet ────────────────────────────────────────────────
 
 class _AccountDetailSheet extends StatefulWidget {
   final Account account;
@@ -587,19 +933,30 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        widget.account.name,
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text(
-                        widget.account.type.toUpperCase(),
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: typeColor,
-                          fontWeight: FontWeight.bold,
-                        ),
+                      Text(widget.account.name,
+                          style: theme.textTheme.titleLarge
+                              ?.copyWith(fontWeight: FontWeight.bold)),
+                      Row(
+                        children: [
+                          Text(
+                            (_typeLabels[widget.account.type] ??
+                                    widget.account.type)
+                                .toUpperCase(),
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: typeColor,
+                                fontWeight: FontWeight.bold),
+                          ),
+                          if (widget.account.category.isNotEmpty) ...[
+                            const SizedBox(width: 6),
+                            Text(
+                              '· ${_capitalize(widget.account.category)}',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: theme.colorScheme.outline),
+                            ),
+                          ],
+                        ],
                       ),
                     ],
                   ),
@@ -619,13 +976,10 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
             const SizedBox(height: 16),
             Align(
               alignment: Alignment.centerLeft,
-              child: Text(
-                'Transactions',
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: theme.colorScheme.outline,
-                ),
-              ),
+              child: Text('Transactions',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.outline)),
             ),
             const SizedBox(height: 8),
             Expanded(
@@ -633,11 +987,9 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                   ? const Center(child: CircularProgressIndicator())
                   : _transactions.isEmpty
                       ? Center(
-                          child: Text(
-                            'No transactions for this account',
-                            style: TextStyle(color: theme.colorScheme.outline),
-                          ),
-                        )
+                          child: Text('No transactions for this account',
+                              style:
+                                  TextStyle(color: theme.colorScheme.outline)))
                       : ListView.separated(
                           controller: scrollCtrl,
                           itemCount: _transactions.length,
@@ -648,8 +1000,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                             final isIncome = tx.type == 'income';
                             return ListTile(
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
+                                  borderRadius: BorderRadius.circular(12)),
                               tileColor: theme
                                   .colorScheme.surfaceContainerHighest
                                   .withValues(alpha: 0.5),
@@ -666,15 +1017,13 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                                   size: 16,
                                 ),
                               ),
-                              title: Text(
-                                tx.title,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w600, fontSize: 14),
-                              ),
+                              title: Text(tx.title,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14)),
                               subtitle: Text(
-                                '${tx.category} • ${tx.date.substring(0, 10)}',
-                                style: const TextStyle(fontSize: 12),
-                              ),
+                                  '${tx.category} • ${tx.date.substring(0, 10)}',
+                                  style: const TextStyle(fontSize: 12)),
                               trailing: Text(
                                 '${isIncome ? '+' : '-'}₱${tx.amount.toStringAsFixed(2)}',
                                 style: TextStyle(
@@ -692,4 +1041,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
       ),
     );
   }
+
+  String _capitalize(String s) =>
+      s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
 }
