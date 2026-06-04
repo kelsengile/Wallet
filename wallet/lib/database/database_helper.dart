@@ -23,7 +23,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2, // bumped from 1 → 2 to run migration
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -36,6 +36,7 @@ class DatabaseHelper {
         name        TEXT    NOT NULL,
         balance     REAL    NOT NULL DEFAULT 0.0,
         type        TEXT    NOT NULL,
+        category    TEXT    NOT NULL DEFAULT 'personal',
         color_hex   TEXT    NOT NULL DEFAULT '#6366F1',
         icon        TEXT    NOT NULL DEFAULT 'wallet'
       )
@@ -55,16 +56,27 @@ class DatabaseHelper {
       )
     ''');
 
+    // Seed default Cash account
     await db.insert('accounts', {
       'name': 'Cash',
       'balance': 0.0,
       'type': 'cash',
+      'category': 'personal',
       'color_hex': '#6366F1',
       'icon': 'wallet',
     });
   }
 
-  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {}
+  /// Migrate existing installs from v1 → v2:
+  /// adds the `category` column to the accounts table if it doesn't exist.
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      // Use ALTER TABLE — safe even if rows already exist (default fills them)
+      await db.execute(
+        "ALTER TABLE accounts ADD COLUMN category TEXT NOT NULL DEFAULT 'personal'",
+      );
+    }
+  }
 
   // ── Account CRUD ───────────────────────────────────────────────────────────
 
@@ -103,7 +115,6 @@ class DatabaseHelper {
 
   Future<int> deleteAccount(int id) async {
     final db = await database;
-    // Also remove associated transactions
     await db.delete('transactions', where: 'account_id = ?', whereArgs: [id]);
     return await db.delete('accounts', where: 'id = ?', whereArgs: [id]);
   }
