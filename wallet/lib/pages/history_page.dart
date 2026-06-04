@@ -25,6 +25,7 @@ class _HistoryPageState extends State<HistoryPage> {
   Future<void> _load() async {
     final txs = await _db.getAllTransactions();
     final accounts = await _db.getAllAccounts();
+    if (!mounted) return;
     setState(() {
       _transactions = txs;
       _accounts = accounts;
@@ -32,125 +33,28 @@ class _HistoryPageState extends State<HistoryPage> {
     });
   }
 
-  void _showAddTransactionDialog() {
-    final titleCtrl = TextEditingController();
-    final amountCtrl = TextEditingController();
-    final noteCtrl = TextEditingController();
-    String type = 'expense';
-    String category = 'Food';
-    int? accountId = _accounts.isNotEmpty ? _accounts.first.id : null;
-
-    const categories = [
-      'Food',
-      'Transport',
-      'Shopping',
-      'Bills',
-      'Health',
-      'Entertainment',
-      'Salary',
-      'Other',
-    ];
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS) => AlertDialog(
-          title: const Text('Add Transaction'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Type toggle
-                SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(value: 'expense', label: Text('Expense')),
-                    ButtonSegment(value: 'income', label: Text('Income')),
-                  ],
-                  selected: {type},
-                  onSelectionChanged: (v) => setS(() => type = v.first),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: titleCtrl,
-                  decoration: const InputDecoration(labelText: 'Title'),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: amountCtrl,
-                  decoration: const InputDecoration(labelText: 'Amount'),
-                  keyboardType: TextInputType.number,
-                ),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  initialValue: category,
-                  items: categories
-                      .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                      .toList(),
-                  onChanged: (v) => setS(() => category = v ?? 'Other'),
-                  decoration: const InputDecoration(labelText: 'Category'),
-                ),
-                const SizedBox(height: 8),
-                if (_accounts.isNotEmpty)
-                  DropdownButtonFormField<int>(
-                    initialValue: accountId,
-                    items: _accounts
-                        .map(
-                          (a) => DropdownMenuItem(
-                            value: a.id,
-                            child: Text(a.name),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (v) => setS(() => accountId = v),
-                    decoration: const InputDecoration(labelText: 'Account'),
-                  ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: noteCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Note (optional)',
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                if (titleCtrl.text.trim().isEmpty ||
-                    amountCtrl.text.trim().isEmpty) {
-                  return;
-                }
-                final tx = WalletTransaction(
-                  title: titleCtrl.text.trim(),
-                  amount: double.tryParse(amountCtrl.text.trim()) ?? 0.0,
-                  date: DateTime.now().toIso8601String(),
-                  type: type,
-                  category: category,
-                  note: noteCtrl.text.trim(),
-                );
-                // Attach account_id via toMap override below
-                final map = tx.toMap();
-                if (accountId != null) map['account_id'] = accountId;
-                final db = await _db.database;
-                await db.insert('transactions', map);
-                await _db.adjustAccountBalance(
-                  accountId ?? 1,
-                  type == 'income' ? tx.amount : -tx.amount,
-                );
-                if (ctx.mounted) Navigator.pop(ctx);
-                _load();
-              },
-              child: const Text('Add'),
-            ),
-          ],
-        ),
-      ),
+  /// Opens the shared bottom-sheet form from [WalletTransaction.showDialog]
+  /// and persists the result via [DatabaseHelper.insertTransaction].
+  Future<void> _addTransaction() async {
+    final tx = await WalletTransaction.showDialog(
+      context,
+      accounts: _accounts,
     );
+    if (tx == null) return;
+    await _db.insertTransaction(tx);
+    _load();
+  }
+
+  /// Opens the form pre-populated for editing.
+  Future<void> _editTransaction(WalletTransaction existing) async {
+    final updated = await WalletTransaction.showDialog(
+      context,
+      accounts: _accounts,
+      existing: existing,
+    );
+    if (updated == null) return;
+    await _db.updateTransaction(existing, updated);
+    _load();
   }
 
   Future<void> _deleteTransaction(WalletTransaction tx) async {
@@ -176,12 +80,11 @@ class _HistoryPageState extends State<HistoryPage> {
             children: [
               Text(
                 'Transactions',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
+                style: theme.textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.bold),
               ),
               IconButton.filled(
-                onPressed: _showAddTransactionDialog,
+                onPressed: _addTransaction,
                 icon: const Icon(Icons.add),
                 tooltip: 'Add transaction',
               ),
@@ -212,6 +115,7 @@ class _HistoryPageState extends State<HistoryPage> {
                         onDismissed: (_) => _deleteTransaction(tx),
                         child: Card(
                           child: ListTile(
+                            onTap: () => _editTransaction(tx),
                             leading: CircleAvatar(
                               backgroundColor: isIncome
                                   ? Colors.green.shade100
@@ -225,9 +129,8 @@ class _HistoryPageState extends State<HistoryPage> {
                             ),
                             title: Text(
                               tx.title,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                              ),
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w600),
                             ),
                             subtitle: Text(
                               '${tx.category} • ${tx.date.substring(0, 10)}',
