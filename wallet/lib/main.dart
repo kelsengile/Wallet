@@ -255,9 +255,7 @@ class _WalletHomePageState extends State<WalletHomePage> {
                 onPageChanged: _onPageChanged,
                 // Disable physics on the Accounts tab so the horizontal card
                 // carousels inside it don't conflict with page swiping.
-                physics: _selectedIndex == 0
-                    ? const NeverScrollableScrollPhysics()
-                    : const BouncingScrollPhysics(),
+                physics: const BouncingScrollPhysics(),
                 children: const [
                   AccountsPage(),
                   HistoryPage(),
