@@ -504,32 +504,6 @@ class _TotalBalanceHero extends StatelessWidget {
               letterSpacing: -1.5,
             ),
           ),
-          const SizedBox(height: 14),
-          GestureDetector(
-            onTap: onAddAccount,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.add, color: Colors.white, size: 16),
-                  SizedBox(width: 6),
-                  Text(
-                    'Add Account',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600),
-                  ),
-                ],
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -744,20 +718,20 @@ class _AccountCard extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Container(
-                      width: 34,
-                      height: 34,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(9),
-                      ),
-                      child: Icon(
-                        _typeIcons[account.type] ??
-                            Icons.account_balance_wallet,
-                        color: Colors.white,
-                        size: 18,
+                    Expanded(
+                      child: Text(
+                        account.name,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.2,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
+                    const SizedBox(width: 8),
                     GestureDetector(
                       onTap: onDelete,
                       child: Container(
@@ -774,18 +748,6 @@ class _AccountCard extends StatelessWidget {
                   ],
                 ),
                 const Spacer(),
-                Text(
-                  account.name,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.2,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 3),
                 Text(
                   '₱ ${account.balance.toStringAsFixed(2)}',
                   style: TextStyle(
@@ -806,7 +768,7 @@ class _AccountCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    (_typeLabels[account.type] ?? account.type).toUpperCase(),
+                    account.category.toUpperCase(),
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 8,
