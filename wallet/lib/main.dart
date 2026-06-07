@@ -173,16 +173,12 @@ class _WalletHomePageState extends State<WalletHomePage> {
                         ],
                       )
                     : null,
-                // No bottom border / shadow — the AccountsPage hero continues
-                // the same gradient so both surfaces merge visually.
                 color: isAccountsTab ? null : theme.colorScheme.surface,
               ),
               padding: EdgeInsets.only(
                 top: MediaQuery.of(context).padding.top,
                 left: 8,
                 right: 8,
-                // Zero bottom padding so there is no gap/line between the
-                // nav bar and the hero header below it.
                 bottom: 0,
               ),
               child: Row(
@@ -253,14 +249,14 @@ class _WalletHomePageState extends State<WalletHomePage> {
               child: PageView(
                 controller: _pageController,
                 onPageChanged: _onPageChanged,
-                // Disable physics on the Accounts tab so the horizontal card
-                // carousels inside it don't conflict with page swiping.
                 physics: const BouncingScrollPhysics(),
-                children: const [
-                  AccountsPage(),
-                  HistoryPage(),
-                  AnalyticsPage(),
-                  ProfilePage(),
+                children: [
+                  AccountsPage(
+                    onNavigateToAnalytics: () => _onItemTapped(2),
+                  ),
+                  const HistoryPage(),
+                  const AnalyticsPage(),
+                  const ProfilePage(),
                 ],
               ),
             ),
