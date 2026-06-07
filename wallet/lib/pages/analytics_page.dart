@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../database/database_helper.dart';
+
+final _currencyFmt = NumberFormat('#,##0.00', 'en_PH');
+String _fmt(double v) => _currencyFmt.format(v);
 
 class AnalyticsPage extends StatefulWidget {
   const AnalyticsPage({super.key});
@@ -54,7 +58,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
             ),
           ),
           const SizedBox(height: 12),
-          // Summary row
           Row(
             children: [
               _SummaryCard(
@@ -84,7 +87,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                     style: TextStyle(fontWeight: FontWeight.w600),
                   ),
                   Text(
-                    '₱ ${net.toStringAsFixed(2)}',
+                    '₱ ${_fmt(net)}',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 18,
@@ -123,7 +126,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                           style: const TextStyle(fontWeight: FontWeight.w500),
                         ),
                         Text(
-                          '₱ ${total.toStringAsFixed(2)}',
+                          '₱ ${_fmt(total)}',
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                       ],
@@ -189,7 +192,7 @@ class _SummaryCard extends StatelessWidget {
                 ),
               ),
               Text(
-                '₱ ${amount.toStringAsFixed(2)}',
+                '₱ ${_fmt(amount)}',
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 16,

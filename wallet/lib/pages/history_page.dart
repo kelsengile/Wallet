@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../database/database_helper.dart';
 import '../models/transaction_model.dart';
 import '../models/account_model.dart';
+
+final _currencyFmt = NumberFormat('#,##0.00', 'en_PH');
+String _fmt(double v) => _currencyFmt.format(v);
 
 class HistoryPage extends StatefulWidget {
   const HistoryPage({super.key});
@@ -16,8 +20,7 @@ class _HistoryPageState extends State<HistoryPage> {
   List<Account> _accounts = [];
   bool _loading = true;
 
-  // Date filter state
-  String _filterMode = 'all'; // 'all' | 'month' | 'range'
+  String _filterMode = 'all';
   DateTime _selectedMonth = DateTime(DateTime.now().year, DateTime.now().month);
   DateTimeRange? _selectedRange;
 
@@ -60,7 +63,6 @@ class _HistoryPageState extends State<HistoryPage> {
   }
 
   Future<void> _pickMonth() async {
-    // Simple month/year picker using a dialog
     int year = _selectedMonth.year;
     int month = _selectedMonth.month;
     final now = DateTime.now();
@@ -174,8 +176,6 @@ class _HistoryPageState extends State<HistoryPage> {
     return 'All time';
   }
 
-  /// Opens the shared bottom-sheet form from [WalletTransaction.showDialog]
-  /// and persists the result via [DatabaseHelper.insertTransaction].
   Future<void> _addTransaction() async {
     final tx = await WalletTransaction.showDialog(
       context,
@@ -186,7 +186,6 @@ class _HistoryPageState extends State<HistoryPage> {
     _load();
   }
 
-  /// Opens the form pre-populated for editing.
   Future<void> _editTransaction(WalletTransaction existing) async {
     final updated = await WalletTransaction.showDialog(
       context,
@@ -232,7 +231,6 @@ class _HistoryPageState extends State<HistoryPage> {
             ],
           ),
           const SizedBox(height: 8),
-          // ── Date filter chips ──────────────────────────────────────────
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -319,7 +317,7 @@ class _HistoryPageState extends State<HistoryPage> {
                               '${tx.category} • ${tx.date.substring(0, 10)}',
                             ),
                             trailing: Text(
-                              '${isIncome ? '+' : '-'} ₱${tx.amount.toStringAsFixed(2)}',
+                              '${isIncome ? '+' : '-'} ₱${_fmt(tx.amount)}',
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color: isIncome ? Colors.green : Colors.red,
