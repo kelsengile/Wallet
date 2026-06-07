@@ -1,8 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 import '../database/database_helper.dart';
 import '../models/account_model.dart';
 import '../models/transaction_model.dart';
+
+// ── Number formatter ───────────────────────────────────────────────────────────
+
+final _currencyFmt = NumberFormat('#,##0.00', 'en_PH');
+
+String _fmt(double v) => _currencyFmt.format(v);
 
 // ── Type metadata ──────────────────────────────────────────────────────────────
 
@@ -69,7 +76,9 @@ const _allTypes = [
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 class AccountsPage extends StatefulWidget {
-  const AccountsPage({super.key});
+  final VoidCallback? onNavigateToAnalytics;
+
+  const AccountsPage({super.key, this.onNavigateToAnalytics});
 
   @override
   State<AccountsPage> createState() => _AccountsPageState();
@@ -80,6 +89,8 @@ class _AccountsPageState extends State<AccountsPage> {
   List<Account> _accounts = [];
   Map<String, List<Account>> _grouped = {};
   double _totalBalance = 0;
+  double _totalIncome = 0;
+  double _totalExpenses = 0;
   bool _loading = true;
 
   @override
@@ -90,6 +101,8 @@ class _AccountsPageState extends State<AccountsPage> {
 
   Future<void> _loadAccounts() async {
     final accounts = await _db.getAllAccounts();
+    final income = await _db.getTotalIncome();
+    final expenses = await _db.getTotalExpenses();
     if (!mounted) return;
 
     final grouped = <String, List<Account>>{};
@@ -103,6 +116,8 @@ class _AccountsPageState extends State<AccountsPage> {
       _accounts = accounts;
       _grouped = grouped;
       _totalBalance = total;
+      _totalIncome = income;
+      _totalExpenses = expenses;
       _loading = false;
     });
   }
@@ -343,7 +358,10 @@ class _AccountsPageState extends State<AccountsPage> {
       useSafeArea: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (ctx) => _AccountDetailSheet(account: account),
+      builder: (ctx) => _AccountDetailSheet(
+        account: account,
+        onTransactionChanged: _loadAccounts,
+      ),
     );
   }
 
@@ -367,7 +385,10 @@ class _AccountsPageState extends State<AccountsPage> {
             child: _TotalBalanceHero(
               totalBalance: _totalBalance,
               accountCount: _accounts.length,
+              totalIncome: _totalIncome,
+              totalExpenses: _totalExpenses,
               onAddAccount: _showAddAccountDialog,
+              onNavigateToAnalytics: widget.onNavigateToAnalytics,
             ),
           ),
 
@@ -436,17 +457,23 @@ class _AccountsPageState extends State<AccountsPage> {
   }
 }
 
-// ── Hero header — seamlessly continues the nav bar gradient ───────────────────
+// ── Hero header ────────────────────────────────────────────────────────────────
 
 class _TotalBalanceHero extends StatelessWidget {
   final double totalBalance;
   final int accountCount;
+  final double totalIncome;
+  final double totalExpenses;
   final VoidCallback onAddAccount;
+  final VoidCallback? onNavigateToAnalytics;
 
   const _TotalBalanceHero({
     required this.totalBalance,
     required this.accountCount,
+    required this.totalIncome,
+    required this.totalExpenses,
     required this.onAddAccount,
+    this.onNavigateToAnalytics,
   });
 
   @override
@@ -457,10 +484,7 @@ class _TotalBalanceHero extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      // No top padding — the nav bar above shares the same gradient colours,
-      // so both containers form one continuous surface. The 0 top padding
-      // closes any pixel gap that would otherwise appear as a line.
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 36),
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 36),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -480,7 +504,9 @@ class _TotalBalanceHero extends StatelessWidget {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
+          // ── Top row: label + account counter ───────────────────────
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -489,20 +515,60 @@ class _TotalBalanceHero extends StatelessWidget {
                 style: theme.textTheme.bodyMedium
                     ?.copyWith(color: Colors.white70, letterSpacing: 0.5),
               ),
-              _PillBadge(
-                label: '$accountCount account${accountCount != 1 ? 's' : ''}',
+              Text(
+                '$accountCount account${accountCount != 1 ? 's' : ''}',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: Colors.white70,
+                  fontWeight: FontWeight.normal,
+                ),
               ),
             ],
           ),
           const SizedBox(height: 6),
-          Text(
-            '₱ ${totalBalance.toStringAsFixed(2)}',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 38,
-              fontWeight: FontWeight.bold,
-              letterSpacing: -1.5,
-            ),
+
+          // ── Bottom row: big balance + income | expense ──────────────
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '₱ ${_fmt(totalBalance)}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 38,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: -1.5,
+                ),
+              ),
+              const Spacer(),
+              GestureDetector(
+                onTap: onNavigateToAnalytics,
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      _IncomeExpenseCompact(
+                        icon: Icons.arrow_downward,
+                        amount: totalIncome,
+                        color: const Color(0xFF4ADE80),
+                      ),
+                      Container(
+                        width: 1,
+                        height: 10,
+                        margin: const EdgeInsets.symmetric(horizontal: 6),
+                        color: Colors.white.withValues(alpha: 0.35),
+                      ),
+                      _IncomeExpenseCompact(
+                        icon: Icons.arrow_upward,
+                        amount: totalExpenses,
+                        color: const Color(0xFFF87171),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -510,25 +576,33 @@ class _TotalBalanceHero extends StatelessWidget {
   }
 }
 
-class _PillBadge extends StatelessWidget {
-  final String label;
-  const _PillBadge({required this.label});
+class _IncomeExpenseCompact extends StatelessWidget {
+  final IconData icon;
+  final double amount;
+  final Color color;
+
+  const _IncomeExpenseCompact({
+    required this.icon,
+    required this.amount,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.18),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        label,
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: Colors.white,
-              fontWeight: FontWeight.w600,
-            ),
-      ),
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: color, size: 10),
+        const SizedBox(width: 3),
+        Text(
+          '₱ ${_fmt(amount)}',
+          style: TextStyle(
+            color: color,
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -560,7 +634,7 @@ class _AccountCategoryCarousel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Section header
+          // Section header — number badge removed
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
@@ -581,22 +655,7 @@ class _AccountCategoryCarousel extends StatelessWidget {
                   style: theme.textTheme.titleSmall
                       ?.copyWith(fontWeight: FontWeight.bold),
                 ),
-                const SizedBox(width: 6),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: typeColor.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    '${accounts.length}',
-                    style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: typeColor),
-                  ),
-                ),
+                // Count badge removed per design request
               ],
             ),
           ),
@@ -709,57 +768,59 @@ class _AccountCard extends StatelessWidget {
               ),
             ),
           ),
-          // Card body
+          // Delete button — pinned top-right, independent of text layout
+          Positioned(
+            top: 12,
+            right: 12,
+            child: GestureDetector(
+              onTap: onDelete,
+              child: Container(
+                width: 26,
+                height: 26,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: const Icon(Icons.delete_outline,
+                    color: Colors.white70, size: 15),
+              ),
+            ),
+          ),
+          // Card body — name directly above balance, anchored to bottom-left
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        account.name,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 0.2,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                // Name sits directly above the balance number
+                Padding(
+                  padding: const EdgeInsets.only(right: 36),
+                  child: Text(
+                    account.name,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 0.2,
                     ),
-                    const SizedBox(width: 8),
-                    GestureDetector(
-                      onTap: onDelete,
-                      child: Container(
-                        width: 26,
-                        height: 26,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(7),
-                        ),
-                        child: const Icon(Icons.delete_outline,
-                            color: Colors.white70, size: 15),
-                      ),
-                    ),
-                  ],
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-                const Spacer(),
+                const SizedBox(height: 2),
                 Text(
-                  '₱ ${account.balance.toStringAsFixed(2)}',
+                  '₱ ${_fmt(account.balance)}',
                   style: TextStyle(
                     color: account.balance >= 0
                         ? Colors.white
                         : Colors.red.shade200,
-                    fontSize: 20,
+                    fontSize: 22,
                     fontWeight: FontWeight.bold,
                     letterSpacing: -0.5,
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 6),
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
@@ -823,7 +884,12 @@ class _OctagonClipper extends CustomClipper<Path> {
 
 class _AccountDetailSheet extends StatefulWidget {
   final Account account;
-  const _AccountDetailSheet({required this.account});
+  final VoidCallback? onTransactionChanged;
+
+  const _AccountDetailSheet({
+    required this.account,
+    this.onTransactionChanged,
+  });
 
   @override
   State<_AccountDetailSheet> createState() => _AccountDetailSheetState();
@@ -831,6 +897,7 @@ class _AccountDetailSheet extends StatefulWidget {
 
 class _AccountDetailSheetState extends State<_AccountDetailSheet> {
   List<WalletTransaction> _transactions = [];
+  List<Account> _allAccounts = [];
   bool _loading = true;
 
   @override
@@ -842,12 +909,26 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
   Future<void> _load() async {
     final txs = await DatabaseHelper.instance
         .getTransactionsByAccount(widget.account.id!);
+    final accounts = await DatabaseHelper.instance.getAllAccounts();
     if (mounted) {
       setState(() {
         _transactions = txs;
+        _allAccounts = accounts;
         _loading = false;
       });
     }
+  }
+
+  Future<void> _editTransaction(WalletTransaction existing) async {
+    final updated = await WalletTransaction.showDialog(
+      context,
+      accounts: _allAccounts,
+      existing: existing,
+    );
+    if (updated == null) return;
+    await DatabaseHelper.instance.updateTransaction(existing, updated);
+    await _load();
+    widget.onTransactionChanged?.call();
   }
 
   @override
@@ -924,7 +1005,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                   ),
                 ),
                 Text(
-                  '₱ ${widget.account.balance.toStringAsFixed(2)}',
+                  '₱ ${_fmt(widget.account.balance)}',
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -961,6 +1042,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                             final tx = _transactions[i];
                             final isIncome = tx.type == 'income';
                             return ListTile(
+                              onTap: () => _editTransaction(tx),
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12)),
                               tileColor: theme
@@ -987,7 +1069,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                                   '${tx.category} • ${tx.date.substring(0, 10)}',
                                   style: const TextStyle(fontSize: 12)),
                               trailing: Text(
-                                '${isIncome ? '+' : '-'}₱${tx.amount.toStringAsFixed(2)}',
+                                '${isIncome ? '+' : '-'}₱${_fmt(tx.amount)}',
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 13,
