@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:wallet/database/database_helper.dart';
 import 'package:wallet/pages/accounts_page.dart';
 import 'package:wallet/pages/history_page.dart';
 import 'package:wallet/pages/analytics_page.dart';
 import 'package:wallet/pages/profile_page.dart';
+import 'package:wallet/pages/settings_page.dart';
+import 'package:wallet/pages/category_manager_page.dart';
+import 'package:wallet/pages/faq_page.dart';
+import 'package:wallet/pages/feedback_page.dart';
 
 void main() {
   runApp(const MyApp());
@@ -83,83 +88,16 @@ class _WalletHomePageState extends State<WalletHomePage> {
       value: overlayStyle,
       child: Scaffold(
         backgroundColor: theme.colorScheme.surface,
-        drawer: Drawer(
-          child: ListView(
-            padding: EdgeInsets.zero,
-            children: [
-              DrawerHeader(
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primaryContainer,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    Icon(
-                      Icons.account_balance_wallet,
-                      size: 36,
-                      color: theme.colorScheme.onPrimaryContainer,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Wallet',
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.onPrimaryContainer,
-                      ),
-                    ),
-                    Text(
-                      'Manage your money',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onPrimaryContainer
-                            .withValues(alpha: 0.7),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              ListTile(
-                leading: const Icon(Icons.account_balance_wallet_outlined),
-                title: const Text('Accounts'),
-                selected: _selectedIndex == 0,
-                onTap: () {
-                  _onItemTapped(0);
-                  Navigator.pop(context);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.history_outlined),
-                title: const Text('History'),
-                selected: _selectedIndex == 1,
-                onTap: () {
-                  _onItemTapped(1);
-                  Navigator.pop(context);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.show_chart_outlined),
-                title: const Text('Analytics'),
-                selected: _selectedIndex == 2,
-                onTap: () {
-                  _onItemTapped(2);
-                  Navigator.pop(context);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.person_outline),
-                title: const Text('Profile'),
-                selected: _selectedIndex == 3,
-                onTap: () {
-                  _onItemTapped(3);
-                  Navigator.pop(context);
-                },
-              ),
-            ],
-          ),
+        drawer: _WalletDrawer(
+          selectedIndex: _selectedIndex,
+          onNavigate: (index) {
+            _onItemTapped(index);
+            Navigator.pop(context);
+          },
         ),
         body: Column(
           children: [
-            // ── Top nav bar — bleeds gradient seamlessly into page content ──
+            // ── Top nav bar ─────────────────────────────────────────────────
             AnimatedContainer(
               duration: const Duration(milliseconds: 300),
               decoration: BoxDecoration(
@@ -289,6 +227,395 @@ class _WalletHomePageState extends State<WalletHomePage> {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ── Drawer ─────────────────────────────────────────────────────────────────────
+
+class _WalletDrawer extends StatelessWidget {
+  final int selectedIndex;
+  final void Function(int) onNavigate;
+
+  const _WalletDrawer({
+    required this.selectedIndex,
+    required this.onNavigate,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    return Drawer(
+      child: Column(
+        children: [
+          // ── Header ────────────────────────────────────────────────────────
+          Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [cs.primary, cs.tertiary],
+              ),
+            ),
+            padding: EdgeInsets.fromLTRB(
+              20,
+              MediaQuery.of(context).padding.top + 20,
+              20,
+              24,
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(
+                    Icons.account_balance_wallet,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Wallet',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    Text(
+                      'Manage your money',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: Colors.white70,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          // ── Scrollable sections ───────────────────────────────────────────
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              children: [
+                // PAGES
+                _SectionHeader(label: 'Pages'),
+                _NavTile(
+                  icon: Icons.account_balance_wallet_outlined,
+                  selectedIcon: Icons.account_balance_wallet,
+                  label: 'Accounts',
+                  selected: selectedIndex == 0,
+                  onTap: () => onNavigate(0),
+                ),
+                _NavTile(
+                  icon: Icons.history_outlined,
+                  selectedIcon: Icons.history,
+                  label: 'History',
+                  selected: selectedIndex == 1,
+                  onTap: () => onNavigate(1),
+                ),
+                _NavTile(
+                  icon: Icons.show_chart_outlined,
+                  selectedIcon: Icons.show_chart,
+                  label: 'Analytics',
+                  selected: selectedIndex == 2,
+                  onTap: () => onNavigate(2),
+                ),
+                _NavTile(
+                  icon: Icons.person_outline,
+                  selectedIcon: Icons.person,
+                  label: 'Profile',
+                  selected: selectedIndex == 3,
+                  onTap: () => onNavigate(3),
+                ),
+
+                const _DrawerDivider(),
+
+                // PREFERENCES
+                _SectionHeader(label: 'Preferences'),
+                _NavTile(
+                  icon: Icons.tune_outlined,
+                  selectedIcon: Icons.tune,
+                  label: 'Settings',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const SettingsPage()),
+                    );
+                  },
+                ),
+                _NavTile(
+                  icon: Icons.category_outlined,
+                  selectedIcon: Icons.category,
+                  label: 'Category Manager',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const CategoryManagerPage()),
+                    );
+                  },
+                ),
+
+                const _DrawerDivider(),
+
+                // HELP & SUPPORT
+                _SectionHeader(label: 'Help & Support'),
+                _NavTile(
+                  icon: Icons.help_outline,
+                  selectedIcon: Icons.help,
+                  label: 'FAQ',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const FaqPage()),
+                    );
+                  },
+                ),
+                _NavTile(
+                  icon: Icons.star_outline,
+                  selectedIcon: Icons.star,
+                  label: 'Rate the App',
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showRateDialog(context);
+                  },
+                ),
+                _NavTile(
+                  icon: Icons.feedback_outlined,
+                  selectedIcon: Icons.feedback,
+                  label: 'Send Feedback',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const FeedbackPage()),
+                    );
+                  },
+                ),
+
+                const _DrawerDivider(),
+
+                // SYSTEM ACTIONS
+                _SectionHeader(label: 'System Actions'),
+                _NavTile(
+                  icon: Icons.upload_outlined,
+                  selectedIcon: Icons.upload,
+                  label: 'Export Data',
+                  onTap: () {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Export coming soon.')),
+                    );
+                  },
+                ),
+                _NavTile(
+                  icon: Icons.download_outlined,
+                  selectedIcon: Icons.download,
+                  label: 'Import Data',
+                  onTap: () {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Import coming soon.')),
+                    );
+                  },
+                ),
+                _NavTile(
+                  icon: Icons.delete_forever_outlined,
+                  selectedIcon: Icons.delete_forever,
+                  label: 'Clear All Data',
+                  destructive: true,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showClearDataDialog(context);
+                  },
+                ),
+
+                const SizedBox(height: 16),
+              ],
+            ),
+          ),
+
+          // ── Version badge ─────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+              decoration: BoxDecoration(
+                color: cs.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: cs.outlineVariant),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.info_outline, size: 14, color: cs.outline),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Wallet App  •  v1.0.0',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: cs.outline,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showRateDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rate Wallet'),
+        content: const Text(
+          'Enjoying the app? Leave a rating on the store to help others find it!',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Later')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Rate Now'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showClearDataDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Clear All Data'),
+        content: const Text(
+          'This will permanently delete all accounts and transactions. Are you sure?',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () async {
+              await DatabaseHelper.instance.clearAllData();
+              if (ctx.mounted) {
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('All data cleared.')),
+                );
+              }
+            },
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Drawer helpers ─────────────────────────────────────────────────────────────
+
+class _SectionHeader extends StatelessWidget {
+  final String label;
+  const _SectionHeader({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Text(
+        label.toUpperCase(),
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: theme.colorScheme.outline,
+          letterSpacing: 1.2,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+}
+
+class _DrawerDivider extends StatelessWidget {
+  const _DrawerDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Divider(
+        height: 1,
+        color: Theme.of(context).colorScheme.outlineVariant,
+      ),
+    );
+  }
+}
+
+class _NavTile extends StatelessWidget {
+  final IconData icon;
+  final IconData selectedIcon;
+  final String label;
+  final bool selected;
+  final bool destructive;
+  final VoidCallback onTap;
+
+  const _NavTile({
+    required this.icon,
+    required this.selectedIcon,
+    required this.label,
+    required this.onTap,
+    this.selected = false,
+    this.destructive = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final color = destructive
+        ? Colors.red
+        : selected
+            ? cs.primary
+            : cs.onSurfaceVariant;
+
+    return ListTile(
+      dense: true,
+      leading: Icon(
+        selected ? selectedIcon : icon,
+        color: color,
+        size: 22,
+      ),
+      title: Text(
+        label,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: color,
+          fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+        ),
+      ),
+      selected: selected,
+      selectedTileColor: cs.primaryContainer.withValues(alpha: 0.5),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+      horizontalTitleGap: 8,
+      onTap: onTap,
     );
   }
 }
