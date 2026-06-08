@@ -193,7 +193,10 @@ class _TransactionFormState extends State<_TransactionForm> {
         20,
         16,
         20,
-        MediaQuery.of(context).viewInsets.bottom + 24,
+        // viewInsetsOf is cheaper than MediaQuery.of — it only triggers a
+        // rebuild when the keyboard height changes, not on every MediaQuery
+        // aspect (brightness, textScaleFactor, etc.).
+        MediaQuery.viewInsetsOf(context).bottom + 24,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -218,7 +221,8 @@ class _TransactionFormState extends State<_TransactionForm> {
           ),
           const SizedBox(height: 20),
 
-          // Type toggle
+          // ── Type toggle ─────────────────────────────────────────────────
+          // Segmented button is cheap; keep it inline.
           SegmentedButton<String>(
             segments: const [
               ButtonSegment(
@@ -249,24 +253,31 @@ class _TransactionFormState extends State<_TransactionForm> {
           ),
           const SizedBox(height: 16),
 
-          TextField(
-            controller: _titleCtrl,
-            textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(
-              labelText: 'Title',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.title),
+          // ── Title field — RepaintBoundary isolates repaints from the ──────
+          // category Wrap below; typing here won't repaint the chip grid.
+          RepaintBoundary(
+            child: TextField(
+              controller: _titleCtrl,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                labelText: 'Title',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.title),
+              ),
             ),
           ),
           const SizedBox(height: 12),
 
-          TextField(
-            controller: _amountCtrl,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Amount (₱)',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.payments_outlined),
+          RepaintBoundary(
+            child: TextField(
+              controller: _amountCtrl,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Amount (₱)',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.payments_outlined),
+              ),
             ),
           ),
           const SizedBox(height: 12),
@@ -343,13 +354,15 @@ class _TransactionFormState extends State<_TransactionForm> {
             ),
           const SizedBox(height: 12),
 
-          TextField(
-            controller: _noteCtrl,
-            textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(
-              labelText: 'Note (optional)',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.note_outlined),
+          RepaintBoundary(
+            child: TextField(
+              controller: _noteCtrl,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                labelText: 'Note (optional)',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.note_outlined),
+              ),
             ),
           ),
           const SizedBox(height: 20),
