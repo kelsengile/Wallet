@@ -1,4 +1,5 @@
 import 'package:sqflite/sqflite.dart';
+import 'package:sqflite/sqlite_api.dart' show ConflictAlgorithm;
 import 'package:path/path.dart';
 import '../models/transaction_model.dart';
 import '../models/account_model.dart';
@@ -23,7 +24,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 2, // bumped from 1 → 2 to run migration
+      version: 3, // bumped from 2 → 3 to add settings table
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -56,6 +57,13 @@ class DatabaseHelper {
       )
     ''');
 
+    await db.execute('''
+      CREATE TABLE settings (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )
+    ''');
+
     // Seed default Cash account
     await db.insert('accounts', {
       'name': 'Cash',
@@ -71,10 +79,17 @@ class DatabaseHelper {
   /// adds the `category` column to the accounts table if it doesn't exist.
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
-      // Use ALTER TABLE — safe even if rows already exist (default fills them)
       await db.execute(
         "ALTER TABLE accounts ADD COLUMN category TEXT NOT NULL DEFAULT 'personal'",
       );
+    }
+    if (oldVersion < 3) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS settings (
+          key   TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        )
+      ''');
     }
   }
 
@@ -87,8 +102,49 @@ class DatabaseHelper {
 
   Future<List<Account>> getAllAccounts() async {
     final db = await database;
-    final rows = await db.query('accounts', orderBy: 'name ASC');
+    final rows = await db.query('accounts', orderBy: 'id DESC');
     return rows.map(Account.fromMap).toList();
+  }
+
+  /// Returns accounts ordered by the date of their most recent transaction
+  /// (most recent first). Accounts with no transactions come last, ordered by id DESC.
+  Future<List<Account>> getAccountsSortedByLatestTransaction() async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT a.*
+      FROM accounts a
+      LEFT JOIN (
+        SELECT account_id, MAX(date) as latest_date
+        FROM transactions
+        GROUP BY account_id
+      ) t ON a.id = t.account_id
+      ORDER BY t.latest_date DESC NULLS LAST, a.id DESC
+    ''');
+    return rows.map(Account.fromMap).toList();
+  }
+
+  /// Retrieves the persisted account-type section order (null if never saved).
+  Future<List<String>?> getTypeOrder() async {
+    final db = await database;
+    final rows = await db.query(
+      'settings',
+      where: 'key = ?',
+      whereArgs: ['type_order'],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    final value = rows.first['value'] as String;
+    return value.split(',').where((s) => s.isNotEmpty).toList();
+  }
+
+  /// Persists the account-type section order so it survives app restarts.
+  Future<void> saveTypeOrder(List<String> order) async {
+    final db = await database;
+    await db.insert(
+      'settings',
+      {'key': 'type_order', 'value': order.join(',')},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   Future<Account?> getAccountById(int id) async {
