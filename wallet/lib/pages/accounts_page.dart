@@ -88,10 +88,20 @@ class _AccountsPageState extends State<AccountsPage> {
   final _db = DatabaseHelper.instance;
   List<Account> _accounts = [];
   Map<String, List<Account>> _grouped = {};
+
+  /// Ordered list of account type keys — user can reorder these.
+  List<String> _typeOrder = [];
+
   double _totalBalance = 0;
   double _totalIncome = 0;
   double _totalExpenses = 0;
   bool _loading = true;
+
+  /// Whether reorder mode is active (drag handles visible, drag delay short)
+  bool _reorderMode = false;
+
+  /// Which type section is currently being dragged (for section drag)
+  String? _draggingSectionType;
 
   @override
   void initState() {
@@ -112,9 +122,18 @@ class _AccountsPageState extends State<AccountsPage> {
       (grouped[a.type] ??= []).add(a);
     }
 
+    // Preserve existing type order, append any new types
+    final presentTypes =
+        _allTypes.where((t) => grouped.containsKey(t)).toList();
+    final newOrder = _typeOrder.where((t) => grouped.containsKey(t)).toList();
+    for (final t in presentTypes) {
+      if (!newOrder.contains(t)) newOrder.add(t);
+    }
+
     setState(() {
       _accounts = accounts;
       _grouped = grouped;
+      _typeOrder = newOrder;
       _totalBalance = total;
       _totalIncome = income;
       _totalExpenses = expenses;
@@ -365,6 +384,39 @@ class _AccountsPageState extends State<AccountsPage> {
     );
   }
 
+  // ── Card reorder within a section ──────────────────────────────────────────
+
+  void _onCardReorder(String type, int oldIndex, int newIndex) {
+    setState(() {
+      final list = _grouped[type]!;
+      // newIndex is already the target insert position after removal adjustment
+      final item = list.removeAt(oldIndex);
+      list.insert(newIndex.clamp(0, list.length), item);
+    });
+  }
+
+  // ── Card dragged to a different section (type change) ──────────────────────
+
+  Future<void> _moveCardToType(Account account, String newType) async {
+    if (account.type == newType) return;
+    final updated = account.copyWith(
+      type: newType,
+      colorHex: _typeColorHexMap[newType] ?? '#6366F1',
+    );
+    await _db.updateAccount(updated);
+    _loadAccounts();
+  }
+
+  // ── Section reorder ────────────────────────────────────────────────────────
+
+  void _onSectionReorder(int oldIndex, int newIndex) {
+    setState(() {
+      if (newIndex > oldIndex) newIndex--;
+      final item = _typeOrder.removeAt(oldIndex);
+      _typeOrder.insert(newIndex, item);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -373,14 +425,11 @@ class _AccountsPageState extends State<AccountsPage> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    final presentTypes =
-        _allTypes.where((t) => _grouped.containsKey(t)).toList();
-
     return RefreshIndicator(
       onRefresh: _loadAccounts,
       child: CustomScrollView(
         slivers: [
-          // ── Hero header — seamlessly continues the nav bar gradient ───
+          // ── Hero header ───────────────────────────────────────────────
           SliverToBoxAdapter(
             child: _TotalBalanceHero(
               totalBalance: _totalBalance,
@@ -402,15 +451,84 @@ class _AccountsPageState extends State<AccountsPage> {
                   Text('My Accounts',
                       style: theme.textTheme.titleMedium
                           ?.copyWith(fontWeight: FontWeight.bold)),
-                  FilledButton.tonalIcon(
-                    onPressed: _showAddAccountDialog,
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('Add'),
+                  Row(
+                    children: [
+                      // Reorder mode toggle
+                      if (_accounts.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            decoration: BoxDecoration(
+                              color: _reorderMode
+                                  ? theme.colorScheme.primaryContainer
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: IconButton(
+                              onPressed: () =>
+                                  setState(() => _reorderMode = !_reorderMode),
+                              icon: Icon(
+                                _reorderMode
+                                    ? Icons.check_rounded
+                                    : Icons.reorder_rounded,
+                                size: 20,
+                                color: _reorderMode
+                                    ? theme.colorScheme.onPrimaryContainer
+                                    : theme.colorScheme.onSurfaceVariant,
+                              ),
+                              tooltip: _reorderMode
+                                  ? 'Done reordering'
+                                  : 'Reorder sections & cards',
+                              padding: const EdgeInsets.all(8),
+                              constraints: const BoxConstraints(),
+                            ),
+                          ),
+                        ),
+                      FilledButton.tonalIcon(
+                        onPressed: _reorderMode ? null : _showAddAccountDialog,
+                        icon: const Icon(Icons.add, size: 18),
+                        label: const Text('Add'),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
           ),
+
+          // ── Reorder mode hint banner ──────────────────────────────────
+          if (_reorderMode && _accounts.isNotEmpty)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primaryContainer
+                        .withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline,
+                          size: 14,
+                          color: theme.colorScheme.onPrimaryContainer),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Hold & drag ☰ to reorder sections · Hold & drag cards to reorder within a section or move to another',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onPrimaryContainer,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
 
           // ── Empty state ───────────────────────────────────────────────
           if (_accounts.isEmpty)
@@ -434,25 +552,656 @@ class _AccountsPageState extends State<AccountsPage> {
               ),
             )
           else
-            SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (_, i) {
-                  final type = presentTypes[i];
-                  return _AccountCategoryCarousel(
-                    type: type,
-                    accounts: _grouped[type]!,
-                    onTap: _showAccountDetail,
-                    onLongPress: (a) => _showAddAccountDialog(existing: a),
-                    onDelete: _deleteAccount,
-                  );
-                },
-                childCount: presentTypes.length,
+            // ── Reorderable list of type sections ──────────────────────
+            SliverToBoxAdapter(
+              child: _DraggableSectionList(
+                typeOrder: _typeOrder,
+                grouped: _grouped,
+                draggingSectionType: _draggingSectionType,
+                reorderMode: _reorderMode,
+                onSectionReorder: _onSectionReorder,
+                onSectionDragStart: (t) =>
+                    setState(() => _draggingSectionType = t),
+                onSectionDragEnd: () =>
+                    setState(() => _draggingSectionType = null),
+                onCardReorder: _onCardReorder,
+                onCardMoveToType: _moveCardToType,
+                onCardTap: _showAccountDetail,
+                onCardLongPress: (a) => _showAddAccountDialog(existing: a),
+                onCardDelete: _deleteAccount,
               ),
             ),
 
           const SliverToBoxAdapter(child: SizedBox(height: 32)),
         ],
       ),
+    );
+  }
+}
+
+// ── Draggable section list ─────────────────────────────────────────────────────
+//
+// Handles reordering of type sections (long-press 2 s → drag).
+// Each section internally allows card reordering and cross-section card drops.
+
+class _DraggableSectionList extends StatefulWidget {
+  final List<String> typeOrder;
+  final Map<String, List<Account>> grouped;
+  final String? draggingSectionType;
+  final bool reorderMode;
+  final void Function(int oldIndex, int newIndex) onSectionReorder;
+  final void Function(String type) onSectionDragStart;
+  final VoidCallback onSectionDragEnd;
+  final void Function(String type, int oldIndex, int newIndex) onCardReorder;
+  final void Function(Account account, String newType) onCardMoveToType;
+  final void Function(Account) onCardTap;
+  final void Function(Account) onCardLongPress;
+  final void Function(Account) onCardDelete;
+
+  const _DraggableSectionList({
+    required this.typeOrder,
+    required this.grouped,
+    required this.draggingSectionType,
+    required this.reorderMode,
+    required this.onSectionReorder,
+    required this.onSectionDragStart,
+    required this.onSectionDragEnd,
+    required this.onCardReorder,
+    required this.onCardMoveToType,
+    required this.onCardTap,
+    required this.onCardLongPress,
+    required this.onCardDelete,
+  });
+
+  @override
+  State<_DraggableSectionList> createState() => _DraggableSectionListState();
+}
+
+class _DraggableSectionListState extends State<_DraggableSectionList> {
+  // Which section index is being hovered for drop target highlight
+  int? _hoverSectionIndex;
+  // Whether a card drag is in progress (to highlight drop zones)
+  bool _cardDragActive = false;
+  Account? _draggingCard;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        for (int i = 0; i < widget.typeOrder.length; i++)
+          _buildSectionWithDrop(i),
+        // Drop zone after the last section (to move a section to the end)
+        if (widget.draggingSectionType != null)
+          _SectionDropZone(
+            highlight: _hoverSectionIndex == widget.typeOrder.length,
+            onWillAccept: (_) => true,
+            onAccept: (_) {
+              final fromIndex =
+                  widget.typeOrder.indexOf(widget.draggingSectionType!);
+              widget.onSectionReorder(fromIndex, widget.typeOrder.length);
+              setState(() => _hoverSectionIndex = null);
+            },
+            onHover: (over) => setState(() =>
+                _hoverSectionIndex = over ? widget.typeOrder.length : null),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildSectionWithDrop(int index) {
+    final type = widget.typeOrder[index];
+    final accounts = widget.grouped[type] ?? [];
+    final isBeingDragged = widget.draggingSectionType == type;
+
+    return Column(
+      key: ValueKey('section_col_$type'),
+      children: [
+        // ── Drop zone above each section (for section reordering) ────
+        if (widget.draggingSectionType != null &&
+            widget.draggingSectionType != type)
+          _SectionDropZone(
+            highlight: _hoverSectionIndex == index,
+            onWillAccept: (_) => true,
+            onAccept: (_) {
+              final fromIndex =
+                  widget.typeOrder.indexOf(widget.draggingSectionType!);
+              widget.onSectionReorder(fromIndex, index);
+              setState(() => _hoverSectionIndex = null);
+            },
+            onHover: (over) =>
+                setState(() => _hoverSectionIndex = over ? index : null),
+          ),
+
+        // ── The section itself ────────────────────────────────────────
+        _DraggableSectionTile(
+          type: type,
+          accounts: accounts,
+          isBeingDragged: isBeingDragged,
+          reorderMode: widget.reorderMode,
+          cardDragActive: _cardDragActive,
+          draggingCard: _draggingCard,
+          onSectionDragStart: () => widget.onSectionDragStart(type),
+          onSectionDragEnd: widget.onSectionDragEnd,
+          onCardReorder: (oldI, newI) => widget.onCardReorder(type, oldI, newI),
+          onCardDragStart: (card) {
+            setState(() {
+              _cardDragActive = true;
+              _draggingCard = card;
+            });
+          },
+          onCardDragEnd: () {
+            setState(() {
+              _cardDragActive = false;
+              _draggingCard = null;
+            });
+          },
+          onCardDropped: (card) => widget.onCardMoveToType(card, type),
+          onCardTap: widget.onCardTap,
+          onCardLongPress: widget.onCardLongPress,
+          onCardDelete: widget.onCardDelete,
+        ),
+      ],
+    );
+  }
+}
+
+// ── Section drop zone (shown between sections during section drag) ────────────
+
+class _SectionDropZone extends StatelessWidget {
+  final bool highlight;
+  final bool Function(String?) onWillAccept;
+  final void Function(String?) onAccept;
+  final void Function(bool) onHover;
+
+  const _SectionDropZone({
+    required this.highlight,
+    required this.onWillAccept,
+    required this.onAccept,
+    required this.onHover,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.primary;
+    return DragTarget<String>(
+      onWillAcceptWithDetails: (d) => onWillAccept(d.data),
+      onAcceptWithDetails: (d) => onAccept(d.data),
+      onMove: (_) => onHover(true),
+      onLeave: (_) => onHover(false),
+      builder: (_, candidateData, ___) {
+        final active = highlight || candidateData.isNotEmpty;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          height: active ? 52 : 36,
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+          decoration: BoxDecoration(
+            color: active ? color.withValues(alpha: 0.10) : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: active
+                  ? color.withValues(alpha: 0.7)
+                  : color.withValues(alpha: 0.2),
+              width: active ? 2 : 1.5,
+              strokeAlign: BorderSide.strokeAlignCenter,
+            ),
+          ),
+          alignment: Alignment.center,
+          child: active
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.south_rounded, size: 13, color: color),
+                    const SizedBox(width: 5),
+                    Text(
+                      'Drop section here',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: color,
+                      ),
+                    ),
+                  ],
+                )
+              : Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 32,
+                      height: 2,
+                      decoration: BoxDecoration(
+                        color: color.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ],
+                ),
+        );
+      },
+    );
+  }
+}
+
+// ── Draggable section tile ─────────────────────────────────────────────────────
+
+class _DraggableSectionTile extends StatefulWidget {
+  final String type;
+  final List<Account> accounts;
+  final bool isBeingDragged;
+  final bool reorderMode;
+  final bool cardDragActive;
+  final Account? draggingCard;
+  final VoidCallback onSectionDragStart;
+  final VoidCallback onSectionDragEnd;
+  final void Function(int oldIndex, int newIndex) onCardReorder;
+  final void Function(Account) onCardDragStart;
+  final VoidCallback onCardDragEnd;
+  final void Function(Account) onCardDropped;
+  final void Function(Account) onCardTap;
+  final void Function(Account) onCardLongPress;
+  final void Function(Account) onCardDelete;
+
+  const _DraggableSectionTile({
+    required this.type,
+    required this.accounts,
+    required this.isBeingDragged,
+    required this.reorderMode,
+    required this.cardDragActive,
+    required this.draggingCard,
+    required this.onSectionDragStart,
+    required this.onSectionDragEnd,
+    required this.onCardReorder,
+    required this.onCardDragStart,
+    required this.onCardDragEnd,
+    required this.onCardDropped,
+    required this.onCardTap,
+    required this.onCardLongPress,
+    required this.onCardDelete,
+  });
+
+  @override
+  State<_DraggableSectionTile> createState() => _DraggableSectionTileState();
+}
+
+class _DraggableSectionTileState extends State<_DraggableSectionTile> {
+  bool _isDropTarget = false;
+
+  // Full section header row, shared by normal and collapsed builds
+  Widget _buildHeader(BuildContext context, Color typeColor) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: widget.reorderMode
+                  ? typeColor.withValues(alpha: 0.25)
+                  : typeColor.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(_typeIcons[widget.type] ?? Icons.wallet,
+                color: typeColor, size: 15),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            _typeLabels[widget.type] ?? widget.type,
+            style: theme.textTheme.titleSmall
+                ?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const Spacer(),
+          AnimatedOpacity(
+            duration: const Duration(milliseconds: 200),
+            opacity: widget.reorderMode ? 1.0 : 0.3,
+            child: Icon(
+              Icons.drag_indicator,
+              size: widget.reorderMode ? 22 : 16,
+              color: widget.reorderMode
+                  ? typeColor
+                  : theme.colorScheme.outlineVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Normal full-size content (header + carousel)
+  Widget _buildSectionContent() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildHeader(
+              context,
+              _typeColors[widget.type] ??
+                  Theme.of(context).colorScheme.primary),
+          const SizedBox(height: 12),
+          _DraggableCardCarousel(
+            type: widget.type,
+            accounts: widget.accounts,
+            reorderMode: widget.reorderMode,
+            onReorder: widget.onCardReorder,
+            onCardDragStart: widget.onCardDragStart,
+            onCardDragEnd: widget.onCardDragEnd,
+            onCardTap: widget.onCardTap,
+            onCardLongPress: widget.onCardLongPress,
+            onCardDelete: widget.onCardDelete,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Compact header-only view used in the drag feedback ghost
+  Widget _buildCompactContent() {
+    final theme = Theme.of(context);
+    final typeColor = _typeColors[widget.type] ?? theme.colorScheme.primary;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      child: _buildHeader(context, typeColor),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final typeColor = _typeColors[widget.type] ?? theme.colorScheme.primary;
+
+    final isCardDropTarget = widget.cardDragActive &&
+        widget.draggingCard != null &&
+        widget.draggingCard!.type != widget.type;
+
+    // Inner content with drop-target highlight
+    Widget sectionBody = AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        border: _isDropTarget
+            ? Border.all(color: typeColor, width: 2)
+            : Border.all(color: Colors.transparent, width: 2),
+        color: _isDropTarget
+            ? typeColor.withValues(alpha: 0.07)
+            : Colors.transparent,
+      ),
+      child: _buildSectionContent(),
+    );
+
+    // Card drop target wrapper
+    if (isCardDropTarget) {
+      sectionBody = DragTarget<Account>(
+        onWillAcceptWithDetails: (d) => d.data.type != widget.type,
+        onAcceptWithDetails: (d) {
+          widget.onCardDropped(d.data);
+          setState(() => _isDropTarget = false);
+        },
+        onMove: (_) {
+          if (!_isDropTarget) setState(() => _isDropTarget = true);
+        },
+        onLeave: (_) => setState(() => _isDropTarget = false),
+        builder: (_, candidateData, __) => sectionBody,
+      );
+    }
+
+    // Section reorder: only active in reorderMode; short 400 ms delay
+    if (widget.reorderMode) {
+      return LongPressDraggable<String>(
+        data: widget.type,
+        delay: const Duration(milliseconds: 400),
+        onDragStarted: () {
+          widget.onSectionDragStart();
+          HapticFeedback.heavyImpact();
+        },
+        onDragEnd: (_) => widget.onSectionDragEnd(),
+        onDraggableCanceled: (_, __) => widget.onSectionDragEnd(),
+        // Feedback: compact header-only card that fits within the drop slots
+        feedback: Material(
+          color: Colors.transparent,
+          child: Opacity(
+            opacity: 0.95,
+            child: SizedBox(
+              width: MediaQuery.of(context).size.width - 32,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface,
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                      color: typeColor.withValues(alpha: 0.45),
+                      blurRadius: 28,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                  border: Border.all(color: typeColor, width: 2),
+                ),
+                child: _buildCompactContent(),
+              ),
+            ),
+          ),
+        ),
+        // childWhenDragging: collapse height to 0 so the space disappears
+        childWhenDragging: const SizedBox(height: 0),
+        child: sectionBody,
+      );
+    }
+
+    return sectionBody;
+  }
+}
+
+// ── Draggable card carousel ────────────────────────────────────────────────────
+//
+// A horizontal list of account cards that can be reordered by long-press drag.
+// Cards can also be dragged to other type sections.
+
+class _DraggableCardCarousel extends StatefulWidget {
+  final String type;
+  final List<Account> accounts;
+  final bool reorderMode;
+  final void Function(int oldIndex, int newIndex) onReorder;
+  final void Function(Account) onCardDragStart;
+  final VoidCallback onCardDragEnd;
+  final void Function(Account) onCardTap;
+  final void Function(Account) onCardLongPress;
+  final void Function(Account) onCardDelete;
+
+  const _DraggableCardCarousel({
+    required this.type,
+    required this.accounts,
+    required this.reorderMode,
+    required this.onReorder,
+    required this.onCardDragStart,
+    required this.onCardDragEnd,
+    required this.onCardTap,
+    required this.onCardLongPress,
+    required this.onCardDelete,
+  });
+
+  @override
+  State<_DraggableCardCarousel> createState() => _DraggableCardCarouselState();
+}
+
+class _DraggableCardCarouselState extends State<_DraggableCardCarousel> {
+  int? _draggingIndex;
+  // _hoverSlot is the slot index (0 = before first card, 1 = before second, etc.)
+  // n = after last card
+  int? _hoverSlot;
+
+  void _endDrag() {
+    setState(() {
+      _draggingIndex = null;
+      _hoverSlot = null;
+    });
+    widget.onCardDragEnd();
+  }
+
+  void _acceptDrop(int fromIndex, int toSlot) {
+    // toSlot is the desired insert position in the original list (0..n).
+    // After removing fromIndex, positions > fromIndex shift left by 1.
+    final insertIndex = (toSlot > fromIndex ? toSlot - 1 : toSlot)
+        .clamp(0, widget.accounts.length - 1);
+    if (insertIndex != fromIndex) {
+      widget.onReorder(fromIndex, insertIndex);
+    }
+    setState(() => _hoverSlot = null);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final typeColor =
+        _typeColors[widget.type] ?? Theme.of(context).colorScheme.primary;
+    final n = widget.accounts.length;
+
+    return SizedBox(
+      height: 172,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        cacheExtent: 520,
+        // In reorder mode: interleave drop slots (n cards + n+1 slots).
+        // In normal mode: just n cards.
+        itemCount: widget.reorderMode ? n * 2 + 1 : n,
+        itemBuilder: (_, itemIdx) {
+          // ── REORDER MODE ──────────────────────────────────────────────
+          if (widget.reorderMode) {
+            // Even indices → drop slots, odd indices → cards
+            if (itemIdx.isEven) {
+              final slotIndex = itemIdx ~/ 2;
+              final isDraggingSlot = _draggingIndex != null &&
+                  (slotIndex == _draggingIndex ||
+                      slotIndex == _draggingIndex! + 1);
+              final active = _draggingIndex != null && !isDraggingSlot;
+              final isHovered = _hoverSlot == slotIndex && active;
+              return _CardDropSlot(
+                slotIndex: slotIndex,
+                active: active,
+                highlight: isHovered,
+                color: typeColor,
+                onHover: (over) =>
+                    setState(() => _hoverSlot = over ? slotIndex : null),
+                onAccept: (fromCard) {
+                  final fromIndex =
+                      widget.accounts.indexWhere((x) => x.id == fromCard.id);
+                  if (fromIndex != -1) _acceptDrop(fromIndex, slotIndex);
+                },
+              );
+            }
+
+            final i = itemIdx ~/ 2;
+            final a = widget.accounts[i];
+            // Plain inert card — no GestureDetector, no AnimationController,
+            // just the visual. LongPressDraggable owns 100% of the gesture.
+            final inertCard = _AccountCardInert(account: a);
+
+            return Padding(
+              padding: const EdgeInsets.only(right: 14),
+              child: LongPressDraggable<Account>(
+                key: ValueKey('card_drag_${a.id}'),
+                data: a,
+                delay: const Duration(milliseconds: 400),
+                onDragStarted: () {
+                  setState(() {
+                    _draggingIndex = i;
+                    _hoverSlot = null;
+                  });
+                  widget.onCardDragStart(a);
+                  HapticFeedback.mediumImpact();
+                },
+                onDragEnd: (_) => _endDrag(),
+                onDraggableCanceled: (_, __) => _endDrag(),
+                feedback: Material(
+                  color: Colors.transparent,
+                  child: Transform.scale(
+                    scale: 1.06,
+                    child: Opacity(
+                      opacity: 0.93,
+                      child: _AccountCardInert(account: a),
+                    ),
+                  ),
+                ),
+                childWhenDragging: Opacity(
+                  opacity: 0.0,
+                  child: _AccountCardInert(account: a),
+                ),
+                child: inertCard,
+              ),
+            );
+          }
+
+          // ── NORMAL MODE ───────────────────────────────────────────────
+          final a = widget.accounts[itemIdx];
+          return Padding(
+            padding: const EdgeInsets.only(right: 14),
+            child: _AccountCard(
+              key: ValueKey('card_${a.id}'),
+              account: a,
+              onTap: () => widget.onCardTap(a),
+              onLongPress: () => widget.onCardLongPress(a),
+              onDelete: () => widget.onCardDelete(a),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ── Card drop slot ─────────────────────────────────────────────────────────────
+//
+// A DragTarget slot placed between (and around) cards.
+// active=false  → collapses to a 0-width SizedBox (but still a valid widget,
+//                 not SizedBox.shrink which can crash a horizontal ListView).
+// active=true   → narrow hit area (16 px) that expands to 48 px when hovered.
+
+class _CardDropSlot extends StatelessWidget {
+  final int slotIndex;
+  final bool active; // whether a drag is in progress and this slot is usable
+  final bool highlight;
+  final Color color;
+  final void Function(bool over) onHover;
+  final void Function(Account card) onAccept;
+
+  const _CardDropSlot({
+    required this.slotIndex,
+    required this.active,
+    required this.highlight,
+    required this.color,
+    required this.onHover,
+    required this.onAccept,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // When not active, return a zero-width box that still has a valid layout.
+    if (!active) return const SizedBox(width: 0, height: 155);
+
+    return DragTarget<Account>(
+      onWillAcceptWithDetails: (_) => true,
+      onAcceptWithDetails: (d) => onAccept(d.data),
+      onMove: (_) => onHover(true),
+      onLeave: (_) => onHover(false),
+      builder: (_, candidateData, __) {
+        final lit = highlight || candidateData.isNotEmpty;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          width: lit ? 48 : 16,
+          height: 155,
+          margin: EdgeInsets.only(right: lit ? 4 : 0),
+          alignment: Alignment.center,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            width: lit ? 4 : 2,
+            height: lit ? 120 : 40,
+            decoration: BoxDecoration(
+              color: lit ? color : color.withValues(alpha: 0.25),
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -506,7 +1255,6 @@ class _TotalBalanceHero extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          // ── Top row: label + account counter ───────────────────────
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -525,8 +1273,6 @@ class _TotalBalanceHero extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
-
-          // ── Bottom row: big balance + income | expense ──────────────
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -607,102 +1353,15 @@ class _IncomeExpenseCompact extends StatelessWidget {
   }
 }
 
-// ── Category carousel ──────────────────────────────────────────────────────────
+// ── Account card (inert) ───────────────────────────────────────────────────────
+//
+// Pure visual card with zero gesture handling. Used in reorder mode as the
+// LongPressDraggable child/feedback/ghost so there is no gesture conflict
+// with the AnimationController inside _AccountCard.
 
-class _AccountCategoryCarousel extends StatelessWidget {
-  final String type;
-  final List<Account> accounts;
-  final void Function(Account) onTap;
-  final void Function(Account) onLongPress;
-  final void Function(Account) onDelete;
-
-  const _AccountCategoryCarousel({
-    required this.type,
-    required this.accounts,
-    required this.onTap,
-    required this.onLongPress,
-    required this.onDelete,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final typeColor = _typeColors[type] ?? theme.colorScheme.primary;
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Section header — number badge removed
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: typeColor.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(_typeIcons[type] ?? Icons.wallet,
-                      color: typeColor, size: 15),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  _typeLabels[type] ?? type,
-                  style: theme.textTheme.titleSmall
-                      ?.copyWith(fontWeight: FontWeight.bold),
-                ),
-                // Count badge removed per design request
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          // Carousel
-          SizedBox(
-            height: 172,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              cacheExtent: 520,
-              itemCount: accounts.length,
-              itemBuilder: (_, i) {
-                final a = accounts[i];
-                return Padding(
-                  padding:
-                      EdgeInsets.only(right: i < accounts.length - 1 ? 14 : 0),
-                  child: _AccountCard(
-                    account: a,
-                    onTap: () => onTap(a),
-                    onLongPress: () => onLongPress(a),
-                    onDelete: () => onDelete(a),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Account card ───────────────────────────────────────────────────────────────
-
-class _AccountCard extends StatelessWidget {
+class _AccountCardInert extends StatelessWidget {
   final Account account;
-  final VoidCallback onTap;
-  final VoidCallback onLongPress;
-  final VoidCallback onDelete;
-
-  const _AccountCard({
-    required this.account,
-    required this.onTap,
-    required this.onLongPress,
-    required this.onDelete,
-  });
+  const _AccountCardInert({required this.account});
 
   BorderRadius _borderRadius() {
     switch (account.type) {
@@ -743,7 +1402,6 @@ class _AccountCard extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          // Decorative circles
           Positioned(
             right: -22,
             top: -22,
@@ -768,34 +1426,14 @@ class _AccountCard extends StatelessWidget {
               ),
             ),
           ),
-          // Delete button — pinned top-right, independent of text layout
-          Positioned(
-            top: 12,
-            right: 12,
-            child: GestureDetector(
-              onTap: onDelete,
-              child: Container(
-                width: 26,
-                height: 26,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(7),
-                ),
-                child: const Icon(Icons.delete_outline,
-                    color: Colors.white70, size: 15),
-              ),
-            ),
-          ),
-          // Card body — name directly above balance, anchored to bottom-left
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                // Name sits directly above the balance number
                 Padding(
-                  padding: const EdgeInsets.only(right: 36),
+                  padding: const EdgeInsets.only(right: 8),
                   child: Text(
                     account.name,
                     style: const TextStyle(
@@ -846,6 +1484,231 @@ class _AccountCard extends StatelessWidget {
     );
 
     if (_isEwallet) {
+      card = ClipPath(clipper: _OctagonClipper(), child: card);
+    }
+    return card;
+  }
+}
+
+// ── Account card ───────────────────────────────────────────────────────────────
+//
+// Tap      → view detail
+// Hold 4 s → open edit modal
+// Drag     → handled by LongPressDraggable in reorder mode (uses _AccountCardInert)
+
+class _AccountCard extends StatefulWidget {
+  final Account account;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress; // fires after 4-second hold
+  final VoidCallback onDelete;
+
+  const _AccountCard({
+    super.key,
+    required this.account,
+    required this.onTap,
+    required this.onLongPress,
+    required this.onDelete,
+  });
+
+  @override
+  State<_AccountCard> createState() => _AccountCardState();
+}
+
+class _AccountCardState extends State<_AccountCard>
+    with SingleTickerProviderStateMixin {
+  bool _holding = false;
+  late AnimationController _progressCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _progressCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 4000),
+    )..addStatusListener((s) {
+        if (s == AnimationStatus.completed && _holding) {
+          _holding = false;
+          HapticFeedback.heavyImpact();
+          widget.onLongPress();
+          _progressCtrl.reset();
+        }
+      });
+  }
+
+  @override
+  void dispose() {
+    _progressCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onPressStart() {
+    setState(() => _holding = true);
+    _progressCtrl.forward(from: 0);
+  }
+
+  void _onPressEnd() {
+    if (_holding) {
+      setState(() => _holding = false);
+      _progressCtrl.reset();
+    }
+  }
+
+  BorderRadius _borderRadius() {
+    switch (widget.account.type) {
+      case 'cash':
+        return BorderRadius.zero;
+      case 'e-wallet':
+        return BorderRadius.circular(24);
+      default:
+        return BorderRadius.circular(18);
+    }
+  }
+
+  bool get _isEwallet => widget.account.type == 'e-wallet';
+
+  @override
+  Widget build(BuildContext context) {
+    final gradients = _typeGradients[widget.account.type] ??
+        [const Color(0xFF6366F1), const Color(0xFF818CF8)];
+    final br = _borderRadius();
+
+    Widget card = Container(
+      width: 255,
+      height: 155,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: gradients,
+        ),
+        borderRadius: _isEwallet ? null : br,
+        boxShadow: [
+          BoxShadow(
+            color: gradients[0].withValues(alpha: 0.38),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          // Decorative circles
+          Positioned(
+            right: -22,
+            top: -22,
+            child: Container(
+              width: 100,
+              height: 100,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.09),
+              ),
+            ),
+          ),
+          Positioned(
+            left: -10,
+            bottom: -22,
+            child: Container(
+              width: 75,
+              height: 75,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.06),
+              ),
+            ),
+          ),
+          // 4-second hold progress arc along the card border
+          if (_holding)
+            Positioned.fill(
+              child: AnimatedBuilder(
+                animation: _progressCtrl,
+                builder: (_, __) => CustomPaint(
+                  painter: _HoldProgressPainter(
+                    progress: _progressCtrl.value,
+                    color: Colors.white,
+                    borderRadius: br,
+                    isEwallet: _isEwallet,
+                  ),
+                ),
+              ),
+            ),
+          // Delete button
+          Positioned(
+            top: 12,
+            right: 12,
+            child: GestureDetector(
+              onTap: widget.onDelete,
+              child: Container(
+                width: 26,
+                height: 26,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: const Icon(Icons.delete_outline,
+                    color: Colors.white70, size: 15),
+              ),
+            ),
+          ),
+          // Card body
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 36),
+                  child: Text(
+                    widget.account.name,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 0.2,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '₱ ${_fmt(widget.account.balance)}',
+                  style: TextStyle(
+                    color: widget.account.balance >= 0
+                        ? Colors.white
+                        : Colors.red.shade200,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    widget.account.category.toUpperCase(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 8,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (_isEwallet) {
       card = ClipPath(
         clipper: _OctagonClipper(),
         child: card,
@@ -853,11 +1716,67 @@ class _AccountCard extends StatelessWidget {
     }
 
     return GestureDetector(
-      onTap: onTap,
-      onLongPress: onLongPress,
+      onTap: widget.onTap,
+      onLongPressStart: (_) => _onPressStart(),
+      onLongPressEnd: (_) => _onPressEnd(),
+      onLongPressCancel: _onPressEnd,
       child: card,
     );
   }
+}
+
+// ── Hold progress painter ──────────────────────────────────────────────────────
+//
+// Draws a sweeping white arc around the card edge to show 4-second hold progress.
+
+class _HoldProgressPainter extends CustomPainter {
+  final double progress;
+  final Color color;
+  final BorderRadius borderRadius;
+  final bool isEwallet;
+
+  const _HoldProgressPainter({
+    required this.progress,
+    required this.color,
+    required this.borderRadius,
+    required this.isEwallet,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color.withValues(alpha: 0.85)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+
+    final rect = Rect.fromLTWH(1.5, 1.5, size.width - 3, size.height - 3);
+    final path = Path();
+
+    if (isEwallet) {
+      const cut = 22.0;
+      path
+        ..moveTo(cut, 1.5)
+        ..lineTo(size.width - cut, 1.5)
+        ..lineTo(size.width - 1.5, cut)
+        ..lineTo(size.width - 1.5, size.height - cut)
+        ..lineTo(size.width - cut, size.height - 1.5)
+        ..lineTo(cut, size.height - 1.5)
+        ..lineTo(1.5, size.height - cut)
+        ..lineTo(1.5, cut)
+        ..close();
+    } else {
+      final r = borderRadius.topLeft.x;
+      path.addRRect(RRect.fromRectAndRadius(rect, Radius.circular(r)));
+    }
+
+    final pathMetrics = path.computeMetrics().first;
+    final drawn = pathMetrics.extractPath(0, pathMetrics.length * progress);
+    canvas.drawPath(drawn, paint);
+  }
+
+  @override
+  bool shouldRepaint(_HoldProgressPainter old) => old.progress != progress;
 }
 
 class _OctagonClipper extends CustomClipper<Path> {
