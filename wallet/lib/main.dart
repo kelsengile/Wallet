@@ -98,89 +98,7 @@ class _WalletHomePageState extends State<WalletHomePage> {
         body: Column(
           children: [
             // ── Top nav bar ─────────────────────────────────────────────────
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              decoration: BoxDecoration(
-                gradient: isAccountsTab
-                    ? LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          theme.colorScheme.primary,
-                          theme.colorScheme.tertiary,
-                        ],
-                      )
-                    : null,
-                color: isAccountsTab ? null : theme.colorScheme.surface,
-              ),
-              padding: EdgeInsets.only(
-                top: MediaQuery.of(context).padding.top,
-                left: 8,
-                right: 8,
-                bottom: 0,
-              ),
-              child: Row(
-                children: [
-                  Builder(
-                    builder: (ctx) => IconButton(
-                      icon: Icon(
-                        Icons.menu,
-                        color: isAccountsTab ? Colors.white : null,
-                      ),
-                      onPressed: () => Scaffold.of(ctx).openDrawer(),
-                      tooltip: 'Menu',
-                    ),
-                  ),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: isAccountsTab
-                          ? Colors.white.withValues(alpha: 0.2)
-                          : theme.colorScheme.primaryContainer,
-                      shape: BoxShape.circle,
-                    ),
-                    padding: const EdgeInsets.all(6),
-                    child: Icon(
-                      Icons.account_balance_wallet,
-                      size: 18,
-                      color: isAccountsTab
-                          ? Colors.white
-                          : theme.colorScheme.onPrimaryContainer,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Wallet',
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: isAccountsTab ? Colors.white : null,
-                        ),
-                      ),
-                      Text(
-                        'Manage your money',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: isAccountsTab
-                              ? Colors.white70
-                              : theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    icon: Icon(
-                      Icons.search,
-                      color: isAccountsTab ? Colors.white : null,
-                    ),
-                    onPressed: () {},
-                    tooltip: 'Search',
-                  ),
-                ],
-              ),
-            ),
+            _TopNavBar(isAccountsTab: isAccountsTab),
 
             // ── Swipeable page content ──────────────────────────────────────
             Expanded(
@@ -223,6 +141,112 @@ class _WalletHomePageState extends State<WalletHomePage> {
               icon: Icon(Icons.person_outline),
               selectedIcon: Icon(Icons.person),
               label: 'Profile',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Top nav bar ────────────────────────────────────────────────────────────────
+//
+// Extracted into its own StatelessWidget so that keyboard-triggered
+// MediaQuery viewInsets changes (which cause WalletHomePage to rebuild)
+// do NOT force an expensive AnimatedContainer + gradient repaint.
+// The widget is cheap to diff; Flutter skips its subtree when props are equal.
+
+class _TopNavBar extends StatelessWidget {
+  final bool isAccountsTab;
+  const _TopNavBar({required this.isAccountsTab});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    // Read only the top padding — not viewInsets — so the keyboard opening
+    // on a different page does not cause this widget to repaint.
+    final topPadding = MediaQuery.paddingOf(context).top;
+
+    return RepaintBoundary(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        decoration: BoxDecoration(
+          gradient: isAccountsTab
+              ? LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    theme.colorScheme.primary,
+                    theme.colorScheme.tertiary,
+                  ],
+                )
+              : null,
+          color: isAccountsTab ? null : theme.colorScheme.surface,
+        ),
+        padding: EdgeInsets.only(
+          top: topPadding,
+          left: 8,
+          right: 8,
+          bottom: 0,
+        ),
+        child: Row(
+          children: [
+            Builder(
+              builder: (ctx) => IconButton(
+                icon: Icon(
+                  Icons.menu,
+                  color: isAccountsTab ? Colors.white : null,
+                ),
+                onPressed: () => Scaffold.of(ctx).openDrawer(),
+                tooltip: 'Menu',
+              ),
+            ),
+            Container(
+              decoration: BoxDecoration(
+                color: isAccountsTab
+                    ? Colors.white.withValues(alpha: 0.2)
+                    : theme.colorScheme.primaryContainer,
+                shape: BoxShape.circle,
+              ),
+              padding: const EdgeInsets.all(6),
+              child: Icon(
+                Icons.account_balance_wallet,
+                size: 18,
+                color: isAccountsTab
+                    ? Colors.white
+                    : theme.colorScheme.onPrimaryContainer,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Wallet',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: isAccountsTab ? Colors.white : null,
+                  ),
+                ),
+                Text(
+                  'Manage your money',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: isAccountsTab
+                        ? Colors.white70
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+            const Spacer(),
+            IconButton(
+              icon: Icon(
+                Icons.search,
+                color: isAccountsTab ? Colors.white : null,
+              ),
+              onPressed: () {},
+              tooltip: 'Search',
             ),
           ],
         ),
