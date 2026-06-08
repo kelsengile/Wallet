@@ -151,13 +151,6 @@ class _AccountsPageState extends State<AccountsPage> {
   }
 
   void _showAddAccountDialog({Account? existing}) {
-    final nameCtrl = TextEditingController(text: existing?.name ?? '');
-    final balanceCtrl = TextEditingController(
-      text: existing != null ? existing.balance.toStringAsFixed(2) : '',
-    );
-    String selectedType = existing?.type ?? 'cash';
-    String selectedCategory = existing?.category ?? 'personal';
-
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -165,194 +158,20 @@ class _AccountsPageState extends State<AccountsPage> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS) => SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(
-              20, 16, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Handle bar
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: Theme.of(ctx).colorScheme.outlineVariant,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              Text(
-                existing != null ? 'Edit Account' : 'New Account',
-                style: Theme.of(ctx)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 20),
-
-              // Name
-              TextField(
-                controller: nameCtrl,
-                textCapitalization: TextCapitalization.words,
-                decoration: const InputDecoration(
-                  labelText: 'Account Name',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.label_outline),
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              // Initial balance (add only)
-              if (existing == null) ...[
-                TextField(
-                  controller: balanceCtrl,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))
-                  ],
-                  decoration: const InputDecoration(
-                    labelText: 'Initial Balance (₱)',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.payments_outlined),
-                  ),
-                ),
-                const SizedBox(height: 12),
-              ],
-
-              // Account type grid
-              Text('Account Type', style: Theme.of(ctx).textTheme.labelLarge),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: _allTypes.map((t) {
-                  final selected = selectedType == t;
-                  final color = _typeColors[t]!;
-                  return GestureDetector(
-                    onTap: () => setS(() => selectedType = t),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      width: (MediaQuery.of(ctx).size.width - 40 - 24) / 4,
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      decoration: BoxDecoration(
-                        color: selected
-                            ? color.withValues(alpha: 0.15)
-                            : Theme.of(ctx).colorScheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: selected ? color : Colors.transparent,
-                          width: 2,
-                        ),
-                      ),
-                      child: Column(
-                        children: [
-                          Icon(_typeIcons[t],
-                              color: selected ? color : null, size: 20),
-                          const SizedBox(height: 3),
-                          Text(
-                            _typeLabels[t]!,
-                            style: TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.bold,
-                              color: selected ? color : null,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 16),
-
-              // Account category picker
-              Text('Category', style: Theme.of(ctx).textTheme.labelLarge),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: kAccountCategories.map((cat) {
-                  final selected = selectedCategory == cat;
-                  final color = Theme.of(ctx).colorScheme.primary;
-                  return GestureDetector(
-                    onTap: () => setS(() => selectedCategory = cat),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: selected
-                            ? color.withValues(alpha: 0.12)
-                            : Theme.of(ctx).colorScheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: selected ? color : Colors.transparent,
-                          width: 2,
-                        ),
-                      ),
-                      child: Text(
-                        _capitalize(cat),
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: selected ? color : null,
-                        ),
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 20),
-
-              // Submit
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  icon: Icon(existing != null ? Icons.save : Icons.add),
-                  label:
-                      Text(existing != null ? 'Save Changes' : 'Add Account'),
-                  style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14)),
-                  onPressed: () async {
-                    if (nameCtrl.text.trim().isEmpty) return;
-                    if (existing != null) {
-                      await _db.updateAccount(existing.copyWith(
-                        name: nameCtrl.text.trim(),
-                        type: selectedType,
-                        category: selectedCategory,
-                        colorHex: _typeColorHexMap[selectedType] ?? '#6366F1',
-                      ));
-                    } else {
-                      await _db.insertAccount(Account(
-                        name: nameCtrl.text.trim(),
-                        balance:
-                            double.tryParse(balanceCtrl.text.trim()) ?? 0.0,
-                        type: selectedType,
-                        category: selectedCategory,
-                        colorHex: _typeColorHexMap[selectedType] ?? '#6366F1',
-                        icon: 'wallet',
-                      ));
-                    }
-                    if (ctx.mounted) Navigator.pop(ctx);
-                    _loadAccounts();
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
+      builder: (ctx) => _AccountFormSheet(
+        existing: existing,
+        onSave: (account) async {
+          if (existing != null) {
+            await _db.updateAccount(account);
+          } else {
+            await _db.insertAccount(account);
+          }
+          if (ctx.mounted) Navigator.pop(ctx);
+          _loadAccounts();
+        },
       ),
     );
   }
-
-  String _capitalize(String s) =>
-      s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
 
   Future<void> _deleteAccount(Account account) async {
     final confirmed = await showDialog<bool>(
@@ -1520,6 +1339,243 @@ class _AccountCard extends StatelessWidget {
   }
 }
 
+// ── Account add/edit form sheet ────────────────────────────────────────────────
+//
+// Extracted from the inline StatefulBuilder that used to live inside
+// _showAddAccountDialog.  The key performance benefit: TextFields now have
+// their own element subtree, so typing a character only rebuilds the
+// TextField itself — NOT the Wrap of AnimatedContainer type/category tiles.
+// Previously every keystroke called setS() on the whole bottom-sheet tree,
+// forcing all 7 type tiles and 7 category chips to re-layout.
+
+class _AccountFormSheet extends StatefulWidget {
+  final Account? existing;
+  final Future<void> Function(Account) onSave;
+
+  const _AccountFormSheet({this.existing, required this.onSave});
+
+  @override
+  State<_AccountFormSheet> createState() => _AccountFormSheetState();
+}
+
+class _AccountFormSheetState extends State<_AccountFormSheet> {
+  late final TextEditingController _nameCtrl;
+  late final TextEditingController _balanceCtrl;
+  late String _selectedType;
+  late String _selectedCategory;
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.existing;
+    _nameCtrl = TextEditingController(text: e?.name ?? '');
+    _balanceCtrl = TextEditingController(
+      text: e != null ? e.balance.toStringAsFixed(2) : '',
+    );
+    _selectedType = e?.type ?? 'cash';
+    _selectedCategory = e?.category ?? 'personal';
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _balanceCtrl.dispose();
+    super.dispose();
+  }
+
+  String _capitalize(String s) =>
+      s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isEdit = widget.existing != null;
+
+    return SingleChildScrollView(
+      // Use viewInsets here (inside the sheet) rather than outside — this
+      // scopes the MediaQuery dependency to only this scroll view.
+      padding: EdgeInsets.fromLTRB(
+        20,
+        16,
+        20,
+        MediaQuery.viewInsetsOf(context).bottom + 24,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Handle bar
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.outlineVariant,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          Text(
+            isEdit ? 'Edit Account' : 'New Account',
+            style: theme.textTheme.titleLarge
+                ?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 20),
+
+          // ── Name field — isolated: typing here only rebuilds this widget ──
+          TextField(
+            controller: _nameCtrl,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(
+              labelText: 'Account Name',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.label_outline),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Initial balance (add only)
+          if (!isEdit) ...[
+            TextField(
+              controller: _balanceCtrl,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))
+              ],
+              decoration: const InputDecoration(
+                labelText: 'Initial Balance (₱)',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.payments_outlined),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+
+          // ── Type picker — only rebuilds when _selectedType changes ────────
+          Text('Account Type', style: theme.textTheme.labelLarge),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _allTypes.map((t) {
+              final selected = _selectedType == t;
+              final color = _typeColors[t]!;
+              return GestureDetector(
+                onTap: () => setState(() => _selectedType = t),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  width: (MediaQuery.sizeOf(context).width - 40 - 24) / 4,
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? color.withValues(alpha: 0.15)
+                        : theme.colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: selected ? color : Colors.transparent,
+                      width: 2,
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Icon(_typeIcons[t],
+                          color: selected ? color : null, size: 20),
+                      const SizedBox(height: 3),
+                      Text(
+                        _typeLabels[t]!,
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                          color: selected ? color : null,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 16),
+
+          // ── Category picker — same isolation benefit ───────────────────────
+          Text('Category', style: theme.textTheme.labelLarge),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: kAccountCategories.map((cat) {
+              final selected = _selectedCategory == cat;
+              final color = theme.colorScheme.primary;
+              return GestureDetector(
+                onTap: () => setState(() => _selectedCategory = cat),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? color.withValues(alpha: 0.12)
+                        : theme.colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: selected ? color : Colors.transparent,
+                      width: 2,
+                    ),
+                  ),
+                  child: Text(
+                    _capitalize(cat),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: selected ? color : null,
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 20),
+
+          // Submit
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              icon: Icon(isEdit ? Icons.save : Icons.add),
+              label: Text(isEdit ? 'Save Changes' : 'Add Account'),
+              style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14)),
+              onPressed: () async {
+                if (_nameCtrl.text.trim().isEmpty) return;
+                final account = isEdit
+                    ? widget.existing!.copyWith(
+                        name: _nameCtrl.text.trim(),
+                        type: _selectedType,
+                        category: _selectedCategory,
+                        colorHex: _typeColorHexMap[_selectedType] ?? '#6366F1',
+                      )
+                    : Account(
+                        name: _nameCtrl.text.trim(),
+                        balance:
+                            double.tryParse(_balanceCtrl.text.trim()) ?? 0.0,
+                        type: _selectedType,
+                        category: _selectedCategory,
+                        colorHex: _typeColorHexMap[_selectedType] ?? '#6366F1',
+                        icon: 'wallet',
+                      );
+                await widget.onSave(account);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Octagon clipper ────────────────────────────────────────────────────────────
 class _OctagonClipper extends CustomClipper<Path> {
   @override
   Path getClip(Size size) {
