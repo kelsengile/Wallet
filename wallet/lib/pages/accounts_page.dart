@@ -511,7 +511,7 @@ class _AccountsPageState extends State<AccountsPage> {
                         style: theme.textTheme.titleSmall
                             ?.copyWith(color: theme.colorScheme.outline)),
                     const SizedBox(height: 4),
-                    Text('Tap "Add" to create your first account',
+                    Text('Tap " + " to create your first account',
                         style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.outlineVariant)),
                   ],
