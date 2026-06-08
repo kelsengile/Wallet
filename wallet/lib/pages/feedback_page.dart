@@ -77,7 +77,12 @@ class _FormView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        16,
+        16,
+        MediaQuery.viewInsetsOf(context).bottom + 16,
+      ),
       children: [
         Text(
           'We\'d love to hear from you!',
