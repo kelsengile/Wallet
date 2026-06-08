@@ -11,10 +11,10 @@ class HistoryPage extends StatefulWidget {
   const HistoryPage({super.key});
 
   @override
-  State<HistoryPage> createState() => _HistoryPageState();
+  State<HistoryPage> createState() => HistoryPageState();
 }
 
-class _HistoryPageState extends State<HistoryPage> {
+class HistoryPageState extends State<HistoryPage> {
   final _db = DatabaseHelper.instance;
   List<WalletTransaction> _transactions = [];
   List<Account> _accounts = [];
@@ -176,7 +176,7 @@ class _HistoryPageState extends State<HistoryPage> {
     return 'All time';
   }
 
-  Future<void> _addTransaction() async {
+  Future<void> addTransaction() async {
     final tx = await WalletTransaction.showDialog(
       context,
       accounts: _accounts,
@@ -222,11 +222,6 @@ class _HistoryPageState extends State<HistoryPage> {
                 'Transactions',
                 style: theme.textTheme.titleMedium
                     ?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              IconButton.filled(
-                onPressed: _addTransaction,
-                icon: const Icon(Icons.add),
-                tooltip: 'Add transaction',
               ),
             ],
           ),

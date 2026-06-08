@@ -41,6 +41,8 @@ class WalletHomePage extends StatefulWidget {
 class _WalletHomePageState extends State<WalletHomePage> {
   int _selectedIndex = 0;
   late final PageController _pageController;
+  final _historyKey = GlobalKey<HistoryPageState>();
+  bool _fabVisible = true;
 
   @override
   void initState() {
@@ -102,18 +104,37 @@ class _WalletHomePageState extends State<WalletHomePage> {
 
             // ── Swipeable page content ──────────────────────────────────────
             Expanded(
-              child: PageView(
-                controller: _pageController,
-                onPageChanged: _onPageChanged,
-                physics: const BouncingScrollPhysics(),
-                children: [
-                  AccountsPage(
-                    onNavigateToAnalytics: () => _onItemTapped(2),
-                  ),
-                  const HistoryPage(),
-                  const AnalyticsPage(),
-                  const ProfilePage(),
-                ],
+              child: NotificationListener<ScrollNotification>(
+                onNotification: (n) {
+                  // Only react to vertical scrolls — ignore horizontal
+                  // PageView swipe notifications entirely.
+                  if (n is ScrollUpdateNotification &&
+                      n.metrics.axis == Axis.vertical) {
+                    final delta = n.scrollDelta ?? 0;
+                    if (delta > 4 && _fabVisible) {
+                      setState(() => _fabVisible = false);
+                    } else if (delta < -4 && !_fabVisible) {
+                      setState(() => _fabVisible = true);
+                    }
+                  }
+                  return false;
+                },
+                child: PageView(
+                  controller: _pageController,
+                  onPageChanged: (i) {
+                    _onPageChanged(i);
+                    setState(() => _fabVisible = true);
+                  },
+                  physics: const BouncingScrollPhysics(),
+                  children: [
+                    AccountsPage(
+                      onNavigateToAnalytics: () => _onItemTapped(2),
+                    ),
+                    HistoryPage(key: _historyKey),
+                    const AnalyticsPage(),
+                    const ProfilePage(),
+                  ],
+                ),
               ),
             ),
           ],
@@ -143,6 +164,64 @@ class _WalletHomePageState extends State<WalletHomePage> {
               label: 'Profile',
             ),
           ],
+        ),
+        // ── FAB sits flush above the nav bar, never overlapping it ──────────
+        floatingActionButtonLocation: FloatingActionButtonLocation.endDocked,
+        floatingActionButton: AnimatedSlide(
+          offset: _fabVisible ? Offset.zero : const Offset(0, 3.0),
+          duration: const Duration(milliseconds: 360),
+          curve: Curves.easeInOutCubic,
+          child: AnimatedOpacity(
+            opacity: _fabVisible ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 300),
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 100, right: 4),
+              child: _AddTransactionFab(
+                onPressed: () => _historyKey.currentState?.addTransaction(),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Floating add-transaction button ───────────────────────────────────────────
+
+class _AddTransactionFab extends StatelessWidget {
+  final VoidCallback onPressed;
+  const _AddTransactionFab({required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    // Scale the button relative to screen width so it looks right on all sizes:
+    // phones (~360–430 dp wide) → ~52 dp; tablets → capped at 60 dp.
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final size = (screenWidth * 0.135).clamp(48.0, 60.0);
+    final iconSize = size * 0.5;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(size / 2),
+        child: Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: theme.colorScheme.primary,
+            boxShadow: [
+              BoxShadow(
+                color: theme.colorScheme.primary.withValues(alpha: 0.35),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Icon(Icons.add, color: Colors.white, size: iconSize),
         ),
       ),
     );
