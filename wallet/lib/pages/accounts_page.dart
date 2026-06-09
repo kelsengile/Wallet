@@ -1072,13 +1072,6 @@ class _AccountCardInert extends StatelessWidget {
           colors: gradients,
         ),
         borderRadius: _isEwallet ? null : br,
-        boxShadow: [
-          BoxShadow(
-            color: gradients[0].withValues(alpha: 0.38),
-            blurRadius: 14,
-            offset: const Offset(0, 6),
-          ),
-        ],
       ),
       child: Stack(
         children: [
@@ -1220,13 +1213,6 @@ class _AccountCard extends StatelessWidget {
           colors: gradients,
         ),
         borderRadius: _isEwallet ? null : br,
-        boxShadow: [
-          BoxShadow(
-            color: gradients[0].withValues(alpha: 0.38),
-            blurRadius: 14,
-            offset: const Offset(0, 6),
-          ),
-        ],
       ),
       child: Stack(
         children: [
