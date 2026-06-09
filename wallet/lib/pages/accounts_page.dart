@@ -975,7 +975,7 @@ class _TotalBalanceHero extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       _IncomeExpenseCompact(
-                        icon: Icons.arrow_downward,
+                        icon: Icons.arrow_upward,
                         amount: totalIncome,
                         color: const Color(0xFF4ADE80),
                       ),
@@ -986,7 +986,7 @@ class _TotalBalanceHero extends StatelessWidget {
                         color: Colors.white.withValues(alpha: 0.35),
                       ),
                       _IncomeExpenseCompact(
-                        icon: Icons.arrow_upward,
+                        icon: Icons.arrow_downward,
                         amount: totalExpenses,
                         color: const Color(0xFFF87171),
                       ),
@@ -1618,6 +1618,14 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
   List<Account> _allAccounts = [];
   bool _loading = true;
 
+  double get _accountIncome => _transactions
+      .where((t) => t.type == 'income')
+      .fold(0.0, (sum, t) => sum + t.amount);
+
+  double get _accountExpenses => _transactions
+      .where((t) => t.type == 'expense')
+      .fold(0.0, (sum, t) => sum + t.amount);
+
   @override
   void initState() {
     super.initState();
@@ -1728,15 +1736,45 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                     ],
                   ),
                 ),
-                Text(
-                  '₱ ${_fmt(widget.account.balance)}',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: widget.account.balance >= 0
-                        ? Colors.green.shade700
-                        : Colors.red,
-                  ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '₱ ${_fmt(widget.account.balance)}',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: widget.account.balance >= 0
+                            ? Colors.green.shade700
+                            : Colors.red,
+                      ),
+                    ),
+                    if (!_loading) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _AccountStatChip(
+                            icon: Icons.arrow_upward,
+                            amount: _accountIncome,
+                            color: Colors.green,
+                          ),
+                          Container(
+                            width: 1,
+                            height: 10,
+                            margin: const EdgeInsets.symmetric(horizontal: 6),
+                            color: theme.colorScheme.outlineVariant,
+                          ),
+                          _AccountStatChip(
+                            icon: Icons.arrow_downward,
+                            amount: _accountExpenses,
+                            color: Colors.red,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
                 ),
               ],
             ),
@@ -1812,4 +1850,37 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
 
   String _capitalize(String s) =>
       s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
+}
+
+// ── Small stacked income/expense chip used in _AccountDetailSheet header ───────
+
+class _AccountStatChip extends StatelessWidget {
+  final IconData icon;
+  final double amount;
+  final Color color;
+
+  const _AccountStatChip({
+    required this.icon,
+    required this.amount,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: color, size: 10),
+        const SizedBox(width: 3),
+        Text(
+          '₱ ${_fmt(amount)}',
+          style: TextStyle(
+            color: color,
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
 }
