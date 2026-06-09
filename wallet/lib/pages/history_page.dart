@@ -176,6 +176,9 @@ class HistoryPageState extends State<HistoryPage> {
     return 'All time';
   }
 
+  /// Called by the FAB in main.dart after it inserts a transaction directly.
+  Future<void> refresh() => _load();
+
   Future<void> addTransaction() async {
     final tx = await WalletTransaction.showDialog(
       context,
