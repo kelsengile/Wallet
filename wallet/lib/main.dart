@@ -9,6 +9,7 @@ import 'package:wallet/pages/settings_page.dart';
 import 'package:wallet/pages/category_manager_page.dart';
 import 'package:wallet/pages/faq_page.dart';
 import 'package:wallet/pages/feedback_page.dart';
+import 'package:wallet/models/transaction_model.dart';
 
 void main() {
   runApp(const MyApp());
@@ -97,43 +98,85 @@ class _WalletHomePageState extends State<WalletHomePage> {
             Navigator.pop(context);
           },
         ),
-        body: Column(
+        body: Stack(
+          clipBehavior: Clip.none,
           children: [
-            // ── Top nav bar ─────────────────────────────────────────────────
-            _TopNavBar(isAccountsTab: isAccountsTab),
+            // ── Main content ────────────────────────────────────────────────
+            Column(
+              children: [
+                // ── Top nav bar ───────────────────────────────────────────
+                _TopNavBar(isAccountsTab: isAccountsTab),
 
-            // ── Swipeable page content ──────────────────────────────────────
-            Expanded(
-              child: NotificationListener<ScrollNotification>(
-                onNotification: (n) {
-                  // Only react to vertical scrolls — ignore horizontal
-                  // PageView swipe notifications entirely.
-                  if (n is ScrollUpdateNotification &&
-                      n.metrics.axis == Axis.vertical) {
-                    final delta = n.scrollDelta ?? 0;
-                    if (delta > 4 && _fabVisible) {
-                      setState(() => _fabVisible = false);
-                    } else if (delta < -4 && !_fabVisible) {
-                      setState(() => _fabVisible = true);
-                    }
-                  }
-                  return false;
-                },
-                child: PageView(
-                  controller: _pageController,
-                  onPageChanged: (i) {
-                    _onPageChanged(i);
-                    setState(() => _fabVisible = true);
-                  },
-                  physics: const BouncingScrollPhysics(),
-                  children: [
-                    AccountsPage(
-                      onNavigateToAnalytics: () => _onItemTapped(2),
+                // ── Swipeable page content ────────────────────────────────
+                Expanded(
+                  child: NotificationListener<ScrollNotification>(
+                    onNotification: (n) {
+                      // Only react to vertical scrolls — ignore horizontal
+                      // PageView swipe notifications entirely.
+                      if (n is ScrollUpdateNotification &&
+                          n.metrics.axis == Axis.vertical) {
+                        final delta = n.scrollDelta ?? 0;
+                        if (delta > 4 && _fabVisible) {
+                          setState(() => _fabVisible = false);
+                        } else if (delta < -4 && !_fabVisible) {
+                          setState(() => _fabVisible = true);
+                        }
+                      }
+                      return false;
+                    },
+                    child: PageView(
+                      controller: _pageController,
+                      onPageChanged: (i) {
+                        _onPageChanged(i);
+                        setState(() => _fabVisible = true);
+                      },
+                      physics: const BouncingScrollPhysics(),
+                      children: [
+                        AccountsPage(
+                          onNavigateToAnalytics: () => _onItemTapped(2),
+                        ),
+                        HistoryPage(key: _historyKey),
+                        const AnalyticsPage(),
+                        const ProfilePage(),
+                      ],
                     ),
-                    HistoryPage(key: _historyKey),
-                    const AnalyticsPage(),
-                    const ProfilePage(),
-                  ],
+                  ),
+                ),
+              ],
+            ),
+
+            // ── FAB — slides DOWN into the nav bar when hidden ──────────────
+            // ClipRect confines the button to the body bounds so it visually
+            // disappears *behind* the NavigationBar rather than over it.
+            Positioned(
+              right: 16,
+              bottom: 0,
+              child: ClipRect(
+                child: AnimatedSlide(
+                  offset: _fabVisible ? Offset.zero : const Offset(0, 1.5),
+                  duration: const Duration(milliseconds: 380),
+                  curve: _fabVisible ? Curves.easeOutCubic : Curves.easeInCubic,
+                  child: AnimatedOpacity(
+                    opacity: _fabVisible ? 1.0 : 0.0,
+                    duration: const Duration(milliseconds: 260),
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: _AddTransactionFab(
+                        onPressed: () async {
+                          final accounts =
+                              await DatabaseHelper.instance.getAllAccounts();
+                          if (!context.mounted) return;
+                          final tx = await WalletTransaction.showDialog(
+                            context,
+                            accounts: accounts,
+                          );
+                          if (tx == null) return;
+                          await DatabaseHelper.instance.insertTransaction(tx);
+                          _historyKey.currentState?.refresh();
+                        },
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -164,23 +207,6 @@ class _WalletHomePageState extends State<WalletHomePage> {
               label: 'Profile',
             ),
           ],
-        ),
-        // ── FAB sits flush above the nav bar, never overlapping it ──────────
-        floatingActionButtonLocation: FloatingActionButtonLocation.endDocked,
-        floatingActionButton: AnimatedSlide(
-          offset: _fabVisible ? Offset.zero : const Offset(0, 3.0),
-          duration: const Duration(milliseconds: 360),
-          curve: Curves.easeInOutCubic,
-          child: AnimatedOpacity(
-            opacity: _fabVisible ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 300),
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 100, right: 4),
-              child: _AddTransactionFab(
-                onPressed: () => _historyKey.currentState?.addTransaction(),
-              ),
-            ),
-          ),
         ),
       ),
     );
@@ -213,13 +239,6 @@ class _AddTransactionFab extends StatelessWidget {
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: theme.colorScheme.primary,
-            boxShadow: [
-              BoxShadow(
-                color: theme.colorScheme.primary.withValues(alpha: 0.35),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
           ),
           child: Icon(Icons.add, color: Colors.white, size: iconSize),
         ),
