@@ -1602,6 +1602,7 @@ class _AccountDetailSheet extends StatefulWidget {
 class _AccountDetailSheetState extends State<_AccountDetailSheet> {
   List<WalletTransaction> _transactions = [];
   List<Account> _allAccounts = [];
+  List<WalletTransaction> _allTransferTxs = []; // for resolving transfer pairs
   bool _loading = true;
 
   double get _accountIncome => _transactions
@@ -1622,16 +1623,24 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
     final txs = await DatabaseHelper.instance
         .getTransactionsByAccount(widget.account.id!);
     final accounts = await DatabaseHelper.instance.getAllAccounts();
+    final allTxs = await DatabaseHelper.instance.getAllTransactions();
     if (mounted) {
       setState(() {
         _transactions = txs;
         _allAccounts = accounts;
+        _allTransferTxs = allTxs
+            .where((t) => t.type == 'transfer_out' || t.type == 'transfer_in')
+            .toList();
         _loading = false;
       });
     }
   }
 
   Future<void> _editTransaction(WalletTransaction existing) async {
+    if (existing.type == 'transfer_out' || existing.type == 'transfer_in') {
+      _showTransferInfo(existing);
+      return;
+    }
     final updated = await WalletTransaction.showDialog(
       context,
       accounts: _allAccounts,
@@ -1641,6 +1650,106 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
     await DatabaseHelper.instance.updateTransaction(existing, updated);
     await _load();
     widget.onTransactionChanged?.call();
+  }
+
+  void _showTransferInfo(WalletTransaction tx) {
+    const teal = Color(0xFF0D9488);
+    final isOut = tx.type == 'transfer_out';
+    final rawNote = tx.note ?? '';
+    final userNote = rawNote.replaceAll(RegExp(r'\s*__ref:[^_]+__'), '').trim();
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: teal.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      isOut ? Icons.arrow_upward : Icons.arrow_downward,
+                      color: teal,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          isOut ? 'Transfer Out' : 'Transfer In',
+                          style: theme.textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          widget.account.name,
+                          style: TextStyle(
+                              color: theme.colorScheme.outline, fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    '${isOut ? '−' : '+'}₱${_fmt(tx.amount)}',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: isOut ? Colors.red : teal,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (userNote.isNotEmpty)
+                ListTile(
+                  leading: const Icon(Icons.note_outlined),
+                  title: const Text('Note'),
+                  subtitle: Text(userNote),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ListTile(
+                leading: const Icon(Icons.calendar_today_outlined),
+                title: const Text('Date'),
+                subtitle: Text(
+                    tx.date.length >= 10 ? tx.date.substring(0, 10) : tx.date),
+                contentPadding: EdgeInsets.zero,
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Close'),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -1789,6 +1898,71 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                           itemBuilder: (_, i) {
                             final tx = _transactions[i];
                             final isIncome = tx.type == 'income';
+                            final isTransferOut = tx.type == 'transfer_out';
+                            final isTransferIn = tx.type == 'transfer_in';
+                            final isTransfer = isTransferOut || isTransferIn;
+                            const teal = Color(0xFF0D9488);
+                            final rowColor = isTransfer
+                                ? teal
+                                : isIncome
+                                    ? Colors.green
+                                    : Colors.red;
+                            final bgColor = isTransfer
+                                ? const Color(0xFFCCFBF1)
+                                : isIncome
+                                    ? Colors.green.shade100
+                                    : Colors.red.shade100;
+                            final amountPrefix = isTransferOut
+                                ? '−'
+                                : isTransferIn
+                                    ? '+'
+                                    : isIncome
+                                        ? '+'
+                                        : '−';
+
+                            // For transfers: find the paired account
+                            String subtitle =
+                                '${tx.category} • ${tx.date.substring(0, 10)}';
+                            if (isTransfer) {
+                              // Extract ref from note to find paired leg
+                              final refMatch = RegExp(r'__ref:([^_]+)__')
+                                  .firstMatch(tx.note ?? '');
+                              final ref = refMatch?.group(1);
+                              if (ref != null) {
+                                // Search all transfer transactions for the paired leg
+                                final paired = _allTransferTxs.firstWhere(
+                                  (t) =>
+                                      t.id != tx.id &&
+                                      (t.type == 'transfer_out' ||
+                                          t.type == 'transfer_in') &&
+                                      (t.note?.contains('__ref:$ref') ?? false),
+                                  orElse: () => tx,
+                                );
+                                // If we didn't find the pair in same account, search all accounts
+                                final pairedAccount = _allAccounts.firstWhere(
+                                  (a) => a.id == paired.accountId,
+                                  orElse: () => Account(
+                                      name: 'Unknown',
+                                      balance: 0,
+                                      type: '',
+                                      colorHex: '',
+                                      icon: ''),
+                                );
+                                final thisAccount = widget.account.name;
+                                if (isTransferOut) {
+                                  subtitle =
+                                      '$thisAccount → ${pairedAccount.name}';
+                                } else {
+                                  subtitle =
+                                      '${pairedAccount.name} → $thisAccount';
+                                }
+                              } else {
+                                subtitle = isTransferOut
+                                    ? 'Transfer Out'
+                                    : 'Transfer In';
+                              }
+                            }
+
                             return ListTile(
                               onTap: () => _editTransaction(tx),
                               shape: RoundedRectangleBorder(
@@ -1797,31 +1971,37 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                                   .colorScheme.surfaceContainerHighest
                                   .withValues(alpha: 0.5),
                               leading: CircleAvatar(
-                                backgroundColor: isIncome
-                                    ? Colors.green.shade100
-                                    : Colors.red.shade100,
+                                backgroundColor: bgColor,
                                 radius: 18,
                                 child: Icon(
-                                  isIncome
-                                      ? Icons.arrow_downward
-                                      : Icons.arrow_upward,
-                                  color: isIncome ? Colors.green : Colors.red,
+                                  isTransfer
+                                      ? (isTransferOut
+                                          ? Icons.arrow_upward
+                                          : Icons.arrow_downward)
+                                      : (isIncome
+                                          ? Icons.arrow_downward
+                                          : Icons.arrow_upward),
+                                  color: rowColor,
                                   size: 16,
                                 ),
                               ),
-                              title: Text(tx.title,
+                              title: Text(
+                                  isTransfer
+                                      ? (isTransferOut
+                                          ? 'Transfer Out'
+                                          : 'Transfer In')
+                                      : tx.title,
                                   style: const TextStyle(
                                       fontWeight: FontWeight.w600,
                                       fontSize: 14)),
-                              subtitle: Text(
-                                  '${tx.category} • ${tx.date.substring(0, 10)}',
+                              subtitle: Text(subtitle,
                                   style: const TextStyle(fontSize: 12)),
                               trailing: Text(
-                                '${isIncome ? '+' : '-'}₱${_fmt(tx.amount)}',
+                                '$amountPrefix₱${_fmt(tx.amount)}',
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 13,
-                                  color: isIncome ? Colors.green : Colors.red,
+                                  color: rowColor,
                                 ),
                               ),
                             );
