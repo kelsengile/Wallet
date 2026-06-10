@@ -273,37 +273,96 @@ class _SpeedDialFab extends StatefulWidget {
 }
 
 class _SpeedDialFabState extends State<_SpeedDialFab>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   bool _open = false;
+
+  // Controls expand/collapse of mini buttons
   late final AnimationController _ctrl;
-  late final Animation<double> _expandAnim;
+
+  // Controls the double-spin of the + icon (0 → 1.0 = two full turns)
+  late final AnimationController _spinCtrl;
+  late final Animation<double> _spinAnim;
+
+  // Per-button staggered slide+fade animations (Transfer=0, Expense=1, Income=2)
+  late final List<AnimationController> _btnCtrls;
+  late final List<Animation<double>> _btnSlide; // 0=at FAB, 1=final position
+  late final List<Animation<double>> _btnFade;
 
   @override
   void initState() {
     super.initState();
+
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 220),
+      duration: const Duration(milliseconds: 300),
     );
-    _expandAnim = CurvedAnimation(parent: _ctrl, curve: Curves.easeOutBack);
+
+    // Spin: 2 full turns over 420 ms
+    _spinCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+    );
+    _spinAnim = Tween<double>(begin: 0, end: 2.0).animate(
+      CurvedAnimation(parent: _spinCtrl, curve: Curves.easeInOut),
+    );
+
+    // Three staggered controllers – each 280 ms, triggered with delay
+    _btnCtrls = List.generate(
+      3,
+      (_) => AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 280),
+      ),
+    );
+
+    // Slide: 0 = sitting right on top of the FAB (no offset), 1 = final spot.
+    // We animate the *spacing* rather than absolute offset by using a
+    // SizeTransition on each gap – simpler and more reliable.
+    _btnSlide = _btnCtrls
+        .map((c) => CurvedAnimation(parent: c, curve: Curves.easeOutBack))
+        .toList();
+
+    _btnFade = _btnCtrls
+        .map((c) => CurvedAnimation(parent: c, curve: Curves.easeOut))
+        .toList();
   }
 
   @override
   void dispose() {
     _ctrl.dispose();
+    _spinCtrl.dispose();
+    for (final c in _btnCtrls) {
+      c.dispose();
+    }
     super.dispose();
   }
 
-  void _toggle() {
-    setState(() => _open = !_open);
-    _open ? _ctrl.forward() : _ctrl.reverse();
+  Future<void> _toggle() async {
+    // Kick off the double-spin every time the FAB is tapped
+    _spinCtrl.forward(from: 0);
+
+    if (!_open) {
+      setState(() => _open = true);
+      _ctrl.forward();
+      // Stagger: Income first (closest), then Expense, then Transfer
+      // Indices: 0=Transfer, 1=Expense, 2=Income → reverse stagger order
+      for (int i = 2; i >= 0; i--) {
+        _btnCtrls[i].forward(from: 0);
+        await Future.delayed(const Duration(milliseconds: 55));
+      }
+    } else {
+      _close();
+    }
   }
 
-  void _close() {
-    if (_open) {
-      setState(() => _open = false);
-      _ctrl.reverse();
+  Future<void> _close() async {
+    if (!_open) return;
+    setState(() => _open = false);
+    // Collapse all at once (no stagger on close — snappy feel)
+    for (final c in _btnCtrls) {
+      c.reverse();
     }
+    _ctrl.reverse();
   }
 
   Widget _miniButton({
@@ -311,15 +370,20 @@ class _SpeedDialFabState extends State<_SpeedDialFab>
     required String label,
     required Color color,
     required VoidCallback onTap,
+    required int index, // 0=Transfer, 1=Expense, 2=Income
   }) {
-    return ScaleTransition(
-      scale: _expandAnim,
+    // SizeTransition makes the button (and its spacing) grow from 0 height,
+    // giving the illusion it bursts upward out of the main FAB.
+    return SizeTransition(
+      sizeFactor: _btnSlide[index],
+      axisAlignment: 1.0, // anchor at bottom (near the FAB)
       child: FadeTransition(
-        opacity: _expandAnim,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            GestureDetector(
+        opacity: _btnFade[index],
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: GestureDetector(
               onTap: () {
                 _close();
                 onTap();
@@ -334,7 +398,7 @@ class _SpeedDialFabState extends State<_SpeedDialFab>
                 child: Icon(icon, color: Colors.white, size: 20),
               ),
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -347,60 +411,61 @@ class _SpeedDialFabState extends State<_SpeedDialFab>
     final size = (screenWidth * 0.135).clamp(48.0, 60.0);
     final iconSize = size * 0.5;
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        // Mini button: Transfer
-        _miniButton(
-          icon: Icons.swap_horiz,
-          label: 'Transfer',
-          color: const Color(0xFF0D9488),
-          onTap: widget.onTransfer,
-        ),
-        const SizedBox(height: 10),
-        // Mini button: Expense
-        _miniButton(
-          icon: Icons.arrow_upward,
-          label: 'Expense',
-          color: Colors.red,
-          onTap: widget.onAddExpense,
-        ),
-        const SizedBox(height: 10),
-        // Mini button: Income
-        _miniButton(
-          icon: Icons.arrow_downward,
-          label: 'Income',
-          color: Colors.green,
-          onTap: widget.onAddIncome,
-        ),
-        const SizedBox(height: 10),
-        // Main FAB
-        GestureDetector(
-          onTap: _toggle,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 220),
-            width: size,
-            height: size,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _open
-                  ? theme.colorScheme.surfaceContainerHighest
-                  : theme.colorScheme.primary,
-            ),
-            child: AnimatedRotation(
-              turns: _open ? 0.125 : 0,
+    // Wrap everything in a TapRegion so any tap outside this widget closes it.
+    return TapRegion(
+      onTapOutside: (_) => _close(),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          // Mini buttons burst upward from the FAB (Transfer topmost)
+          _miniButton(
+            icon: Icons.swap_horiz,
+            label: 'Transfer',
+            color: const Color(0xFF0D9488),
+            onTap: widget.onTransfer,
+            index: 0,
+          ),
+          _miniButton(
+            icon: Icons.arrow_upward,
+            label: 'Expense',
+            color: Colors.red,
+            onTap: widget.onAddExpense,
+            index: 1,
+          ),
+          _miniButton(
+            icon: Icons.arrow_downward,
+            label: 'Income',
+            color: Colors.green,
+            onTap: widget.onAddIncome,
+            index: 2,
+          ),
+          // Main FAB
+          GestureDetector(
+            onTap: _toggle,
+            child: AnimatedContainer(
               duration: const Duration(milliseconds: 220),
-              child: Icon(
-                Icons.add,
-                color:
-                    _open ? theme.colorScheme.onSurfaceVariant : Colors.white,
-                size: iconSize,
+              width: size,
+              height: size,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _open
+                    ? theme.colorScheme.surfaceContainerHighest
+                    : theme.colorScheme.primary,
+              ),
+              child: RotationTransition(
+                turns: _spinAnim,
+                child: Icon(
+                  Icons.add,
+                  color:
+                      _open ? theme.colorScheme.onSurfaceVariant : Colors.white,
+                  size: iconSize,
+                ),
               ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
