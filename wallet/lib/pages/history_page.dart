@@ -432,7 +432,17 @@ class HistoryPageState extends State<HistoryPage> {
       // Track refs already emitted so we skip the second leg.
       final emittedRefs = <String>{};
 
+      // Pre-build index of untagged transfer_in legs for fallback pairing
+      final unmatchedIns = <WalletTransaction>[
+        ...dayTxs.where(
+          (t) => t.type == 'transfer_in' && _extractRef(t.note) == null,
+        )
+      ];
+      final skippedIds = <int>{};
+
       for (final tx in dayTxs) {
+        if (skippedIds.contains(tx.id)) continue;
+
         if (tx.type == 'transfer_out' || tx.type == 'transfer_in') {
           final ref = _extractRef(tx.note);
           if (ref != null) {
@@ -441,15 +451,14 @@ class HistoryPageState extends State<HistoryPage> {
 
             // Find the paired leg in the same day group
             final WalletTransaction outLeg;
-            final WalletTransaction? inLeg;
+            final WalletTransaction inLeg;
             if (tx.type == 'transfer_out') {
               outLeg = tx;
               inLeg = dayTxs.firstWhere(
                 (t) => t.type == 'transfer_in' && _extractRef(t.note) == ref,
-                orElse: () => tx, // fallback: same tx
+                orElse: () => tx,
               );
             } else {
-              // tx is transfer_in — look for the out leg
               final out = dayTxs.firstWhere(
                 (t) => t.type == 'transfer_out' && _extractRef(t.note) == ref,
                 orElse: () => tx,
@@ -458,8 +467,20 @@ class HistoryPageState extends State<HistoryPage> {
               inLeg = tx;
             }
             items.add(_ListItem.transfer(outLeg, inLeg));
+          } else if (tx.type == 'transfer_out') {
+            // Fallback: pair with a transfer_in of the same amount on the same day
+            final matchIdx = unmatchedIns.indexWhere(
+              (t) => t.amount == tx.amount && !skippedIds.contains(t.id),
+            );
+            if (matchIdx != -1) {
+              final inLeg = unmatchedIns[matchIdx];
+              skippedIds.add(inLeg.id!);
+              items.add(_ListItem.transfer(tx, inLeg));
+            } else {
+              items.add(_ListItem.tx(tx));
+            }
           } else {
-            // No ref tag — show individually
+            // transfer_in with no ref and no matched out leg — show individually
             items.add(_ListItem.tx(tx));
           }
         } else {
@@ -479,7 +500,6 @@ class HistoryPageState extends State<HistoryPage> {
 
         // ── Merged transfer card ─────────────────────────────────────────
         if (item.isTransfer) {
-          const teal = Color(0xFF0D9488);
           final outTx = item.transferOut!;
           final inTx = item.transferIn!;
 
@@ -557,36 +577,17 @@ class HistoryPageState extends State<HistoryPage> {
                       contentPadding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 2),
                       onTap: () => _showTransferInfo(outTx),
-                      leading: SizedBox(
-                        width: 44,
-                        height: 44,
-                        child: Stack(
-                          children: [
-                            Positioned(
-                              top: 0,
-                              left: 0,
-                              child: CircleAvatar(
-                                radius: 16,
-                                backgroundColor: const Color(0xFFCCFBF1),
-                                child: const Icon(Icons.remove,
-                                    size: 14, color: teal),
-                              ),
-                            ),
-                            Positioned(
-                              bottom: 0,
-                              right: 0,
-                              child: CircleAvatar(
-                                radius: 16,
-                                backgroundColor: teal.withValues(alpha: 0.2),
-                                child: const Icon(Icons.add,
-                                    size: 14, color: teal),
-                              ),
-                            ),
-                          ],
+                      leading: CircleAvatar(
+                        radius: 22,
+                        backgroundColor: const Color(0xFFDBEAFE),
+                        child: const Icon(
+                          Icons.swap_horiz_rounded,
+                          size: 20,
+                          color: Color(0xFF2563EB),
                         ),
                       ),
                       title: const Text(
-                        'Transfer Funds',
+                        'Transfer',
                         style: TextStyle(
                             fontWeight: FontWeight.w600, fontSize: 13),
                       ),
@@ -595,11 +596,11 @@ class HistoryPageState extends State<HistoryPage> {
                         style: const TextStyle(fontSize: 11),
                       ),
                       trailing: Text(
-                        '₱${_fmt(outTx.amount)}',
+                        '± ₱${_fmt(outTx.amount)}',
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 12,
-                          color: teal,
+                          color: Color(0xFF2563EB),
                         ),
                       ),
                     ),
@@ -620,7 +621,6 @@ class HistoryPageState extends State<HistoryPage> {
         // ── Regular transaction card ──────────────────────────────────────
         final tx = item.tx!;
         final isIncome = tx.type == 'income';
-        const teal = Color(0xFF0D9488);
         final rowColor = isIncome ? Colors.green : Colors.red;
         final bgColor = isIncome ? Colors.green.shade100 : Colors.red.shade100;
         final amountPrefix = isIncome ? '+' : '−';
