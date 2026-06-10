@@ -4,6 +4,13 @@ import 'package:path/path.dart';
 import '../models/transaction_model.dart';
 import '../models/account_model.dart';
 
+/// Result returned by [DatabaseHelper.insertTransfer].
+class TransferResult {
+  final int debitId;
+  final int creditId;
+  const TransferResult({required this.debitId, required this.creditId});
+}
+
 class DatabaseHelper {
   // ── Singleton ──────────────────────────────────────────────────────────────
   static final DatabaseHelper instance = DatabaseHelper._internal();
@@ -239,16 +246,29 @@ class DatabaseHelper {
   ) async {
     final db = await database;
 
+    double oldDelta;
+    double newDelta;
+
+    if (oldTx.type == 'transfer_out') {
+      oldDelta = oldTx.amount; // reversal: add back
+    } else if (oldTx.type == 'transfer_in') {
+      oldDelta = -oldTx.amount; // reversal: subtract
+    } else {
+      oldDelta = oldTx.type == 'income' ? -oldTx.amount : oldTx.amount;
+    }
+
+    if (newTx.type == 'transfer_out') {
+      newDelta = -newTx.amount;
+    } else if (newTx.type == 'transfer_in') {
+      newDelta = newTx.amount;
+    } else {
+      newDelta = newTx.type == 'income' ? newTx.amount : -newTx.amount;
+    }
+
     // Reverse old
-    await adjustAccountBalance(
-      oldTx.accountId ?? 1,
-      oldTx.type == 'income' ? -oldTx.amount : oldTx.amount,
-    );
+    await adjustAccountBalance(oldTx.accountId ?? 1, oldDelta);
     // Apply new
-    await adjustAccountBalance(
-      newTx.accountId ?? 1,
-      newTx.type == 'income' ? newTx.amount : -newTx.amount,
-    );
+    await adjustAccountBalance(newTx.accountId ?? 1, newDelta);
 
     return await db.update(
       'transactions',
@@ -260,11 +280,86 @@ class DatabaseHelper {
 
   Future<int> deleteTransaction(WalletTransaction tx) async {
     final db = await database;
+
+    if (tx.type == 'transfer_out' || tx.type == 'transfer_in') {
+      // Reverse the balance effect for this leg only
+      await adjustAccountBalance(
+        tx.accountId ?? 1,
+        tx.type == 'transfer_in' ? -tx.amount : tx.amount,
+      );
+      return await db
+          .delete('transactions', where: 'id = ?', whereArgs: [tx.id]);
+    }
+
     await adjustAccountBalance(
       tx.accountId ?? 1,
       tx.type == 'income' ? -tx.amount : tx.amount,
     );
     return await db.delete('transactions', where: 'id = ?', whereArgs: [tx.id]);
+  }
+
+  // ── Transfer ───────────────────────────────────────────────────────────────
+
+  /// Inserts two linked transfer transactions atomically inside a DB transaction.
+  ///
+  /// * The **debit** leg is stored as `type = 'transfer_out'` on [fromAccountId].
+  /// * The **credit** leg is stored as `type = 'transfer_in'`  on [toAccountId].
+  ///
+  /// Both rows share the same [refId] so they can be identified as a pair.
+  /// The [refId] is embedded in the `note` field as `__ref:<refId>__` and
+  /// appended after any user-supplied note.
+  Future<TransferResult> insertTransfer({
+    required int fromAccountId,
+    required int toAccountId,
+    required double amount,
+    required String date,
+    String note = '',
+    String? refId,
+  }) async {
+    final db = await database;
+    final ref = refId ?? '${DateTime.now().millisecondsSinceEpoch}';
+
+    // Build the note suffix that links the two legs.
+    final noteWithRef = note.isEmpty ? '__ref:$ref' : '$note __ref:$ref';
+
+    late int debitId;
+    late int creditId;
+
+    await db.transaction((txn) async {
+      // Debit leg — expense-like, deducted from source account
+      debitId = await txn.insert('transactions', {
+        'title': 'Transfer Out',
+        'amount': amount,
+        'date': date,
+        'type': 'transfer_out',
+        'category': 'Transfer',
+        'note': noteWithRef,
+        'account_id': fromAccountId,
+      });
+
+      // Credit leg — income-like, added to destination account
+      creditId = await txn.insert('transactions', {
+        'title': 'Transfer In',
+        'amount': amount,
+        'date': date,
+        'type': 'transfer_in',
+        'category': 'Transfer',
+        'note': noteWithRef,
+        'account_id': toAccountId,
+      });
+
+      // Adjust balances
+      await txn.rawUpdate(
+        'UPDATE accounts SET balance = balance - ? WHERE id = ?',
+        [amount, fromAccountId],
+      );
+      await txn.rawUpdate(
+        'UPDATE accounts SET balance = balance + ? WHERE id = ?',
+        [amount, toAccountId],
+      );
+    });
+
+    return TransferResult(debitId: debitId, creditId: creditId);
   }
 
   // ── Analytics ──────────────────────────────────────────────────────────────
@@ -343,6 +438,7 @@ class DatabaseHelper {
         SUM(CASE WHEN type = 'income'  THEN amount ELSE 0 END) as income,
         SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) as expenses
       FROM transactions
+      WHERE type IN ('income', 'expense')
       GROUP BY month
       ORDER BY month DESC
       LIMIT 6
