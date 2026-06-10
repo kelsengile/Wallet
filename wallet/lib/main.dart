@@ -192,8 +192,8 @@ class _WalletHomePageState extends State<WalletHomePage> {
               label: 'Accounts',
             ),
             NavigationDestination(
-              icon: Icon(Icons.history_outlined),
-              selectedIcon: Icon(Icons.history),
+              icon: Icon(Icons.receipt_long_outlined),
+              selectedIcon: Icon(Icons.receipt_long),
               label: 'History',
             ),
             NavigationDestination(
