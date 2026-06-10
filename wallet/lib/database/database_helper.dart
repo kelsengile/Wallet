@@ -320,7 +320,8 @@ class DatabaseHelper {
     final ref = refId ?? '${DateTime.now().millisecondsSinceEpoch}';
 
     // Build the note suffix that links the two legs.
-    final noteWithRef = note.isEmpty ? '__ref:$ref' : '$note __ref:$ref';
+    final noteWithRef =
+        note.isEmpty ? '__ref:${ref}__' : '$note __ref:${ref}__';
 
     late int debitId;
     late int creditId;
