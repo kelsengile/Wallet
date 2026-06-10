@@ -1999,14 +1999,22 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
             final WalletTransaction inLeg;
             if (tx.type == 'transfer_out') {
               outLeg = tx;
+              // Look in dayTxs first, then fall back to the global transfer list
               inLeg = dayTxs.firstWhere(
                 (t) => t.type == 'transfer_in' && _extractRef(t.note) == ref,
-                orElse: () => tx,
+                orElse: () => _allTransferTxs.firstWhere(
+                  (t) => t.type == 'transfer_in' && _extractRef(t.note) == ref,
+                  orElse: () => tx,
+                ),
               );
             } else {
+              // Look in dayTxs first, then fall back to the global transfer list
               final out = dayTxs.firstWhere(
                 (t) => t.type == 'transfer_out' && _extractRef(t.note) == ref,
-                orElse: () => tx,
+                orElse: () => _allTransferTxs.firstWhere(
+                  (t) => t.type == 'transfer_out' && _extractRef(t.note) == ref,
+                  orElse: () => tx,
+                ),
               );
               outLeg = out;
               inLeg = tx;
