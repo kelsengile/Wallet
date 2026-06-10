@@ -319,18 +319,6 @@ class _SpeedDialFabState extends State<_SpeedDialFab>
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.black87,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                label,
-                style: const TextStyle(color: Colors.white, fontSize: 11),
-              ),
-            ),
-            const SizedBox(width: 8),
             GestureDetector(
               onTap: () {
                 _close();
@@ -342,13 +330,6 @@ class _SpeedDialFabState extends State<_SpeedDialFab>
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: color,
-                  boxShadow: [
-                    BoxShadow(
-                      color: color.withValues(alpha: 0.4),
-                      blurRadius: 8,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
                 ),
                 child: Icon(icon, color: Colors.white, size: 20),
               ),
@@ -406,13 +387,6 @@ class _SpeedDialFabState extends State<_SpeedDialFab>
               color: _open
                   ? theme.colorScheme.surfaceContainerHighest
                   : theme.colorScheme.primary,
-              boxShadow: [
-                BoxShadow(
-                  color: theme.colorScheme.primary.withValues(alpha: 0.35),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
             ),
             child: AnimatedRotation(
               turns: _open ? 0.125 : 0,
