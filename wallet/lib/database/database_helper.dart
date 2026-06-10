@@ -349,6 +349,31 @@ class DatabaseHelper {
     ''');
   }
 
+  // ── Generic settings ──────────────────────────────────────────────────────
+
+  /// Reads a single value from the settings table. Returns null if not set.
+  Future<String?> getSetting(String key) async {
+    final db = await database;
+    final rows = await db.query(
+      'settings',
+      where: 'key = ?',
+      whereArgs: [key],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return rows.first['value'] as String?;
+  }
+
+  /// Writes (or overwrites) a value in the settings table.
+  Future<void> saveSetting(String key, String value) async {
+    final db = await database;
+    await db.insert(
+      'settings',
+      {'key': key, 'value': value},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
   // ── Utility ────────────────────────────────────────────────────────────────
 
   Future<void> clearAllData() async {
