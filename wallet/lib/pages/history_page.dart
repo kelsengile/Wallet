@@ -333,67 +333,78 @@ class HistoryPageState extends State<HistoryPage> {
               ),
             )
             .name;
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 3),
-          child: Card(
-            margin: EdgeInsets.zero,
-            elevation: 0,
-            color: Colors.transparent,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Dismissible(
-                key: Key('tx_${tx.id}'),
-                direction: DismissDirection.endToStart,
-                background: Container(
-                  alignment: Alignment.centerRight,
-                  padding: const EdgeInsets.only(right: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.red,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(Icons.delete, color: Colors.white),
-                ),
-                onDismissed: (_) => _deleteTransaction(tx),
-                child: ListTile(
-                  dense: true,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                  onTap: () => _editTransaction(tx),
-                  leading: CircleAvatar(
-                    radius: 18,
-                    backgroundColor:
-                        isIncome ? Colors.green.shade100 : Colors.red.shade100,
-                    child: Icon(
-                      kTransactionCategoryIcons[tx.category] ?? Icons.category,
-                      size: 17,
-                      color: isIncome ? Colors.green : Colors.red,
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Card(
+              margin: EdgeInsets.zero,
+              elevation: 0,
+              color: Colors.transparent,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Dismissible(
+                  key: Key('tx_${tx.id}'),
+                  direction: DismissDirection.endToStart,
+                  background: Container(
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.only(right: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(12),
                     ),
+                    child: const Icon(Icons.delete, color: Colors.white),
                   ),
-                  title: Text(
-                    tx.title,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w600, fontSize: 13),
-                  ),
-                  subtitle: Text(
-                    accountName,
-                    style: const TextStyle(fontSize: 11),
-                  ),
-                  trailing: Text(
-                    '${isIncome ? '+' : '-'} ₱${_fmt(tx.amount)}',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                      color: isIncome ? Colors.green : Colors.red,
+                  onDismissed: (_) => _deleteTransaction(tx),
+                  child: ListTile(
+                    dense: true,
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                    onTap: () => _editTransaction(tx),
+                    leading: CircleAvatar(
+                      radius: 22,
+                      backgroundColor: isIncome
+                          ? Colors.green.shade100
+                          : Colors.red.shade100,
+                      child: Icon(
+                        kTransactionCategoryIcons[tx.category] ??
+                            Icons.category,
+                        size: 20,
+                        color: isIncome ? Colors.green : Colors.red,
+                      ),
+                    ),
+                    title: Text(
+                      tx.title,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w600, fontSize: 13),
+                    ),
+                    subtitle: Text(
+                      accountName,
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                    trailing: Text(
+                      '${isIncome ? '+' : '-'} ₱${_fmt(tx.amount)}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                        color: isIncome ? Colors.green : Colors.red,
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
+            Divider(
+              height: 1,
+              thickness: 0.5,
+              indent: 12,
+              endIndent: 12,
+              color: Colors.grey.withValues(alpha: 0.25),
+            ),
+          ],
         );
       },
     );
