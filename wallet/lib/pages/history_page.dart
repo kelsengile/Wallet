@@ -423,8 +423,23 @@ class HistoryPageState extends State<HistoryPage> {
     // Build a flat list of items: header + transactions for each group.
     // Transfer pairs (same __ref:) are collapsed into one _ListItem.transfer.
     final items = <_ListItem>[];
+
+    // For yearly mode: track the last emitted month so we can inject separators.
+    String? _lastMonthKey; // "yyyy-MM"
+
     for (final key in keys) {
       final d = DateTime.tryParse(key);
+
+      // ── Yearly mode: inject a month header whenever the month changes ──────
+      if (_filterMode == _FilterMode.yearly && d != null) {
+        final monthKey = '${d.year}-${d.month.toString().padLeft(2, '0')}';
+        if (monthKey != _lastMonthKey) {
+          _lastMonthKey = monthKey;
+          final monthLabel = DateFormat('MMMM').format(d);
+          items.add(_ListItem.monthHeader(monthLabel));
+        }
+      }
+
       final label = d != null ? _dateGroupLabel(d) : '';
       if (label.isNotEmpty) items.add(_ListItem.header(label));
 
@@ -489,13 +504,33 @@ class HistoryPageState extends State<HistoryPage> {
       }
     }
 
+    // Compute which item indices are the last transaction in their day group.
+    // (i.e. the next item is a header, monthHeader, or end of list)
+    final lastInGroupIndices = <int>{};
+    for (int i = 0; i < items.length; i++) {
+      if (items[i].isHeader || items[i].isMonthHeader) continue;
+      final isLast = i == items.length - 1 ||
+          items[i + 1].isHeader ||
+          items[i + 1].isMonthHeader;
+      if (isLast) lastInGroupIndices.add(i);
+    }
+
     return ListView.builder(
       padding: EdgeInsets.zero,
       itemCount: items.length,
       itemBuilder: (_, i) {
         final item = items[i];
+        final showDivider = !lastInGroupIndices.contains(i);
         if (item.isHeader) {
-          return _DateHeader(label: item.label!, theme: theme);
+          return _DateHeader(
+            label: item.label!,
+            theme: theme,
+            indented: _filterMode == _FilterMode.yearly,
+          );
+        }
+
+        if (item.isMonthHeader) {
+          return _MonthHeader(label: item.label!, theme: theme);
         }
 
         // ── Merged transfer card ─────────────────────────────────────────
@@ -607,13 +642,14 @@ class HistoryPageState extends State<HistoryPage> {
                   ),
                 ),
               ),
-              Divider(
-                height: 1,
-                thickness: 0.5,
-                indent: 12,
-                endIndent: 12,
-                color: Colors.grey.withValues(alpha: 0.25),
-              ),
+              if (showDivider)
+                Divider(
+                  height: 1,
+                  thickness: 0.5,
+                  indent: 12,
+                  endIndent: 12,
+                  color: Colors.grey.withValues(alpha: 0.25),
+                ),
             ],
           );
         }
@@ -698,13 +734,14 @@ class HistoryPageState extends State<HistoryPage> {
                 ),
               ),
             ),
-            Divider(
-              height: 1,
-              thickness: 0.5,
-              indent: 12,
-              endIndent: 12,
-              color: Colors.grey.withValues(alpha: 0.25),
-            ),
+            if (showDivider)
+              Divider(
+                height: 1,
+                thickness: 0.5,
+                indent: 12,
+                endIndent: 12,
+                color: Colors.grey.withValues(alpha: 0.25),
+              ),
           ],
         );
       },
@@ -842,6 +879,7 @@ class HistoryPageState extends State<HistoryPage> {
 
 class _ListItem {
   final bool isHeader;
+  final bool isMonthHeader;
   final bool isTransfer;
   final String? label;
   final WalletTransaction? tx;
@@ -850,6 +888,15 @@ class _ListItem {
 
   const _ListItem.header(this.label)
       : isHeader = true,
+        isMonthHeader = false,
+        isTransfer = false,
+        tx = null,
+        transferOut = null,
+        transferIn = null;
+
+  const _ListItem.monthHeader(this.label)
+      : isHeader = false,
+        isMonthHeader = true,
         isTransfer = false,
         tx = null,
         transferOut = null,
@@ -857,6 +904,7 @@ class _ListItem {
 
   const _ListItem.tx(this.tx)
       : isHeader = false,
+        isMonthHeader = false,
         isTransfer = false,
         label = null,
         transferOut = null,
@@ -864,6 +912,7 @@ class _ListItem {
 
   const _ListItem.transfer(this.transferOut, this.transferIn)
       : isHeader = false,
+        isMonthHeader = false,
         isTransfer = true,
         label = null,
         tx = null;
@@ -874,13 +923,15 @@ class _ListItem {
 class _DateHeader extends StatelessWidget {
   final String label;
   final ThemeData theme;
+  final bool indented;
 
-  const _DateHeader({required this.label, required this.theme});
+  const _DateHeader(
+      {required this.label, required this.theme, this.indented = false});
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 2),
+      padding: EdgeInsets.only(top: 8, bottom: 2, left: indented ? 12 : 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -895,6 +946,42 @@ class _DateHeader extends StatelessWidget {
           Divider(
             height: 1,
             thickness: 1,
+            indent: 0,
+            endIndent: 0,
+            color: theme.colorScheme.outlineVariant,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Month section header widget (yearly view) ─────────────────────────────────
+
+class _MonthHeader extends StatelessWidget {
+  final String label;
+  final ThemeData theme;
+
+  const _MonthHeader({required this.label, required this.theme});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 16, bottom: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w500,
+              color: theme.colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Divider(
+            height: 1,
+            thickness: 1.5,
             color: theme.colorScheme.outlineVariant,
           ),
         ],
