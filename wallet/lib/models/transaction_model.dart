@@ -24,6 +24,7 @@ const kTransactionCategoryIcons = <String, IconData>{
   'Entertainment': Icons.movie,
   'Salary': Icons.work,
   'Savings': Icons.savings,
+  'Transfer': Icons.swap_horiz,
   'Other': Icons.category,
 };
 
@@ -106,6 +107,7 @@ class WalletTransaction {
     BuildContext context, {
     required List<Account> accounts,
     WalletTransaction? existing,
+    String? initialType,
   }) {
     return showModalBottomSheet<WalletTransaction>(
       context: context,
@@ -117,6 +119,51 @@ class WalletTransaction {
       builder: (ctx) => _TransactionForm(
         accounts: accounts,
         existing: existing,
+        initialType: initialType,
+      ),
+    );
+  }
+}
+
+// ── Transfer result ───────────────────────────────────────────────────────────
+
+/// Holds the two legs of a transfer so the caller can persist them atomically.
+class TransferResult {
+  final int fromAccountId;
+  final int toAccountId;
+  final double amount;
+  final String note;
+  final String date;
+
+  const TransferResult({
+    required this.fromAccountId,
+    required this.toAccountId,
+    required this.amount,
+    required this.note,
+    required this.date,
+  });
+}
+
+// ── Transfer dialog factory ───────────────────────────────────────────────────
+
+extension WalletTransactionTransfer on WalletTransaction {
+  /// Shows a transfer modal bottom sheet.
+  /// Returns a [TransferResult] if the user confirmed, `null` otherwise.
+  static Future<TransferResult?> showTransferDialog(
+    BuildContext context, {
+    required List<Account> accounts,
+    int? preselectedFromId,
+  }) {
+    return showModalBottomSheet<TransferResult>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => _TransferForm(
+        accounts: accounts,
+        preselectedFromId: preselectedFromId,
       ),
     );
   }
@@ -127,8 +174,10 @@ class WalletTransaction {
 class _TransactionForm extends StatefulWidget {
   final List<Account> accounts;
   final WalletTransaction? existing;
+  final String? initialType;
 
-  const _TransactionForm({required this.accounts, this.existing});
+  const _TransactionForm(
+      {required this.accounts, this.existing, this.initialType});
 
   @override
   State<_TransactionForm> createState() => _TransactionFormState();
@@ -151,7 +200,7 @@ class _TransactionFormState extends State<_TransactionForm> {
       text: e != null ? e.amount.toStringAsFixed(2) : '',
     );
     _noteCtrl = TextEditingController(text: e?.note ?? '');
-    _type = e?.type ?? 'expense';
+    _type = e?.type ?? widget.initialType ?? 'expense';
     _category = e?.category ?? 'Food';
     _accountId = e?.accountId ??
         (widget.accounts.isNotEmpty ? widget.accounts.first.id : null);
@@ -378,6 +427,231 @@ class _TransactionFormState extends State<_TransactionForm> {
                 backgroundColor: _type == 'income'
                     ? Colors.green
                     : theme.colorScheme.primary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Transfer form ─────────────────────────────────────────────────────────────
+
+class _TransferForm extends StatefulWidget {
+  final List<Account> accounts;
+  final int? preselectedFromId;
+
+  const _TransferForm({required this.accounts, this.preselectedFromId});
+
+  @override
+  State<_TransferForm> createState() => _TransferFormState();
+}
+
+class _TransferFormState extends State<_TransferForm> {
+  late int? _fromId;
+  late int? _toId;
+  final _amountCtrl = TextEditingController();
+  final _noteCtrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    final ids = widget.accounts.map((a) => a.id).toList();
+    _fromId = widget.preselectedFromId ?? (ids.isNotEmpty ? ids.first : null);
+    // Pick a different default "to" account if possible
+    _toId = ids.firstWhere(
+      (id) => id != _fromId,
+      orElse: () => ids.isNotEmpty ? ids.first : null,
+    );
+  }
+
+  @override
+  void dispose() {
+    _amountCtrl.dispose();
+    _noteCtrl.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (_fromId == null || _toId == null) return;
+    if (_fromId == _toId) return;
+    final amount = double.tryParse(_amountCtrl.text.trim());
+    if (amount == null || amount <= 0) return;
+
+    Navigator.pop(
+      context,
+      TransferResult(
+        fromAccountId: _fromId!,
+        toAccountId: _toId!,
+        amount: amount,
+        note: _noteCtrl.text.trim(),
+        date: DateTime.now().toIso8601String(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    const teal = Color(0xFF0D9488);
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        20,
+        16,
+        20,
+        MediaQuery.viewInsetsOf(context).bottom + 24,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Handle bar
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.outlineVariant,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: teal.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.swap_horiz, color: teal, size: 22),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Transfer Funds',
+                style: theme.textTheme.titleLarge
+                    ?.copyWith(fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // From account
+          DropdownButtonFormField<int>(
+            value: _fromId,
+            decoration: const InputDecoration(
+              labelText: 'From Account',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.account_balance_wallet_outlined),
+            ),
+            items: widget.accounts
+                .map((a) => DropdownMenuItem(value: a.id, child: Text(a.name)))
+                .toList(),
+            onChanged: (v) => setState(() {
+              _fromId = v;
+              // Avoid same-account transfer
+              if (_toId == _fromId) {
+                _toId = widget.accounts
+                    .firstWhere((a) => a.id != _fromId,
+                        orElse: () => widget.accounts.first)
+                    .id;
+              }
+            }),
+          ),
+          const SizedBox(height: 12),
+
+          // Swap icon row
+          Center(
+            child: GestureDetector(
+              onTap: () => setState(() {
+                final tmp = _fromId;
+                _fromId = _toId;
+                _toId = tmp;
+              }),
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: teal.withValues(alpha: 0.10),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: teal.withValues(alpha: 0.35)),
+                ),
+                child: const Icon(Icons.swap_vert, color: teal, size: 20),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // To account
+          DropdownButtonFormField<int>(
+            value: _toId,
+            decoration: const InputDecoration(
+              labelText: 'To Account',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.account_balance_wallet),
+            ),
+            items: widget.accounts
+                .map((a) => DropdownMenuItem(value: a.id, child: Text(a.name)))
+                .toList(),
+            onChanged: (v) => setState(() {
+              _toId = v;
+              if (_fromId == _toId) {
+                _fromId = widget.accounts
+                    .firstWhere((a) => a.id != _toId,
+                        orElse: () => widget.accounts.first)
+                    .id;
+              }
+            }),
+          ),
+          const SizedBox(height: 12),
+
+          // Amount
+          TextField(
+            controller: _amountCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Amount (₱)',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.payments_outlined),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Note
+          TextField(
+            controller: _noteCtrl,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+              labelText: 'Note (optional)',
+              border: OutlineInputBorder(),
+              prefixIcon: Icon(Icons.note_outlined),
+            ),
+          ),
+          const SizedBox(height: 8),
+
+          // Validation hint
+          if (_fromId != null && _toId != null && _fromId == _toId)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                'Source and destination accounts must be different.',
+                style: TextStyle(color: theme.colorScheme.error, fontSize: 12),
+              ),
+            ),
+
+          const SizedBox(height: 12),
+
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _submit,
+              icon: const Icon(Icons.swap_horiz),
+              label: const Text('Transfer'),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                backgroundColor: teal,
               ),
             ),
           ),
