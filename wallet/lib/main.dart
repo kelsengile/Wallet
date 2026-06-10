@@ -145,7 +145,7 @@ class _WalletHomePageState extends State<WalletHomePage> {
               ],
             ),
 
-            // ── FAB — slides DOWN into the nav bar when hidden ──────────────
+            // ── FAB speed-dial — slides DOWN into the nav bar when hidden ──
             // ClipRect confines the button to the body bounds so it visually
             // disappears *behind* the NavigationBar rather than over it.
             Positioned(
@@ -161,17 +161,59 @@ class _WalletHomePageState extends State<WalletHomePage> {
                     duration: const Duration(milliseconds: 260),
                     child: Padding(
                       padding: const EdgeInsets.only(bottom: 16),
-                      child: _AddTransactionFab(
-                        onPressed: () async {
+                      child: _SpeedDialFab(
+                        onAddIncome: () async {
                           final accounts =
                               await DatabaseHelper.instance.getAllAccounts();
                           if (!context.mounted) return;
                           final tx = await WalletTransaction.showDialog(
                             context,
                             accounts: accounts,
+                            initialType: 'income',
                           );
                           if (tx == null) return;
                           await DatabaseHelper.instance.insertTransaction(tx);
+                          _historyKey.currentState?.refresh();
+                        },
+                        onAddExpense: () async {
+                          final accounts =
+                              await DatabaseHelper.instance.getAllAccounts();
+                          if (!context.mounted) return;
+                          final tx = await WalletTransaction.showDialog(
+                            context,
+                            accounts: accounts,
+                            initialType: 'expense',
+                          );
+                          if (tx == null) return;
+                          await DatabaseHelper.instance.insertTransaction(tx);
+                          _historyKey.currentState?.refresh();
+                        },
+                        onTransfer: () async {
+                          final accounts =
+                              await DatabaseHelper.instance.getAllAccounts();
+                          if (!context.mounted) return;
+                          if (accounts.length < 2) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                    'You need at least 2 accounts to make a transfer.'),
+                              ),
+                            );
+                            return;
+                          }
+                          final result = await WalletTransactionTransfer
+                              .showTransferDialog(
+                            context,
+                            accounts: accounts,
+                          );
+                          if (result == null) return;
+                          await DatabaseHelper.instance.insertTransfer(
+                            fromAccountId: result.fromAccountId,
+                            toAccountId: result.toAccountId,
+                            amount: result.amount,
+                            date: result.date,
+                            note: result.note,
+                          );
                           _historyKey.currentState?.refresh();
                         },
                       ),
@@ -213,36 +255,178 @@ class _WalletHomePageState extends State<WalletHomePage> {
   }
 }
 
-// ── Floating add-transaction button ───────────────────────────────────────────
+// ── Speed-dial FAB (Income + Expense + Transfer) ──────────────────────────────
 
-class _AddTransactionFab extends StatelessWidget {
-  final VoidCallback onPressed;
-  const _AddTransactionFab({required this.onPressed});
+class _SpeedDialFab extends StatefulWidget {
+  final VoidCallback onAddIncome;
+  final VoidCallback onAddExpense;
+  final VoidCallback onTransfer;
+
+  const _SpeedDialFab({
+    required this.onAddIncome,
+    required this.onAddExpense,
+    required this.onTransfer,
+  });
+
+  @override
+  State<_SpeedDialFab> createState() => _SpeedDialFabState();
+}
+
+class _SpeedDialFabState extends State<_SpeedDialFab>
+    with SingleTickerProviderStateMixin {
+  bool _open = false;
+  late final AnimationController _ctrl;
+  late final Animation<double> _expandAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 220),
+    );
+    _expandAnim = CurvedAnimation(parent: _ctrl, curve: Curves.easeOutBack);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _toggle() {
+    setState(() => _open = !_open);
+    _open ? _ctrl.forward() : _ctrl.reverse();
+  }
+
+  void _close() {
+    if (_open) {
+      setState(() => _open = false);
+      _ctrl.reverse();
+    }
+  }
+
+  Widget _miniButton({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return ScaleTransition(
+      scale: _expandAnim,
+      child: FadeTransition(
+        opacity: _expandAnim,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black87,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                label,
+                style: const TextStyle(color: Colors.white, fontSize: 11),
+              ),
+            ),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: () {
+                _close();
+                onTap();
+              },
+              child: Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: color,
+                  boxShadow: [
+                    BoxShadow(
+                      color: color.withValues(alpha: 0.4),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Icon(icon, color: Colors.white, size: 20),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    // Scale the button relative to screen width so it looks right on all sizes:
-    // phones (~360–430 dp wide) → ~52 dp; tablets → capped at 60 dp.
     final screenWidth = MediaQuery.sizeOf(context).width;
     final size = (screenWidth * 0.135).clamp(48.0, 60.0);
     final iconSize = size * 0.5;
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(size / 2),
-        child: Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: theme.colorScheme.primary,
-          ),
-          child: Icon(Icons.add, color: Colors.white, size: iconSize),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        // Mini button: Transfer
+        _miniButton(
+          icon: Icons.swap_horiz,
+          label: 'Transfer',
+          color: const Color(0xFF0D9488),
+          onTap: widget.onTransfer,
         ),
-      ),
+        const SizedBox(height: 10),
+        // Mini button: Expense
+        _miniButton(
+          icon: Icons.arrow_upward,
+          label: 'Expense',
+          color: Colors.red,
+          onTap: widget.onAddExpense,
+        ),
+        const SizedBox(height: 10),
+        // Mini button: Income
+        _miniButton(
+          icon: Icons.arrow_downward,
+          label: 'Income',
+          color: Colors.green,
+          onTap: widget.onAddIncome,
+        ),
+        const SizedBox(height: 10),
+        // Main FAB
+        GestureDetector(
+          onTap: _toggle,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _open
+                  ? theme.colorScheme.surfaceContainerHighest
+                  : theme.colorScheme.primary,
+              boxShadow: [
+                BoxShadow(
+                  color: theme.colorScheme.primary.withValues(alpha: 0.35),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: AnimatedRotation(
+              turns: _open ? 0.125 : 0,
+              duration: const Duration(milliseconds: 220),
+              child: Icon(
+                Icons.add,
+                color:
+                    _open ? theme.colorScheme.onSurfaceVariant : Colors.white,
+                size: iconSize,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
