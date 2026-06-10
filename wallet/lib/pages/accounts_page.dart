@@ -2094,6 +2094,16 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                       icon: ''))
               .name;
 
+          // Determine direction relative to the currently open account
+          final isTransferOut = outTx.accountId == widget.account.id;
+          final transferLabel = isTransferOut ? 'Transfer Out' : 'Transfer In';
+          final transferAmountPrefix = isTransferOut ? '−' : '+';
+          const transferColor = Color(0xFF2563EB);
+          const transferBgColor = Color(0xFFDBEAFE);
+          final transferIcon = isTransferOut
+              ? Icons.arrow_upward_rounded
+              : Icons.arrow_downward_rounded;
+
           return Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -2148,18 +2158,18 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                       contentPadding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 2),
                       onTap: () => _showTransferInfo(outTx),
-                      leading: const CircleAvatar(
+                      leading: CircleAvatar(
                         radius: 22,
-                        backgroundColor: Color(0xFFDBEAFE),
+                        backgroundColor: transferBgColor,
                         child: Icon(
-                          Icons.swap_horiz_rounded,
+                          transferIcon,
                           size: 20,
-                          color: Color(0xFF2563EB),
+                          color: transferColor,
                         ),
                       ),
-                      title: const Text(
-                        'Transfer',
-                        style: TextStyle(
+                      title: Text(
+                        transferLabel,
+                        style: const TextStyle(
                             fontWeight: FontWeight.w600, fontSize: 13),
                       ),
                       subtitle: Text(
@@ -2167,11 +2177,11 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                         style: const TextStyle(fontSize: 11),
                       ),
                       trailing: Text(
-                        '± ₱${_fmt(outTx.amount)}',
-                        style: const TextStyle(
+                        '$transferAmountPrefix ₱${_fmt(outTx.amount)}',
+                        style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 12,
-                          color: Color(0xFF2563EB),
+                          color: transferColor,
                         ),
                       ),
                     ),
