@@ -450,7 +450,7 @@ class HistoryPageState extends State<HistoryPage> {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 1),
 
           // ── Analytics strip ──────────────────────────────────────────────
           Row(
@@ -480,7 +480,7 @@ class HistoryPageState extends State<HistoryPage> {
               ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 1),
 
           // ── Divider ──────────────────────────────────────────────────────
           const Divider(height: 40),
