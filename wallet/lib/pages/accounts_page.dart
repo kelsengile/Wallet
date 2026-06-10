@@ -2039,12 +2039,21 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
       }
     }
 
+    // Compute which item indices are the last transaction in their day group.
+    final lastInGroupIndices = <int>{};
+    for (int i = 0; i < items.length; i++) {
+      if (items[i].isHeader) continue;
+      final isLast = i == items.length - 1 || items[i + 1].isHeader;
+      if (isLast) lastInGroupIndices.add(i);
+    }
+
     return ListView.builder(
       controller: ctrl,
       padding: EdgeInsets.zero,
       itemCount: items.length,
       itemBuilder: (_, i) {
         final item = items[i];
+        final showDivider = !lastInGroupIndices.contains(i);
 
         // ── Date header ───────────────────────────────────────────────────
         if (item.isHeader) {
@@ -2188,13 +2197,14 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                   ),
                 ),
               ),
-              Divider(
-                height: 1,
-                thickness: 0.5,
-                indent: 12,
-                endIndent: 12,
-                color: Colors.grey.withValues(alpha: 0.25),
-              ),
+              if (showDivider)
+                Divider(
+                  height: 1,
+                  thickness: 0.5,
+                  indent: 12,
+                  endIndent: 12,
+                  color: Colors.grey.withValues(alpha: 0.25),
+                ),
             ],
           );
         }
@@ -2267,13 +2277,14 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                 ),
               ),
             ),
-            Divider(
-              height: 1,
-              thickness: 0.5,
-              indent: 12,
-              endIndent: 12,
-              color: Colors.grey.withValues(alpha: 0.25),
-            ),
+            if (showDivider)
+              Divider(
+                height: 1,
+                thickness: 0.5,
+                indent: 12,
+                endIndent: 12,
+                color: Colors.grey.withValues(alpha: 0.25),
+              ),
           ],
         );
       },
