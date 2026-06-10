@@ -1924,37 +1924,36 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                             String subtitle =
                                 '${tx.category} • ${tx.date.substring(0, 10)}';
                             if (isTransfer) {
-                              // Extract ref from note to find paired leg
-                              final refMatch = RegExp(r'__ref:([^_]+)__')
+                              // Extract ref from note to find paired leg.
+                              // Handles both old (__ref:123456) and new (__ref:123456__) formats.
+                              final refMatch = RegExp(r'__ref:(\d+)')
                                   .firstMatch(tx.note ?? '');
                               final ref = refMatch?.group(1);
                               if (ref != null) {
-                                // Search all transfer transactions for the paired leg
-                                final paired = _allTransferTxs.firstWhere(
-                                  (t) =>
-                                      t.id != tx.id &&
-                                      (t.type == 'transfer_out' ||
-                                          t.type == 'transfer_in') &&
-                                      (t.note?.contains('__ref:$ref') ?? false),
-                                  orElse: () => tx,
-                                );
-                                // If we didn't find the pair in same account, search all accounts
-                                final pairedAccount = _allAccounts.firstWhere(
-                                  (a) => a.id == paired.accountId,
-                                  orElse: () => Account(
-                                      name: 'Unknown',
-                                      balance: 0,
-                                      type: '',
-                                      colorHex: '',
-                                      icon: ''),
-                                );
-                                final thisAccount = widget.account.name;
-                                if (isTransferOut) {
-                                  subtitle =
-                                      '$thisAccount → ${pairedAccount.name}';
+                                // Find the paired leg by ref (different tx, same ref)
+                                final pairedTx = _allTransferTxs
+                                    .where((t) =>
+                                        t.id != tx.id &&
+                                        (t.note?.contains('__ref:$ref') ??
+                                            false))
+                                    .firstOrNull;
+                                if (pairedTx != null) {
+                                  final pairedAccount = _allAccounts.firstWhere(
+                                    (a) => a.id == pairedTx.accountId,
+                                    orElse: () => Account(
+                                        name: 'Unknown',
+                                        balance: 0,
+                                        type: '',
+                                        colorHex: '',
+                                        icon: ''),
+                                  );
+                                  subtitle = isTransferOut
+                                      ? 'to ${pairedAccount.name}'
+                                      : 'from ${pairedAccount.name}';
                                 } else {
-                                  subtitle =
-                                      '${pairedAccount.name} → $thisAccount';
+                                  subtitle = isTransferOut
+                                      ? 'Transfer Out'
+                                      : 'Transfer In';
                                 }
                               } else {
                                 subtitle = isTransferOut
