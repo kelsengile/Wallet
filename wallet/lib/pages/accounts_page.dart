@@ -1602,8 +1602,26 @@ class _AccountDetailSheet extends StatefulWidget {
 class _AccountDetailSheetState extends State<_AccountDetailSheet> {
   List<WalletTransaction> _transactions = [];
   List<Account> _allAccounts = [];
-  List<WalletTransaction> _allTransferTxs = []; // for resolving transfer pairs
+  List<WalletTransaction> _allTransferTxs = [];
   bool _loading = true;
+
+  // ── Current-month transactions ────────────────────────────────────────────
+  List<WalletTransaction> get _currentMonthTransactions {
+    final now = DateTime.now();
+    final monthStart = DateTime(now.year, now.month);
+    final monthEnd = DateTime(now.year, now.month + 1);
+    return _transactions.where((tx) {
+      final d = DateTime.tryParse(tx.date);
+      return d != null && !d.isBefore(monthStart) && d.isBefore(monthEnd);
+    }).toList();
+  }
+
+  // ── Transfer pair helper ──────────────────────────────────────────────────
+  static String? _extractRef(String? note) {
+    if (note == null) return null;
+    final match = RegExp(r'__ref:([^_]+)__').firstMatch(note);
+    return match?.group(1);
+  }
 
   double get _accountIncome => _transactions
       .where((t) => t.type == 'income')
@@ -1653,10 +1671,34 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
   }
 
   void _showTransferInfo(WalletTransaction tx) {
-    const teal = Color(0xFF0D9488);
+    const transferColor = Color(0xFF2563EB);
+    const transferBgColor = Color(0xFFDBEAFE);
     final isOut = tx.type == 'transfer_out';
     final rawNote = tx.note ?? '';
     final userNote = rawNote.replaceAll(RegExp(r'\s*__ref:[^_]+__'), '').trim();
+
+    // Resolve the paired account name
+    String pairedAccountName = isOut ? 'Transfer Out' : 'Transfer In';
+    final ref = _extractRef(rawNote);
+    if (ref != null) {
+      final pairedTx = _allTransferTxs
+          .where(
+              (t) => t.id != tx.id && (t.note?.contains('__ref:$ref') ?? false))
+          .firstOrNull;
+      if (pairedTx != null) {
+        pairedAccountName = _allAccounts
+            .firstWhere(
+              (a) => a.id == pairedTx.accountId,
+              orElse: () => Account(
+                  name: 'Unknown',
+                  balance: 0,
+                  type: '',
+                  colorHex: '',
+                  icon: ''),
+            )
+            .name;
+      }
+    }
 
     showModalBottomSheet(
       context: context,
@@ -1686,12 +1728,12 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: teal.withValues(alpha: 0.12),
+                      color: transferBgColor,
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Icon(
-                      isOut ? Icons.arrow_upward : Icons.arrow_downward,
-                      color: teal,
+                    child: const Icon(
+                      Icons.swap_horiz_rounded,
+                      color: transferColor,
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -1705,7 +1747,9 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                               ?.copyWith(fontWeight: FontWeight.bold),
                         ),
                         Text(
-                          widget.account.name,
+                          isOut
+                              ? 'to $pairedAccountName'
+                              : 'from $pairedAccountName',
                           style: TextStyle(
                               color: theme.colorScheme.outline, fontSize: 13),
                         ),
@@ -1717,7 +1761,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                     style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
-                      color: isOut ? Colors.red : teal,
+                      color: isOut ? Colors.red : transferColor,
                     ),
                   ),
                 ],
@@ -1874,138 +1918,34 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
               ],
             ),
             const SizedBox(height: 16),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text('Transactions',
+            // ── Transactions label ───────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.only(bottom: 20),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Transactions',
                   style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: theme.colorScheme.outline)),
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.70),
+                  ),
+                ),
+              ),
             ),
-            const SizedBox(height: 8),
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
-                  : _transactions.isEmpty
+                  : _currentMonthTransactions.isEmpty
                       ? Center(
-                          child: Text('No transactions for this account',
-                              style:
-                                  TextStyle(color: theme.colorScheme.outline)))
-                      : ListView.separated(
-                          controller: scrollCtrl,
-                          itemCount: _transactions.length,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(height: 6),
-                          itemBuilder: (_, i) {
-                            final tx = _transactions[i];
-                            final isIncome = tx.type == 'income';
-                            final isTransferOut = tx.type == 'transfer_out';
-                            final isTransferIn = tx.type == 'transfer_in';
-                            final isTransfer = isTransferOut || isTransferIn;
-                            const teal = Color(0xFF0D9488);
-                            final rowColor = isTransfer
-                                ? teal
-                                : isIncome
-                                    ? Colors.green
-                                    : Colors.red;
-                            final bgColor = isTransfer
-                                ? const Color(0xFFCCFBF1)
-                                : isIncome
-                                    ? Colors.green.shade100
-                                    : Colors.red.shade100;
-                            final amountPrefix = isTransferOut
-                                ? '−'
-                                : isTransferIn
-                                    ? '+'
-                                    : isIncome
-                                        ? '+'
-                                        : '−';
-
-                            // For transfers: find the paired account
-                            String subtitle =
-                                '${tx.category} • ${tx.date.substring(0, 10)}';
-                            if (isTransfer) {
-                              // Extract ref from note to find paired leg.
-                              // Handles both old (__ref:123456) and new (__ref:123456__) formats.
-                              final refMatch = RegExp(r'__ref:(\d+)')
-                                  .firstMatch(tx.note ?? '');
-                              final ref = refMatch?.group(1);
-                              if (ref != null) {
-                                // Find the paired leg by ref (different tx, same ref)
-                                final pairedTx = _allTransferTxs
-                                    .where((t) =>
-                                        t.id != tx.id &&
-                                        (t.note?.contains('__ref:$ref') ??
-                                            false))
-                                    .firstOrNull;
-                                if (pairedTx != null) {
-                                  final pairedAccount = _allAccounts.firstWhere(
-                                    (a) => a.id == pairedTx.accountId,
-                                    orElse: () => Account(
-                                        name: 'Unknown',
-                                        balance: 0,
-                                        type: '',
-                                        colorHex: '',
-                                        icon: ''),
-                                  );
-                                  subtitle = isTransferOut
-                                      ? 'to ${pairedAccount.name}'
-                                      : 'from ${pairedAccount.name}';
-                                } else {
-                                  subtitle = isTransferOut
-                                      ? 'Transfer Out'
-                                      : 'Transfer In';
-                                }
-                              } else {
-                                subtitle = isTransferOut
-                                    ? 'Transfer Out'
-                                    : 'Transfer In';
-                              }
-                            }
-
-                            return ListTile(
-                              onTap: () => _editTransaction(tx),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12)),
-                              tileColor: theme
-                                  .colorScheme.surfaceContainerHighest
-                                  .withValues(alpha: 0.5),
-                              leading: CircleAvatar(
-                                backgroundColor: bgColor,
-                                radius: 18,
-                                child: Icon(
-                                  isTransfer
-                                      ? (isTransferOut
-                                          ? Icons.arrow_upward
-                                          : Icons.arrow_downward)
-                                      : (isIncome
-                                          ? Icons.arrow_downward
-                                          : Icons.arrow_upward),
-                                  color: rowColor,
-                                  size: 16,
-                                ),
-                              ),
-                              title: Text(
-                                  isTransfer
-                                      ? (isTransferOut
-                                          ? 'Transfer Out'
-                                          : 'Transfer In')
-                                      : tx.title,
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 14)),
-                              subtitle: Text(subtitle,
-                                  style: const TextStyle(fontSize: 12)),
-                              trailing: Text(
-                                '$amountPrefix₱${_fmt(tx.amount)}',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13,
-                                  color: rowColor,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
+                          child: Text(
+                            _transactions.isEmpty
+                                ? 'No transactions for this account'
+                                : 'No transactions this month.',
+                            style: TextStyle(color: theme.colorScheme.outline),
+                          ),
+                        )
+                      : _buildGroupedList(
+                          _currentMonthTransactions, theme, scrollCtrl),
             ),
           ],
         ),
@@ -2013,11 +1953,349 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
     );
   }
 
+  Future<void> _deleteTransaction(WalletTransaction tx) async {
+    await DatabaseHelper.instance.deleteTransaction(tx);
+    await _load();
+    widget.onTransactionChanged?.call();
+  }
+
+  Widget _buildGroupedList(
+      List<WalletTransaction> txs, ThemeData theme, ScrollController ctrl) {
+    // ── Group by calendar date "yyyy-MM-dd", sorted DESC ───────────────────
+    final Map<String, List<WalletTransaction>> groups = {};
+    for (final tx in txs) {
+      final key = tx.date.length >= 10 ? tx.date.substring(0, 10) : tx.date;
+      groups.putIfAbsent(key, () => []).add(tx);
+    }
+    final keys = groups.keys.toList()..sort((a, b) => b.compareTo(a));
+
+    // ── Build flat item list: header + collapsed transfer pairs ────────────
+    final items = <_TxItem>[];
+    for (final key in keys) {
+      final d = DateTime.tryParse(key);
+      if (d != null) {
+        // e.g. "Jun 9, Monday"
+        final label = DateFormat('MMM d, EEEE').format(d);
+        items.add(_TxItem.header(label));
+      }
+
+      final dayTxs = groups[key]!;
+      final emittedRefs = <String>{};
+      final unmatchedIns = <WalletTransaction>[
+        ...dayTxs.where(
+            (t) => t.type == 'transfer_in' && _extractRef(t.note) == null),
+      ];
+      final skippedIds = <int>{};
+
+      for (final tx in dayTxs) {
+        if (skippedIds.contains(tx.id)) continue;
+
+        if (tx.type == 'transfer_out' || tx.type == 'transfer_in') {
+          final ref = _extractRef(tx.note);
+          if (ref != null) {
+            if (emittedRefs.contains(ref)) continue;
+            emittedRefs.add(ref);
+            final WalletTransaction outLeg;
+            final WalletTransaction inLeg;
+            if (tx.type == 'transfer_out') {
+              outLeg = tx;
+              inLeg = dayTxs.firstWhere(
+                (t) => t.type == 'transfer_in' && _extractRef(t.note) == ref,
+                orElse: () => tx,
+              );
+            } else {
+              final out = dayTxs.firstWhere(
+                (t) => t.type == 'transfer_out' && _extractRef(t.note) == ref,
+                orElse: () => tx,
+              );
+              outLeg = out;
+              inLeg = tx;
+            }
+            items.add(_TxItem.transfer(outLeg, inLeg));
+          } else if (tx.type == 'transfer_out') {
+            final matchIdx = unmatchedIns.indexWhere(
+                (t) => t.amount == tx.amount && !skippedIds.contains(t.id));
+            if (matchIdx != -1) {
+              final inLeg = unmatchedIns[matchIdx];
+              skippedIds.add(inLeg.id!);
+              items.add(_TxItem.transfer(tx, inLeg));
+            } else {
+              items.add(_TxItem.tx(tx));
+            }
+          } else {
+            items.add(_TxItem.tx(tx));
+          }
+        } else {
+          items.add(_TxItem.tx(tx));
+        }
+      }
+    }
+
+    return ListView.builder(
+      controller: ctrl,
+      padding: EdgeInsets.zero,
+      itemCount: items.length,
+      itemBuilder: (_, i) {
+        final item = items[i];
+
+        // ── Date header ───────────────────────────────────────────────────
+        if (item.isHeader) {
+          return Padding(
+            padding: const EdgeInsets.only(top: 8, bottom: 2),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.label!,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: theme.colorScheme.outlineVariant,
+                ),
+              ],
+            ),
+          );
+        }
+
+        // ── Merged transfer card ──────────────────────────────────────────
+        if (item.isTransfer) {
+          final outTx = item.transferOut!;
+          final inTx = item.transferIn!;
+          final fromAccount = _allAccounts
+              .firstWhere((a) => a.id == outTx.accountId,
+                  orElse: () => Account(
+                      name: 'Unknown',
+                      balance: 0,
+                      type: '',
+                      colorHex: '',
+                      icon: ''))
+              .name;
+          final toAccount = _allAccounts
+              .firstWhere((a) => a.id == inTx.accountId,
+                  orElse: () => Account(
+                      name: 'Unknown',
+                      balance: 0,
+                      type: '',
+                      colorHex: '',
+                      icon: ''))
+              .name;
+
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Card(
+                margin: EdgeInsets.zero,
+                elevation: 0,
+                color: Colors.transparent,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                clipBehavior: Clip.antiAlias,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Dismissible(
+                    key: Key('acct_transfer_${outTx.id}_${inTx.id}'),
+                    direction: DismissDirection.endToStart,
+                    background: Container(
+                      alignment: Alignment.centerRight,
+                      padding: const EdgeInsets.only(right: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.delete, color: Colors.white),
+                    ),
+                    confirmDismiss: (_) async {
+                      return await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('Delete Transfer'),
+                          content: const Text(
+                              'This will delete both legs of the transfer.'),
+                          actions: [
+                            TextButton(
+                                onPressed: () => Navigator.pop(ctx, false),
+                                child: const Text('Cancel')),
+                            FilledButton(
+                              style: FilledButton.styleFrom(
+                                  backgroundColor: Colors.red),
+                              onPressed: () => Navigator.pop(ctx, true),
+                              child: const Text('Delete'),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    onDismissed: (_) async {
+                      await _deleteTransaction(outTx);
+                      await _deleteTransaction(inTx);
+                    },
+                    child: ListTile(
+                      dense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 2),
+                      onTap: () => _showTransferInfo(outTx),
+                      leading: const CircleAvatar(
+                        radius: 22,
+                        backgroundColor: Color(0xFFDBEAFE),
+                        child: Icon(
+                          Icons.swap_horiz_rounded,
+                          size: 20,
+                          color: Color(0xFF2563EB),
+                        ),
+                      ),
+                      title: const Text(
+                        'Transfer',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w600, fontSize: 13),
+                      ),
+                      subtitle: Text(
+                        '$fromAccount → $toAccount',
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                      trailing: Text(
+                        '± ₱${_fmt(outTx.amount)}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                          color: Color(0xFF2563EB),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Divider(
+                height: 1,
+                thickness: 0.5,
+                indent: 12,
+                endIndent: 12,
+                color: Colors.grey.withValues(alpha: 0.25),
+              ),
+            ],
+          );
+        }
+
+        // ── Regular transaction card ──────────────────────────────────────
+        final tx = item.tx!;
+        final isIncome = tx.type == 'income';
+        final rowColor = isIncome ? Colors.green : Colors.red;
+        final bgColor = isIncome ? Colors.green.shade100 : Colors.red.shade100;
+        final amountPrefix = isIncome ? '+' : '−';
+
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Card(
+              margin: EdgeInsets.zero,
+              elevation: 0,
+              color: Colors.transparent,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+              clipBehavior: Clip.antiAlias,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Dismissible(
+                  key: Key('acct_tx_${tx.id}'),
+                  direction: DismissDirection.endToStart,
+                  background: Container(
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.only(right: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.delete, color: Colors.white),
+                  ),
+                  onDismissed: (_) => _deleteTransaction(tx),
+                  child: ListTile(
+                    dense: true,
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                    onTap: () => _editTransaction(tx),
+                    leading: CircleAvatar(
+                      radius: 22,
+                      backgroundColor: bgColor,
+                      child: Icon(
+                        kTransactionCategoryIcons[tx.category] ??
+                            Icons.category,
+                        size: 20,
+                        color: rowColor,
+                      ),
+                    ),
+                    title: Text(
+                      tx.title,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w600, fontSize: 13),
+                    ),
+                    subtitle: Text(
+                      tx.category,
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                    trailing: Text(
+                      '$amountPrefix ₱${_fmt(tx.amount)}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                        color: rowColor,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Divider(
+              height: 1,
+              thickness: 0.5,
+              indent: 12,
+              endIndent: 12,
+              color: Colors.grey.withValues(alpha: 0.25),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   String _capitalize(String s) =>
       s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
 }
 
-// ── Small stacked income/expense chip used in _AccountDetailSheet header ───────
+// ── Local _TxItem discriminated union (for _AccountDetailSheet) ───────────────
+
+class _TxItem {
+  final bool isHeader;
+  final bool isTransfer;
+  final String? label;
+  final WalletTransaction? tx;
+  final WalletTransaction? transferOut;
+  final WalletTransaction? transferIn;
+
+  const _TxItem.header(this.label)
+      : isHeader = true,
+        isTransfer = false,
+        tx = null,
+        transferOut = null,
+        transferIn = null;
+
+  const _TxItem.tx(this.tx)
+      : isHeader = false,
+        isTransfer = false,
+        label = null,
+        transferOut = null,
+        transferIn = null;
+
+  const _TxItem.transfer(this.transferOut, this.transferIn)
+      : isHeader = false,
+        isTransfer = true,
+        label = null,
+        tx = null;
+}
 
 class _AccountStatChip extends StatelessWidget {
   final IconData icon;
