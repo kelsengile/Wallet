@@ -326,6 +326,7 @@ class _SpeedDialFabState extends State<_SpeedDialFab>
 
   // Controls the double-spin of the + icon (0 → 1.0 = two full turns)
   late final AnimationController _spinCtrl;
+  // ignore: unused_field
   late final Animation<double> _spinAnim;
 
   // Per-button staggered slide+fade animations (Transfer=0, Expense=1, Income=2)
@@ -385,7 +386,6 @@ class _SpeedDialFabState extends State<_SpeedDialFab>
   Future<void> _toggle() async {
     if (!_open) {
       setState(() => _open = true);
-      _spinCtrl.forward();
       _ctrl.forward();
       // Stagger: Income first (closest), then Expense, then Transfer
       // Indices: 0=Transfer, 1=Expense, 2=Income → reverse stagger order
@@ -401,7 +401,6 @@ class _SpeedDialFabState extends State<_SpeedDialFab>
   Future<void> _close() async {
     if (!_open) return;
     setState(() => _open = false);
-    _spinCtrl.reverse();
     // Collapse all at once (no stagger on close — snappy feel)
     for (final c in _btnCtrls) {
       c.reverse();
@@ -498,27 +497,22 @@ class _SpeedDialFabState extends State<_SpeedDialFab>
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: _open
-                    ? theme.colorScheme.surfaceContainerHighest
+                    ? theme.colorScheme.surface
                     : theme.colorScheme.primary,
                 border: Border.all(
                   color: theme.colorScheme.surface,
                   width: 3.5,
                 ),
               ),
-              child: RotationTransition(
-                turns: _spinAnim,
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 220),
-                  transitionBuilder: (child, anim) =>
-                      ScaleTransition(scale: anim, child: child),
-                  child: Icon(
-                    _open ? Icons.close : Icons.add,
-                    key: ValueKey(_open),
-                    color: _open
-                        ? theme.colorScheme.onSurfaceVariant
-                        : Colors.white,
-                    size: iconSize,
-                  ),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                transitionBuilder: (child, anim) =>
+                    ScaleTransition(scale: anim, child: child),
+                child: Icon(
+                  _open ? Icons.close : Icons.add,
+                  key: ValueKey(_open),
+                  color: _open ? theme.colorScheme.onSurface : Colors.white,
+                  size: iconSize,
                 ),
               ),
             ),
