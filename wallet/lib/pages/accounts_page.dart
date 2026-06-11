@@ -257,68 +257,65 @@ class _AccountsPageState extends State<AccountsPage> {
           onNavigateToAnalytics: widget.onNavigateToAnalytics,
         ),
 
+        // ── "My Accounts" header — pinned, does not scroll ────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('My Accounts',
+                  style: theme.textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.bold)),
+              Row(
+                children: [
+                  IconButton(
+                    onPressed: _reorderMode ? null : _showAddAccountDialog,
+                    icon: const Icon(Icons.add),
+                    tooltip: 'Add account',
+                    padding: const EdgeInsets.all(4),
+                    constraints: const BoxConstraints(),
+                  ),
+                  // Reorder mode toggle
+                  if (_accounts.isNotEmpty)
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      decoration: BoxDecoration(
+                        color: _reorderMode
+                            ? theme.colorScheme.primaryContainer
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: IconButton(
+                        onPressed: () =>
+                            setState(() => _reorderMode = !_reorderMode),
+                        icon: Icon(
+                          _reorderMode
+                              ? Icons.check_rounded
+                              : Icons.reorder_rounded,
+                          size: 20,
+                          color: _reorderMode
+                              ? theme.colorScheme.onPrimaryContainer
+                              : theme.colorScheme.onSurfaceVariant,
+                        ),
+                        tooltip: _reorderMode
+                            ? 'Done reordering'
+                            : 'Reorder sections & cards',
+                        padding: const EdgeInsets.all(4),
+                        constraints: const BoxConstraints(),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+
         // ── Scrollable accounts list ───────────────────────────────────
         Expanded(
           child: RefreshIndicator(
             onRefresh: _loadAccounts,
             child: CustomScrollView(
               slivers: [
-                // ── "My Accounts" label ───────────────────────────────────────
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('My Accounts',
-                            style: theme.textTheme.titleMedium
-                                ?.copyWith(fontWeight: FontWeight.bold)),
-                        Row(
-                          children: [
-                            IconButton(
-                              onPressed:
-                                  _reorderMode ? null : _showAddAccountDialog,
-                              icon: const Icon(Icons.add),
-                              tooltip: 'Add account',
-                              padding: const EdgeInsets.all(4),
-                              constraints: const BoxConstraints(),
-                            ),
-                            // Reorder mode toggle
-                            if (_accounts.isNotEmpty)
-                              AnimatedContainer(
-                                duration: const Duration(milliseconds: 200),
-                                decoration: BoxDecoration(
-                                  color: _reorderMode
-                                      ? theme.colorScheme.primaryContainer
-                                      : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: IconButton(
-                                  onPressed: () => setState(
-                                      () => _reorderMode = !_reorderMode),
-                                  icon: Icon(
-                                    _reorderMode
-                                        ? Icons.check_rounded
-                                        : Icons.reorder_rounded,
-                                    size: 20,
-                                    color: _reorderMode
-                                        ? theme.colorScheme.onPrimaryContainer
-                                        : theme.colorScheme.onSurfaceVariant,
-                                  ),
-                                  tooltip: _reorderMode
-                                      ? 'Done reordering'
-                                      : 'Reorder sections & cards',
-                                  padding: const EdgeInsets.all(4),
-                                  constraints: const BoxConstraints(),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
                 // ── Empty state ───────────────────────────────────────────────
                 if (_accounts.isEmpty)
                   SliverFillRemaining(
