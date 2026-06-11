@@ -245,121 +245,128 @@ class _AccountsPageState extends State<AccountsPage> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    return RefreshIndicator(
-      onRefresh: _loadAccounts,
-      child: CustomScrollView(
-        slivers: [
-          // ── Hero header ───────────────────────────────────────────────
-          SliverToBoxAdapter(
-            child: _TotalBalanceHero(
-              totalBalance: _totalBalance,
-              accountCount: _accounts.length,
-              totalIncome: _totalIncome,
-              totalExpenses: _totalExpenses,
-              onAddAccount: _showAddAccountDialog,
-              onNavigateToAnalytics: widget.onNavigateToAnalytics,
-            ),
-          ),
+    return Column(
+      children: [
+        // ── Pinned hero — does not scroll ─────────────────────────────
+        _TotalBalanceHero(
+          totalBalance: _totalBalance,
+          accountCount: _accounts.length,
+          totalIncome: _totalIncome,
+          totalExpenses: _totalExpenses,
+          onAddAccount: _showAddAccountDialog,
+          onNavigateToAnalytics: widget.onNavigateToAnalytics,
+        ),
 
-          // ── "My Accounts" label ───────────────────────────────────────
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('My Accounts',
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.bold)),
-                  Row(
-                    children: [
-                      IconButton(
-                        onPressed: _reorderMode ? null : _showAddAccountDialog,
-                        icon: const Icon(Icons.add),
-                        tooltip: 'Add account',
-                        padding: const EdgeInsets.all(4),
-                        constraints: const BoxConstraints(),
-                      ),
-                      // Reorder mode toggle
-                      if (_accounts.isNotEmpty)
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          decoration: BoxDecoration(
-                            color: _reorderMode
-                                ? theme.colorScheme.primaryContainer
-                                : Colors.transparent,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: IconButton(
-                            onPressed: () =>
-                                setState(() => _reorderMode = !_reorderMode),
-                            icon: Icon(
-                              _reorderMode
-                                  ? Icons.check_rounded
-                                  : Icons.reorder_rounded,
-                              size: 20,
-                              color: _reorderMode
-                                  ? theme.colorScheme.onPrimaryContainer
-                                  : theme.colorScheme.onSurfaceVariant,
+        // ── Scrollable accounts list ───────────────────────────────────
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _loadAccounts,
+            child: CustomScrollView(
+              slivers: [
+                // ── "My Accounts" label ───────────────────────────────────────
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('My Accounts',
+                            style: theme.textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.bold)),
+                        Row(
+                          children: [
+                            IconButton(
+                              onPressed:
+                                  _reorderMode ? null : _showAddAccountDialog,
+                              icon: const Icon(Icons.add),
+                              tooltip: 'Add account',
+                              padding: const EdgeInsets.all(4),
+                              constraints: const BoxConstraints(),
                             ),
-                            tooltip: _reorderMode
-                                ? 'Done reordering'
-                                : 'Reorder sections & cards',
-                            padding: const EdgeInsets.all(4),
-                            constraints: const BoxConstraints(),
-                          ),
+                            // Reorder mode toggle
+                            if (_accounts.isNotEmpty)
+                              AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                decoration: BoxDecoration(
+                                  color: _reorderMode
+                                      ? theme.colorScheme.primaryContainer
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: IconButton(
+                                  onPressed: () => setState(
+                                      () => _reorderMode = !_reorderMode),
+                                  icon: Icon(
+                                    _reorderMode
+                                        ? Icons.check_rounded
+                                        : Icons.reorder_rounded,
+                                    size: 20,
+                                    color: _reorderMode
+                                        ? theme.colorScheme.onPrimaryContainer
+                                        : theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                  tooltip: _reorderMode
+                                      ? 'Done reordering'
+                                      : 'Reorder sections & cards',
+                                  padding: const EdgeInsets.all(4),
+                                  constraints: const BoxConstraints(),
+                                ),
+                              ),
+                          ],
                         ),
-                    ],
+                      ],
+                    ),
                   ),
-                ],
-              ),
+                ),
+
+                // ── Empty state ───────────────────────────────────────────────
+                if (_accounts.isEmpty)
+                  SliverFillRemaining(
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.account_balance_wallet_outlined,
+                              size: 56,
+                              color: theme.colorScheme.outlineVariant),
+                          const SizedBox(height: 12),
+                          Text('No accounts yet',
+                              style: theme.textTheme.titleSmall
+                                  ?.copyWith(color: theme.colorScheme.outline)),
+                          const SizedBox(height: 4),
+                          Text('Tap " + " to create your first account',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.outlineVariant)),
+                        ],
+                      ),
+                    ),
+                  )
+                else
+                  // ── Reorderable list of type sections ──────────────────────
+                  SliverToBoxAdapter(
+                    child: _DraggableSectionList(
+                      typeOrder: _typeOrder,
+                      grouped: _grouped,
+                      draggingSectionType: _draggingSectionType,
+                      reorderMode: _reorderMode,
+                      onSectionReorder: _onSectionReorder,
+                      onSectionDragStart: (t) =>
+                          setState(() => _draggingSectionType = t),
+                      onSectionDragEnd: () =>
+                          setState(() => _draggingSectionType = null),
+                      onCardMoveToType: _moveCardToType,
+                      onCardTap: _showAccountDetail,
+                      onCardLongPress: (_) {},
+                      onCardDelete: _deleteAccount,
+                    ),
+                  ),
+
+                const SliverToBoxAdapter(child: SizedBox(height: 32)),
+              ],
             ),
           ),
-
-          // ── Empty state ───────────────────────────────────────────────
-          if (_accounts.isEmpty)
-            SliverFillRemaining(
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.account_balance_wallet_outlined,
-                        size: 56, color: theme.colorScheme.outlineVariant),
-                    const SizedBox(height: 12),
-                    Text('No accounts yet',
-                        style: theme.textTheme.titleSmall
-                            ?.copyWith(color: theme.colorScheme.outline)),
-                    const SizedBox(height: 4),
-                    Text('Tap " + " to create your first account',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.outlineVariant)),
-                  ],
-                ),
-              ),
-            )
-          else
-            // ── Reorderable list of type sections ──────────────────────
-            SliverToBoxAdapter(
-              child: _DraggableSectionList(
-                typeOrder: _typeOrder,
-                grouped: _grouped,
-                draggingSectionType: _draggingSectionType,
-                reorderMode: _reorderMode,
-                onSectionReorder: _onSectionReorder,
-                onSectionDragStart: (t) =>
-                    setState(() => _draggingSectionType = t),
-                onSectionDragEnd: () =>
-                    setState(() => _draggingSectionType = null),
-                onCardMoveToType: _moveCardToType,
-                onCardTap: _showAccountDetail,
-                onCardLongPress: (_) {},
-                onCardDelete: _deleteAccount,
-              ),
-            ),
-
-          const SliverToBoxAdapter(child: SizedBox(height: 32)),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
