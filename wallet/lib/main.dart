@@ -44,15 +44,24 @@ class _WalletHomePageState extends State<WalletHomePage> {
   late final PageController _pageController;
   final _historyKey = GlobalKey<HistoryPageState>();
   bool _fabVisible = true;
+  // 0.0 = fully on accounts tab, 1.0 = fully off it — drives status bar style.
+  double _pageT = 0.0;
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: _selectedIndex);
+    _pageController.addListener(_onPageScroll);
+  }
+
+  void _onPageScroll() {
+    final t = (_pageController.page ?? 0.0).clamp(0.0, 1.0);
+    if ((t - _pageT).abs() > 0.005) setState(() => _pageT = t);
   }
 
   @override
   void dispose() {
+    _pageController.removeListener(_onPageScroll);
     _pageController.dispose();
     super.dispose();
   }
@@ -73,9 +82,9 @@ class _WalletHomePageState extends State<WalletHomePage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isAccountsTab = _selectedIndex == 0;
-
-    final overlayStyle = isAccountsTab
+    // Status bar icons: light (white) on accounts tab, dark on all others.
+    // Switches at the midpoint of the drag so it's never jarring.
+    final overlayStyle = _pageT < 0.5
         ? const SystemUiOverlayStyle(
             statusBarColor: Colors.transparent,
             statusBarIconBrightness: Brightness.light,
@@ -142,7 +151,7 @@ class _WalletHomePageState extends State<WalletHomePage> {
               top: 0,
               left: 0,
               right: 0,
-              child: _TopNavBar(isAccountsTab: isAccountsTab),
+              child: _TopNavBar(pageController: _pageController),
             ),
 
             // ── FAB speed-dial — slides DOWN into the nav bar when hidden ──
@@ -472,27 +481,69 @@ class _SpeedDialFabState extends State<_SpeedDialFab>
 
 // ── Top nav bar ────────────────────────────────────────────────────────────────
 //
-// Extracted into its own StatelessWidget so that keyboard-triggered
-// MediaQuery viewInsets changes (which cause WalletHomePage to rebuild)
-// do NOT force an expensive AnimatedContainer + gradient repaint.
-// The widget is cheap to diff; Flutter skips its subtree when props are equal.
+// Listens directly to the PageController so icon/text colors interpolate
+// smoothly based on the exact drag position — no discrete jump at page snap.
+// t = 0.0 → fully on accounts tab (white icons over gradient hero)
+// t = 1.0 → fully off accounts tab (theme-colored icons, no background)
 
-class _TopNavBar extends StatelessWidget {
-  final bool isAccountsTab;
-  const _TopNavBar({required this.isAccountsTab});
+class _TopNavBar extends StatefulWidget {
+  final PageController pageController;
+  const _TopNavBar({required this.pageController});
+
+  @override
+  State<_TopNavBar> createState() => _TopNavBarState();
+}
+
+class _TopNavBarState extends State<_TopNavBar> {
+  double _t = 0.0; // 0 = accounts, 1 = any other page
+
+  @override
+  void initState() {
+    super.initState();
+    widget.pageController.addListener(_onScroll);
+  }
+
+  @override
+  void didUpdateWidget(_TopNavBar old) {
+    super.didUpdateWidget(old);
+    if (old.pageController != widget.pageController) {
+      old.pageController.removeListener(_onScroll);
+      widget.pageController.addListener(_onScroll);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.pageController.removeListener(_onScroll);
+    super.dispose();
+  }
+
+  void _onScroll() {
+    final page = widget.pageController.page ?? 0.0;
+    // Clamp to [0,1]: fully white at page 0, fully theme-colored from page 1+.
+    final t = page.clamp(0.0, 1.0);
+    if ((t - _t).abs() > 0.001) setState(() => _t = t);
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    // Read only the top padding — not viewInsets — so the keyboard opening
-    // on a different page does not cause this widget to repaint.
     final topPadding = MediaQuery.paddingOf(context).top;
 
-    // Icon/text color: white on accounts tab (hero gradient bg), theme on others.
-    final iconColor =
-        isAccountsTab ? Colors.white : theme.colorScheme.onSurface;
-    final subtitleColor =
-        isAccountsTab ? Colors.white70 : theme.colorScheme.onSurfaceVariant;
+    // Lerp icon color: white → onSurface
+    final iconColor = Color.lerp(
+      Colors.white,
+      theme.colorScheme.onSurface,
+      _t,
+    )!;
+    // Lerp subtitle color: white70 → onSurfaceVariant
+    final subtitleColor = Color.lerp(
+      Colors.white70,
+      theme.colorScheme.onSurfaceVariant,
+      _t,
+    )!;
+    // Lerp wallet icon pill background: white.20 → transparent
+    final pillColor = Colors.white.withValues(alpha: (1 - _t) * 0.2);
 
     return RepaintBoundary(
       child: Container(
@@ -515,8 +566,7 @@ class _TopNavBar extends StatelessWidget {
             ),
             Container(
               decoration: BoxDecoration(
-                color:
-                    Colors.white.withValues(alpha: isAccountsTab ? 0.2 : 0.0),
+                color: pillColor,
                 shape: BoxShape.circle,
               ),
               padding: const EdgeInsets.all(6),
