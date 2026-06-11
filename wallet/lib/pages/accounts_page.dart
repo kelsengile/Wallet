@@ -915,7 +915,7 @@ class _TotalBalanceHero extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.fromLTRB(20, topPadding + 75, 20, 36),
+      padding: EdgeInsets.fromLTRB(20, topPadding + 80, 20, 36),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
