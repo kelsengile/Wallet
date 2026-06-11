@@ -101,48 +101,48 @@ class _WalletHomePageState extends State<WalletHomePage> {
         body: Stack(
           clipBehavior: Clip.none,
           children: [
-            // ── Main content ────────────────────────────────────────────────
-            Column(
-              children: [
-                // ── Top nav bar ───────────────────────────────────────────
-                _TopNavBar(isAccountsTab: isAccountsTab),
-
-                // ── Swipeable page content ────────────────────────────────
-                Expanded(
-                  child: NotificationListener<ScrollNotification>(
-                    onNotification: (n) {
-                      // Only react to vertical scrolls — ignore horizontal
-                      // PageView swipe notifications entirely.
-                      if (n is ScrollUpdateNotification &&
-                          n.metrics.axis == Axis.vertical) {
-                        final delta = n.scrollDelta ?? 0;
-                        if (delta > 4 && _fabVisible) {
-                          setState(() => _fabVisible = false);
-                        } else if (delta < -4 && !_fabVisible) {
-                          setState(() => _fabVisible = true);
-                        }
-                      }
-                      return false;
-                    },
-                    child: PageView(
-                      controller: _pageController,
-                      onPageChanged: (i) {
-                        _onPageChanged(i);
-                        setState(() => _fabVisible = true);
-                      },
-                      physics: const BouncingScrollPhysics(),
-                      children: [
-                        AccountsPage(
-                          onNavigateToAnalytics: () => _onItemTapped(2),
-                        ),
-                        HistoryPage(key: _historyKey),
-                        const AnalyticsPage(),
-                        const ProfilePage(),
-                      ],
-                    ),
+            // ── Main content (full height, nav bar overlays it) ─────────────
+            NotificationListener<ScrollNotification>(
+              onNotification: (n) {
+                // Only react to vertical scrolls — ignore horizontal
+                // PageView swipe notifications entirely.
+                if (n is ScrollUpdateNotification &&
+                    n.metrics.axis == Axis.vertical) {
+                  final delta = n.scrollDelta ?? 0;
+                  if (delta > 4 && _fabVisible) {
+                    setState(() => _fabVisible = false);
+                  } else if (delta < -4 && !_fabVisible) {
+                    setState(() => _fabVisible = true);
+                  }
+                }
+                return false;
+              },
+              child: PageView(
+                controller: _pageController,
+                onPageChanged: (i) {
+                  _onPageChanged(i);
+                  setState(() => _fabVisible = true);
+                },
+                physics: const BouncingScrollPhysics(),
+                children: [
+                  AccountsPage(
+                    onNavigateToAnalytics: () => _onItemTapped(2),
                   ),
-                ),
-              ],
+                  // Non-accounts pages: add top padding so content
+                  // isn't hidden behind the transparent nav overlay.
+                  _WithTopNavPadding(child: HistoryPage(key: _historyKey)),
+                  const _WithTopNavPadding(child: AnalyticsPage()),
+                  const _WithTopNavPadding(child: ProfilePage()),
+                ],
+              ),
+            ),
+
+            // ── Top nav bar — transparent overlay, no background ────────────
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: _TopNavBar(isAccountsTab: isAccountsTab),
             ),
 
             // ── FAB speed-dial — slides DOWN into the nav bar when hidden ──
@@ -489,20 +489,10 @@ class _TopNavBar extends StatelessWidget {
     final topPadding = MediaQuery.paddingOf(context).top;
 
     return RepaintBoundary(
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
+      child: Container(
         decoration: BoxDecoration(
-          gradient: isAccountsTab
-              ? LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    theme.colorScheme.primary,
-                    theme.colorScheme.tertiary,
-                  ],
-                )
-              : null,
-          color: isAccountsTab ? null : theme.colorScheme.surface,
+          // Accounts tab: transparent so hero gradient shows through.
+          color: isAccountsTab ? Colors.transparent : theme.colorScheme.surface,
         ),
         padding: EdgeInsets.only(
           top: topPadding,
@@ -877,6 +867,20 @@ class _WalletDrawer extends StatelessWidget {
 }
 
 // ── Drawer helpers ─────────────────────────────────────────────────────────────
+
+class _WithTopNavPadding extends StatelessWidget {
+  final Widget child;
+  const _WithTopNavPadding({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final topPad = MediaQuery.paddingOf(context).top + 56;
+    return Padding(
+      padding: EdgeInsets.only(top: topPad),
+      child: child,
+    );
+  }
+}
 
 class _SectionHeader extends StatelessWidget {
   final String label;
