@@ -45,7 +45,8 @@ class _WalletHomePageState extends State<WalletHomePage> {
   final _historyKey = GlobalKey<HistoryPageState>();
   bool _fabVisible = true;
   // 0.0 = fully on accounts tab, 1.0 = fully off it — drives status bar style.
-  double _pageT = 0.0;
+  // Uses a ValueNotifier so scroll updates never trigger a full widget rebuild.
+  final _pageTNotifier = ValueNotifier<double>(0.0);
 
   @override
   void initState() {
@@ -56,13 +57,16 @@ class _WalletHomePageState extends State<WalletHomePage> {
 
   void _onPageScroll() {
     final t = (_pageController.page ?? 0.0).clamp(0.0, 1.0);
-    if ((t - _pageT).abs() > 0.005) setState(() => _pageT = t);
+    if ((t - _pageTNotifier.value).abs() > 0.005) {
+      _pageTNotifier.value = t;
+    }
   }
 
   @override
   void dispose() {
     _pageController.removeListener(_onPageScroll);
     _pageController.dispose();
+    _pageTNotifier.dispose();
     super.dispose();
   }
 
@@ -82,22 +86,28 @@ class _WalletHomePageState extends State<WalletHomePage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    // Status bar icons: light (white) on accounts tab, dark on all others.
-    // Switches at the midpoint of the drag so it's never jarring.
-    final overlayStyle = _pageT < 0.5
-        ? const SystemUiOverlayStyle(
-            statusBarColor: Colors.transparent,
-            statusBarIconBrightness: Brightness.light,
-            statusBarBrightness: Brightness.dark,
-          )
-        : const SystemUiOverlayStyle(
-            statusBarColor: Colors.transparent,
-            statusBarIconBrightness: Brightness.dark,
-            statusBarBrightness: Brightness.light,
-          );
 
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: overlayStyle,
+    return ValueListenableBuilder<double>(
+      valueListenable: _pageTNotifier,
+      builder: (context, pageT, child) {
+        // Status bar icons: light (white) on accounts tab, dark on all others.
+        // Switches at the midpoint of the drag so it's never jarring.
+        final overlayStyle = pageT < 0.5
+            ? const SystemUiOverlayStyle(
+                statusBarColor: Colors.transparent,
+                statusBarIconBrightness: Brightness.light,
+                statusBarBrightness: Brightness.dark,
+              )
+            : const SystemUiOverlayStyle(
+                statusBarColor: Colors.transparent,
+                statusBarIconBrightness: Brightness.dark,
+                statusBarBrightness: Brightness.light,
+              );
+        return AnnotatedRegion<SystemUiOverlayStyle>(
+          value: overlayStyle,
+          child: child!,
+        );
+      },
       child: Scaffold(
         backgroundColor: theme.colorScheme.surface,
         drawer: _WalletDrawer(
@@ -132,7 +142,7 @@ class _WalletHomePageState extends State<WalletHomePage> {
                   _onPageChanged(i);
                   setState(() => _fabVisible = true);
                 },
-                physics: const ClampingScrollPhysics(),
+                physics: const PageScrollPhysics(),
                 children: [
                   AccountsPage(
                     onNavigateToAnalytics: () => _onItemTapped(2),
