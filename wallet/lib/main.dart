@@ -408,13 +408,17 @@ class _SpeedDialFabState extends State<_SpeedDialFab>
                 onTap();
               },
               child: Container(
-                width: 44,
-                height: 44,
+                width: 54,
+                height: 54,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: color,
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.surface,
+                    width: 3,
+                  ),
                 ),
-                child: Icon(icon, color: Colors.white, size: 20),
+                child: Icon(icon, color: Colors.white, size: 24),
               ),
             ),
           ),
@@ -427,7 +431,7 @@ class _SpeedDialFabState extends State<_SpeedDialFab>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final screenWidth = MediaQuery.sizeOf(context).width;
-    final size = (screenWidth * 0.135).clamp(48.0, 60.0);
+    final size = (screenWidth * 0.155).clamp(56.0, 68.0);
     final iconSize = size * 0.5;
 
     // Wrap everything in a TapRegion so any tap outside this widget closes it.
@@ -471,6 +475,10 @@ class _SpeedDialFabState extends State<_SpeedDialFab>
                 color: _open
                     ? theme.colorScheme.surfaceContainerHighest
                     : theme.colorScheme.primary,
+                border: Border.all(
+                  color: theme.colorScheme.surface,
+                  width: 3.5,
+                ),
               ),
               child: RotationTransition(
                 turns: _spinAnim,
