@@ -81,10 +81,10 @@ class AccountsPage extends StatefulWidget {
   const AccountsPage({super.key, this.onNavigateToAnalytics});
 
   @override
-  State<AccountsPage> createState() => _AccountsPageState();
+  State<AccountsPage> createState() => AccountsPageState();
 }
 
-class _AccountsPageState extends State<AccountsPage> {
+class AccountsPageState extends State<AccountsPage> {
   final _db = DatabaseHelper.instance;
   List<Account> _accounts = [];
   Map<String, List<Account>> _grouped = {};
@@ -108,6 +108,8 @@ class _AccountsPageState extends State<AccountsPage> {
     super.initState();
     _loadAccounts();
   }
+
+  Future<void> refresh() => _loadAccounts();
 
   Future<void> _loadAccounts() async {
     final accounts = await _db.getAccountsSortedByLatestTransaction();
@@ -312,55 +314,51 @@ class _AccountsPageState extends State<AccountsPage> {
 
         // ── Scrollable accounts list ───────────────────────────────────
         Expanded(
-          child: RefreshIndicator(
-            onRefresh: _loadAccounts,
-            child: CustomScrollView(
-              slivers: [
-                // ── Empty state ───────────────────────────────────────────────
-                if (_accounts.isEmpty)
-                  SliverFillRemaining(
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.account_balance_wallet_outlined,
-                              size: 56,
-                              color: theme.colorScheme.outlineVariant),
-                          const SizedBox(height: 12),
-                          Text('No accounts yet',
-                              style: theme.textTheme.titleSmall
-                                  ?.copyWith(color: theme.colorScheme.outline)),
-                          const SizedBox(height: 4),
-                          Text('Tap " + " to create your first account',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.outlineVariant)),
-                        ],
-                      ),
-                    ),
-                  )
-                else
-                  // ── Reorderable list of type sections ──────────────────────
-                  SliverToBoxAdapter(
-                    child: _DraggableSectionList(
-                      typeOrder: _typeOrder,
-                      grouped: _grouped,
-                      draggingSectionType: _draggingSectionType,
-                      reorderMode: _reorderMode,
-                      onSectionReorder: _onSectionReorder,
-                      onSectionDragStart: (t) =>
-                          setState(() => _draggingSectionType = t),
-                      onSectionDragEnd: () =>
-                          setState(() => _draggingSectionType = null),
-                      onCardMoveToType: _moveCardToType,
-                      onCardTap: _showAccountDetail,
-                      onCardLongPress: (_) {},
-                      onCardDelete: _deleteAccount,
+          child: CustomScrollView(
+            slivers: [
+              // ── Empty state ───────────────────────────────────────────────
+              if (_accounts.isEmpty)
+                SliverFillRemaining(
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.account_balance_wallet_outlined,
+                            size: 56, color: theme.colorScheme.outlineVariant),
+                        const SizedBox(height: 12),
+                        Text('No accounts yet',
+                            style: theme.textTheme.titleSmall
+                                ?.copyWith(color: theme.colorScheme.outline)),
+                        const SizedBox(height: 4),
+                        Text('Tap " + " to create your first account',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.outlineVariant)),
+                      ],
                     ),
                   ),
+                )
+              else
+                // ── Reorderable list of type sections ──────────────────────
+                SliverToBoxAdapter(
+                  child: _DraggableSectionList(
+                    typeOrder: _typeOrder,
+                    grouped: _grouped,
+                    draggingSectionType: _draggingSectionType,
+                    reorderMode: _reorderMode,
+                    onSectionReorder: _onSectionReorder,
+                    onSectionDragStart: (t) =>
+                        setState(() => _draggingSectionType = t),
+                    onSectionDragEnd: () =>
+                        setState(() => _draggingSectionType = null),
+                    onCardMoveToType: _moveCardToType,
+                    onCardTap: _showAccountDetail,
+                    onCardLongPress: (_) {},
+                    onCardDelete: _deleteAccount,
+                  ),
+                ),
 
-                const SliverToBoxAdapter(child: SizedBox(height: 32)),
-              ],
-            ),
+              const SliverToBoxAdapter(child: SizedBox(height: 32)),
+            ],
           ),
         ),
       ],

@@ -43,6 +43,8 @@ class _WalletHomePageState extends State<WalletHomePage> {
   int _selectedIndex = 0;
   late final PageController _pageController;
   final _historyKey = GlobalKey<HistoryPageState>();
+  final _accountsKey = GlobalKey<AccountsPageState>();
+  final _analyticsKey = GlobalKey<AnalyticsPageState>();
   bool _fabVisible = true;
   // 0.0 = fully on accounts tab, 1.0 = fully off it — drives status bar style.
   // Uses a ValueNotifier so scroll updates never trigger a full widget rebuild.
@@ -83,6 +85,21 @@ class _WalletHomePageState extends State<WalletHomePage> {
     setState(() => _selectedIndex = index);
   }
 
+  Future<void> _onRefresh() async {
+    switch (_selectedIndex) {
+      case 0:
+        await _accountsKey.currentState?.refresh();
+        break;
+      case 1:
+        await _historyKey.currentState?.refresh();
+        break;
+      case 2:
+        await _analyticsKey.currentState?.refresh();
+        break;
+      // Profile page (3) has no async data to refresh
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -117,132 +134,141 @@ class _WalletHomePageState extends State<WalletHomePage> {
             Navigator.pop(context);
           },
         ),
-        body: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            // ── Main content (full height, nav bar overlays it) ─────────────
-            NotificationListener<ScrollNotification>(
-              onNotification: (n) {
-                // Only react to vertical scrolls — ignore horizontal
-                // PageView swipe notifications entirely.
-                if (n is ScrollUpdateNotification &&
-                    n.metrics.axis == Axis.vertical) {
-                  final delta = n.scrollDelta ?? 0;
-                  if (delta > 4 && _fabVisible) {
-                    setState(() => _fabVisible = false);
-                  } else if (delta < -4 && !_fabVisible) {
-                    setState(() => _fabVisible = true);
+        body: RefreshIndicator(
+          onRefresh: _onRefresh,
+          // edgeOffset: 0 means the spinner appears from the very top of the
+          // screen, above the transparent _TopNavBar overlay.
+          edgeOffset: 0,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              // ── Main content (full height, nav bar overlays it) ─────────────
+              NotificationListener<ScrollNotification>(
+                onNotification: (n) {
+                  // Only react to vertical scrolls — ignore horizontal
+                  // PageView swipe notifications entirely.
+                  if (n is ScrollUpdateNotification &&
+                      n.metrics.axis == Axis.vertical) {
+                    final delta = n.scrollDelta ?? 0;
+                    if (delta > 4 && _fabVisible) {
+                      setState(() => _fabVisible = false);
+                    } else if (delta < -4 && !_fabVisible) {
+                      setState(() => _fabVisible = true);
+                    }
                   }
-                }
-                return false;
-              },
-              child: PageView(
-                controller: _pageController,
-                onPageChanged: (i) {
-                  _onPageChanged(i);
-                  setState(() => _fabVisible = true);
+                  return false;
                 },
-                physics: const PageScrollPhysics(),
-                children: [
-                  AccountsPage(
-                    onNavigateToAnalytics: () => _onItemTapped(2),
-                  ),
-                  // Non-accounts pages: add top padding so content
-                  // isn't hidden behind the transparent nav overlay.
-                  _WithTopNavPadding(child: HistoryPage(key: _historyKey)),
-                  const _WithTopNavPadding(child: AnalyticsPage()),
-                  const _WithTopNavPadding(child: ProfilePage()),
-                ],
+                child: PageView(
+                  controller: _pageController,
+                  onPageChanged: (i) {
+                    _onPageChanged(i);
+                    setState(() => _fabVisible = true);
+                  },
+                  physics: const PageScrollPhysics(),
+                  children: [
+                    AccountsPage(
+                      key: _accountsKey,
+                      onNavigateToAnalytics: () => _onItemTapped(2),
+                    ),
+                    // Non-accounts pages: add top padding so content
+                    // isn't hidden behind the transparent nav overlay.
+                    _WithTopNavPadding(child: HistoryPage(key: _historyKey)),
+                    _WithTopNavPadding(
+                        child: AnalyticsPage(key: _analyticsKey)),
+                    const _WithTopNavPadding(child: ProfilePage()),
+                  ],
+                ),
               ),
-            ),
 
-            // ── Top nav bar — transparent overlay, no background ────────────
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: _TopNavBar(pageController: _pageController),
-            ),
+              // ── Top nav bar — transparent overlay, no background ────────────
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: _TopNavBar(pageController: _pageController),
+              ),
 
-            // ── FAB speed-dial — slides DOWN into the nav bar when hidden ──
-            // ClipRect confines the button to the body bounds so it visually
-            // disappears *behind* the NavigationBar rather than over it.
-            Positioned(
-              right: 16,
-              bottom: 0,
-              child: ClipRect(
-                child: AnimatedSlide(
-                  offset: _fabVisible ? Offset.zero : const Offset(0, 1.5),
-                  duration: const Duration(milliseconds: 380),
-                  curve: _fabVisible ? Curves.easeOutCubic : Curves.easeInCubic,
-                  child: AnimatedOpacity(
-                    opacity: _fabVisible ? 1.0 : 0.0,
-                    duration: const Duration(milliseconds: 260),
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 16),
-                      child: _SpeedDialFab(
-                        onAddIncome: () async {
-                          final accounts =
-                              await DatabaseHelper.instance.getAllAccounts();
-                          if (!context.mounted) return;
-                          final tx = await WalletTransaction.showDialog(
-                            context,
-                            accounts: accounts,
-                            initialType: 'income',
-                          );
-                          if (tx == null) return;
-                          await DatabaseHelper.instance.insertTransaction(tx);
-                          _historyKey.currentState?.refresh();
-                        },
-                        onAddExpense: () async {
-                          final accounts =
-                              await DatabaseHelper.instance.getAllAccounts();
-                          if (!context.mounted) return;
-                          final tx = await WalletTransaction.showDialog(
-                            context,
-                            accounts: accounts,
-                            initialType: 'expense',
-                          );
-                          if (tx == null) return;
-                          await DatabaseHelper.instance.insertTransaction(tx);
-                          _historyKey.currentState?.refresh();
-                        },
-                        onTransfer: () async {
-                          final accounts =
-                              await DatabaseHelper.instance.getAllAccounts();
-                          if (!context.mounted) return;
-                          if (accounts.length < 2) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                    'You need at least 2 accounts to make a transfer.'),
-                              ),
+              // ── FAB speed-dial — slides DOWN into the nav bar when hidden ──
+              // ClipRect confines the button to the body bounds so it visually
+              // disappears *behind* the NavigationBar rather than over it.
+              Positioned(
+                right: 16,
+                bottom: 0,
+                child: ClipRect(
+                  child: AnimatedSlide(
+                    offset: _fabVisible ? Offset.zero : const Offset(0, 1.5),
+                    duration: const Duration(milliseconds: 380),
+                    curve:
+                        _fabVisible ? Curves.easeOutCubic : Curves.easeInCubic,
+                    child: AnimatedOpacity(
+                      opacity: _fabVisible ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 260),
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: _SpeedDialFab(
+                          onAddIncome: () async {
+                            final accounts =
+                                await DatabaseHelper.instance.getAllAccounts();
+                            if (!context.mounted) return;
+                            final tx = await WalletTransaction.showDialog(
+                              context,
+                              accounts: accounts,
+                              initialType: 'income',
                             );
-                            return;
-                          }
-                          final result = await WalletTransactionTransfer
-                              .showTransferDialog(
-                            context,
-                            accounts: accounts,
-                          );
-                          if (result == null) return;
-                          await DatabaseHelper.instance.insertTransfer(
-                            fromAccountId: result.fromAccountId,
-                            toAccountId: result.toAccountId,
-                            amount: result.amount,
-                            date: result.date,
-                            note: result.note,
-                          );
-                          _historyKey.currentState?.refresh();
-                        },
+                            if (tx == null) return;
+                            await DatabaseHelper.instance.insertTransaction(tx);
+                            _historyKey.currentState?.refresh();
+                          },
+                          onAddExpense: () async {
+                            final accounts =
+                                await DatabaseHelper.instance.getAllAccounts();
+                            if (!context.mounted) return;
+                            final tx = await WalletTransaction.showDialog(
+                              context,
+                              accounts: accounts,
+                              initialType: 'expense',
+                            );
+                            if (tx == null) return;
+                            await DatabaseHelper.instance.insertTransaction(tx);
+                            _historyKey.currentState?.refresh();
+                          },
+                          onTransfer: () async {
+                            final accounts =
+                                await DatabaseHelper.instance.getAllAccounts();
+                            if (!context.mounted) return;
+                            if (accounts.length < 2) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                      'You need at least 2 accounts to make a transfer.'),
+                                ),
+                              );
+                              return;
+                            }
+                            final result = await WalletTransactionTransfer
+                                .showTransferDialog(
+                              context,
+                              accounts: accounts,
+                            );
+                            if (result == null) return;
+                            await DatabaseHelper.instance.insertTransfer(
+                              fromAccountId: result.fromAccountId,
+                              toAccountId: result.toAccountId,
+                              amount: result.amount,
+                              date: result.date,
+                              note: result.note,
+                            );
+                            _historyKey.currentState?.refresh();
+                          },
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
-        ),
+            ],
+          ), // Stack
+        ), // RefreshIndicator
         bottomNavigationBar: NavigationBar(
           selectedIndex: _selectedIndex,
           onDestinationSelected: _onItemTapped,
