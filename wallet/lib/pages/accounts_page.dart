@@ -910,10 +910,12 @@ class _TotalBalanceHero extends StatelessWidget {
     final theme = Theme.of(context);
     final primary = theme.colorScheme.primary;
     final tertiary = theme.colorScheme.tertiary;
+    // Extend gradient behind the transparent top nav bar overlay.
+    final topPadding = MediaQuery.paddingOf(context).top;
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 36),
+      padding: EdgeInsets.fromLTRB(20, topPadding + 75, 20, 36),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
