@@ -132,7 +132,7 @@ class _WalletHomePageState extends State<WalletHomePage> {
                   _onPageChanged(i);
                   setState(() => _fabVisible = true);
                 },
-                physics: const BouncingScrollPhysics(),
+                physics: const ClampingScrollPhysics(),
                 children: [
                   AccountsPage(
                     onNavigateToAnalytics: () => _onItemTapped(2),
