@@ -488,12 +488,16 @@ class _TopNavBar extends StatelessWidget {
     // on a different page does not cause this widget to repaint.
     final topPadding = MediaQuery.paddingOf(context).top;
 
+    // Icon/text color: white on accounts tab (hero gradient bg), theme on others.
+    final iconColor =
+        isAccountsTab ? Colors.white : theme.colorScheme.onSurface;
+    final subtitleColor =
+        isAccountsTab ? Colors.white70 : theme.colorScheme.onSurfaceVariant;
+
     return RepaintBoundary(
       child: Container(
-        decoration: BoxDecoration(
-          // Accounts tab: transparent so hero gradient shows through.
-          color: isAccountsTab ? Colors.transparent : theme.colorScheme.surface,
-        ),
+        // Always transparent — the page content is the background.
+        color: Colors.transparent,
         padding: EdgeInsets.only(
           top: topPadding,
           left: 8,
@@ -504,28 +508,22 @@ class _TopNavBar extends StatelessWidget {
           children: [
             Builder(
               builder: (ctx) => IconButton(
-                icon: Icon(
-                  Icons.menu,
-                  color: isAccountsTab ? Colors.white : null,
-                ),
+                icon: Icon(Icons.menu, color: iconColor),
                 onPressed: () => Scaffold.of(ctx).openDrawer(),
                 tooltip: 'Menu',
               ),
             ),
             Container(
               decoration: BoxDecoration(
-                color: isAccountsTab
-                    ? Colors.white.withValues(alpha: 0.2)
-                    : theme.colorScheme.primaryContainer,
+                color:
+                    Colors.white.withValues(alpha: isAccountsTab ? 0.2 : 0.0),
                 shape: BoxShape.circle,
               ),
               padding: const EdgeInsets.all(6),
               child: Icon(
                 Icons.account_balance_wallet,
                 size: 18,
-                color: isAccountsTab
-                    ? Colors.white
-                    : theme.colorScheme.onPrimaryContainer,
+                color: iconColor,
               ),
             ),
             const SizedBox(width: 8),
@@ -537,25 +535,20 @@ class _TopNavBar extends StatelessWidget {
                   'Wallet',
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.bold,
-                    color: isAccountsTab ? Colors.white : null,
+                    color: iconColor,
                   ),
                 ),
                 Text(
                   'Manage your money',
                   style: theme.textTheme.labelSmall?.copyWith(
-                    color: isAccountsTab
-                        ? Colors.white70
-                        : theme.colorScheme.onSurfaceVariant,
+                    color: subtitleColor,
                   ),
                 ),
               ],
             ),
             const Spacer(),
             IconButton(
-              icon: Icon(
-                Icons.search,
-                color: isAccountsTab ? Colors.white : null,
-              ),
+              icon: Icon(Icons.search, color: iconColor),
               onPressed: () {},
               tooltip: 'Search',
             ),
