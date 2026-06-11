@@ -316,12 +316,12 @@ class _SpeedDialFabState extends State<_SpeedDialFab>
       duration: const Duration(milliseconds: 300),
     );
 
-    // Spin: 2 full turns over 420 ms
+    // Rotate 45° when open to turn + into ×
     _spinCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 420),
+      duration: const Duration(milliseconds: 280),
     );
-    _spinAnim = Tween<double>(begin: 0, end: 2.0).animate(
+    _spinAnim = Tween<double>(begin: 0, end: 0.125).animate(
       CurvedAnimation(parent: _spinCtrl, curve: Curves.easeInOut),
     );
 
@@ -357,11 +357,9 @@ class _SpeedDialFabState extends State<_SpeedDialFab>
   }
 
   Future<void> _toggle() async {
-    // Kick off the double-spin every time the FAB is tapped
-    _spinCtrl.forward(from: 0);
-
     if (!_open) {
       setState(() => _open = true);
+      _spinCtrl.forward();
       _ctrl.forward();
       // Stagger: Income first (closest), then Expense, then Transfer
       // Indices: 0=Transfer, 1=Expense, 2=Income → reverse stagger order
@@ -377,6 +375,7 @@ class _SpeedDialFabState extends State<_SpeedDialFab>
   Future<void> _close() async {
     if (!_open) return;
     setState(() => _open = false);
+    _spinCtrl.reverse();
     // Collapse all at once (no stagger on close — snappy feel)
     for (final c in _btnCtrls) {
       c.reverse();
@@ -482,11 +481,18 @@ class _SpeedDialFabState extends State<_SpeedDialFab>
               ),
               child: RotationTransition(
                 turns: _spinAnim,
-                child: Icon(
-                  Icons.add,
-                  color:
-                      _open ? theme.colorScheme.onSurfaceVariant : Colors.white,
-                  size: iconSize,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  transitionBuilder: (child, anim) =>
+                      ScaleTransition(scale: anim, child: child),
+                  child: Icon(
+                    _open ? Icons.close : Icons.add,
+                    key: ValueKey(_open),
+                    color: _open
+                        ? theme.colorScheme.onSurfaceVariant
+                        : Colors.white,
+                    size: iconSize,
+                  ),
                 ),
               ),
             ),
