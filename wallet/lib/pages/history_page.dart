@@ -521,16 +521,23 @@ class HistoryPageState extends State<HistoryPage> {
       itemBuilder: (_, i) {
         final item = items[i];
         final showDivider = !lastInGroupIndices.contains(i);
+        final isFirstHeader = i == 0;
         if (item.isHeader) {
-          return _DateHeader(
-            label: item.label!,
-            theme: theme,
-            indented: _filterMode == _FilterMode.yearly,
+          return Padding(
+            padding: EdgeInsets.only(top: isFirstHeader ? 12.0 : 0.0),
+            child: _DateHeader(
+              label: item.label!,
+              theme: theme,
+              indented: _filterMode == _FilterMode.yearly,
+            ),
           );
         }
 
         if (item.isMonthHeader) {
-          return _MonthHeader(label: item.label!, theme: theme);
+          return Padding(
+            padding: EdgeInsets.only(top: isFirstHeader ? 12.0 : 0.0),
+            child: _MonthHeader(label: item.label!, theme: theme),
+          );
         }
 
         // ── Merged transfer card ─────────────────────────────────────────
@@ -775,24 +782,17 @@ class HistoryPageState extends State<HistoryPage> {
           width: double.infinity,
           padding: EdgeInsets.fromLTRB(16, topPadding + 70, 16, 12),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
+            gradient: const LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                theme.colorScheme.primary.withValues(alpha: 0.12),
-                theme.colorScheme.primary.withValues(alpha: 0.02),
+                Color.fromARGB(255, 97, 60, 27),
+                Color.fromARGB(255, 144, 99, 59),
               ],
             ),
             borderRadius: const BorderRadius.vertical(
-              bottom: Radius.circular(24),
+              bottom: Radius.circular(10),
             ),
-            boxShadow: [
-              BoxShadow(
-                color: theme.colorScheme.primary.withValues(alpha: 0.15),
-                blurRadius: 24,
-                offset: const Offset(0, 10),
-              ),
-            ],
           ),
           child: Column(
             children: [
@@ -802,14 +802,17 @@ class HistoryPageState extends State<HistoryPage> {
                 children: [
                   Text(
                     'Transaction History',
-                    style: theme.textTheme.titleLarge
-                        ?.copyWith(fontWeight: FontWeight.w600, fontSize: 18),
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 18,
+                      color: const Color.fromARGB(255, 219, 219, 219),
+                    ),
                   ),
                   IconButton(
                     tooltip: 'Filter',
                     onPressed: _showFilterSheet,
-                    icon: _FunnelIcon(
-                      color: theme.colorScheme.onSurface,
+                    icon: const _FunnelIcon(
+                      color: Colors.white,
                     ),
                   ),
                 ],
@@ -820,7 +823,8 @@ class HistoryPageState extends State<HistoryPage> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.chevron_left),
+                    icon: const Icon(Icons.chevron_left,
+                        color: Color.fromARGB(255, 219, 219, 219)),
                     onPressed: _goBack,
                   ),
                   Expanded(
@@ -829,8 +833,10 @@ class HistoryPageState extends State<HistoryPage> {
                       child: Center(
                         child: Text(
                           _periodLabel,
-                          style: theme.textTheme.bodyMedium
-                              ?.copyWith(fontWeight: FontWeight.w500),
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                            color: const Color.fromARGB(255, 219, 219, 219),
+                          ),
                         ),
                       ),
                     ),
@@ -839,8 +845,9 @@ class HistoryPageState extends State<HistoryPage> {
                     icon: Icon(
                       Icons.chevron_right,
                       color: _canGoForward
-                          ? null
-                          : theme.colorScheme.onSurface.withValues(alpha: 0.3),
+                          ? const Color.fromARGB(255, 219, 219, 219)
+                          : const Color.fromARGB(255, 219, 219, 219)
+                              .withValues(alpha: 0.3),
                     ),
                     onPressed: _canGoForward ? _goForward : null,
                   ),
@@ -855,7 +862,8 @@ class HistoryPageState extends State<HistoryPage> {
                     child: _AnalyticsTile(
                       icon: Icons.arrow_upward_rounded,
                       amount: income,
-                      color: Colors.green,
+                      color: const Color(0xFF4ADE80),
+                      textColor: const Color.fromARGB(255, 219, 219, 219),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -863,7 +871,8 @@ class HistoryPageState extends State<HistoryPage> {
                     child: _AnalyticsTile(
                       icon: Icons.arrow_downward_rounded,
                       amount: expenses,
-                      color: Colors.red,
+                      color: const Color(0xFFF87171),
+                      textColor: const Color.fromARGB(255, 219, 219, 219),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -871,7 +880,10 @@ class HistoryPageState extends State<HistoryPage> {
                     child: _AnalyticsTile(
                       icon: Icons.account_balance_wallet_outlined,
                       amount: net,
-                      color: net >= 0 ? Colors.green : Colors.red,
+                      color: net >= 0
+                          ? const Color(0xFF4ADE80)
+                          : const Color(0xFFF87171),
+                      textColor: const Color.fromARGB(255, 219, 219, 219),
                     ),
                   ),
                 ],
@@ -883,7 +895,7 @@ class HistoryPageState extends State<HistoryPage> {
         // ── Transaction list ───────────────────────────────────────────────
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
             child: filtered.isEmpty
                 ? Center(
                     child: Text(
@@ -1025,11 +1037,13 @@ class _AnalyticsTile extends StatelessWidget {
   final IconData icon;
   final double amount;
   final Color color;
+  final Color? textColor;
 
   const _AnalyticsTile({
     required this.icon,
     required this.amount,
     required this.color,
+    this.textColor,
   });
 
   @override
@@ -1048,7 +1062,7 @@ class _AnalyticsTile extends StatelessWidget {
             style: theme.textTheme.bodySmall?.copyWith(
               fontSize: 11,
               fontWeight: FontWeight.w500,
-              color: theme.colorScheme.onSurface,
+              color: textColor ?? theme.colorScheme.onSurface,
             ),
           ),
         ),
