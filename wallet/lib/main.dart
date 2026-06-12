@@ -9,6 +9,7 @@ import 'package:wallet/pages/settings_page.dart';
 import 'package:wallet/pages/category_manager_page.dart';
 import 'package:wallet/pages/faq_page.dart';
 import 'package:wallet/pages/feedback_page.dart';
+import 'package:wallet/pages/trash_bin_page.dart';
 import 'package:wallet/models/transaction_model.dart';
 
 void main() {
@@ -700,7 +701,7 @@ class _TopNavBarState extends State<_TopNavBar> {
 
 // ── Drawer ─────────────────────────────────────────────────────────────────────
 
-class _WalletDrawer extends StatelessWidget {
+class _WalletDrawer extends StatefulWidget {
   final int selectedIndex;
   final void Function(int) onNavigate;
 
@@ -708,6 +709,24 @@ class _WalletDrawer extends StatelessWidget {
     required this.selectedIndex,
     required this.onNavigate,
   });
+
+  @override
+  State<_WalletDrawer> createState() => _WalletDrawerState();
+}
+
+class _WalletDrawerState extends State<_WalletDrawer> {
+  int _trashCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTrashCount();
+  }
+
+  Future<void> _loadTrashCount() async {
+    final count = await DatabaseHelper.instance.getTrashCount();
+    if (mounted) setState(() => _trashCount = count);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -781,29 +800,29 @@ class _WalletDrawer extends StatelessWidget {
                   icon: Icons.account_balance_wallet_outlined,
                   selectedIcon: Icons.account_balance_wallet,
                   label: 'Accounts',
-                  selected: selectedIndex == 0,
-                  onTap: () => onNavigate(0),
+                  selected: widget.selectedIndex == 0,
+                  onTap: () => widget.onNavigate(0),
                 ),
                 _NavTile(
                   icon: Icons.history_outlined,
                   selectedIcon: Icons.history,
                   label: 'History',
-                  selected: selectedIndex == 1,
-                  onTap: () => onNavigate(1),
+                  selected: widget.selectedIndex == 1,
+                  onTap: () => widget.onNavigate(1),
                 ),
                 _NavTile(
                   icon: Icons.show_chart_outlined,
                   selectedIcon: Icons.show_chart,
                   label: 'Analytics',
-                  selected: selectedIndex == 2,
-                  onTap: () => onNavigate(2),
+                  selected: widget.selectedIndex == 2,
+                  onTap: () => widget.onNavigate(2),
                 ),
                 _NavTile(
                   icon: Icons.person_outline,
                   selectedIcon: Icons.person,
                   label: 'Profile',
-                  selected: selectedIndex == 3,
-                  onTap: () => onNavigate(3),
+                  selected: widget.selectedIndex == 3,
+                  onTap: () => widget.onNavigate(3),
                 ),
 
                 const _DrawerDivider(),
@@ -900,6 +919,22 @@ class _WalletDrawer extends StatelessWidget {
                     );
                   },
                 ),
+
+                // ── Trash Bin ───────────────────────────────────────────────
+                _NavTileWithBadge(
+                  icon: Icons.delete_outline,
+                  selectedIcon: Icons.delete,
+                  label: 'Trash',
+                  badgeCount: _trashCount,
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const TrashBinPage()),
+                    ).then((_) => _loadTrashCount());
+                  },
+                ),
+
                 _NavTile(
                   icon: Icons.delete_forever_outlined,
                   selectedIcon: Icons.delete_forever,
@@ -974,7 +1009,7 @@ class _WalletDrawer extends StatelessWidget {
       builder: (ctx) => AlertDialog(
         title: const Text('Clear All Data'),
         content: const Text(
-          'This will permanently delete all accounts and transactions. Are you sure?',
+          'This will permanently delete all accounts, transactions, and trash. Are you sure?',
         ),
         actions: [
           TextButton(
@@ -989,6 +1024,7 @@ class _WalletDrawer extends StatelessWidget {
                   const SnackBar(content: Text('All data cleared.')),
                 );
               }
+              _loadTrashCount();
             },
             child: const Text('Clear'),
           ),
@@ -1135,6 +1171,71 @@ class _NavTile extends StatelessWidget {
       ),
       selected: selected,
       selectedTileColor: cs.primaryContainer.withValues(alpha: 0.5),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+      horizontalTitleGap: 8,
+      onTap: onTap,
+    );
+  }
+}
+
+// ── Nav tile with a red count badge (used for Trash Bin) ──────────────────────
+
+class _NavTileWithBadge extends StatelessWidget {
+  final IconData icon;
+  final IconData selectedIcon;
+  final String label;
+  final int badgeCount;
+  final VoidCallback onTap;
+
+  const _NavTileWithBadge({
+    required this.icon,
+    required this.selectedIcon,
+    required this.label,
+    required this.badgeCount,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    // ignore: unused_local_variable
+    final cs = theme.colorScheme;
+    const color = Colors.red;
+
+    return ListTile(
+      dense: true,
+      leading: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Icon(icon, color: color, size: 22),
+          if (badgeCount > 0)
+            Positioned(
+              top: -4,
+              right: -6,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  badgeCount > 99 ? '99+' : '$badgeCount',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                    height: 1.2,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+      title: Text(
+        label,
+        style: theme.textTheme.bodyMedium?.copyWith(color: color),
+      ),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
       horizontalTitleGap: 8,
