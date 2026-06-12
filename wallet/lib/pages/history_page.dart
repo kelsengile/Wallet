@@ -763,98 +763,127 @@ class HistoryPageState extends State<HistoryPage> {
     final expenses = _periodExpenses;
     final net = _periodNet;
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── Header row ───────────────────────────────────────────────────
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Transaction History',
-                style: theme.textTheme.titleLarge
-                    ?.copyWith(fontWeight: FontWeight.w600, fontSize: 18),
-              ),
-              IconButton(
-                tooltip: 'Filter',
-                onPressed: _showFilterSheet,
-                icon: _FunnelIcon(
-                  color: theme.colorScheme.onSurface,
-                ),
+    // Extend the gradient behind the transparent top nav bar overlay,
+    // matching AccountsPage's total balance hero.
+    final topPadding = MediaQuery.paddingOf(context).top;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Filter section (header, period nav, analytics) ─────────────────
+        Container(
+          width: double.infinity,
+          padding: EdgeInsets.fromLTRB(16, topPadding + 70, 16, 12),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                theme.colorScheme.primary.withValues(alpha: 0.12),
+                theme.colorScheme.primary.withValues(alpha: 0.02),
+              ],
+            ),
+            borderRadius: const BorderRadius.vertical(
+              bottom: Radius.circular(24),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: theme.colorScheme.primary.withValues(alpha: 0.15),
+                blurRadius: 24,
+                offset: const Offset(0, 10),
               ),
             ],
           ),
-
-          // ── Period navigator ─────────────────────────────────────────────
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          child: Column(
             children: [
-              IconButton(
-                icon: const Icon(Icons.chevron_left),
-                onPressed: _goBack,
-              ),
-              Expanded(
-                child: GestureDetector(
-                  onTap: _pickPeriod,
-                  child: Center(
-                    child: Text(
-                      _periodLabel,
-                      style: theme.textTheme.bodyMedium
-                          ?.copyWith(fontWeight: FontWeight.w500),
+              // ── Header row ───────────────────────────────────────────
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Transaction History',
+                    style: theme.textTheme.titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w600, fontSize: 18),
+                  ),
+                  IconButton(
+                    tooltip: 'Filter',
+                    onPressed: _showFilterSheet,
+                    icon: _FunnelIcon(
+                      color: theme.colorScheme.onSurface,
                     ),
                   ),
-                ),
+                ],
               ),
-              IconButton(
-                icon: Icon(
-                  Icons.chevron_right,
-                  color: _canGoForward
-                      ? null
-                      : theme.colorScheme.onSurface.withValues(alpha: 0.3),
-                ),
-                onPressed: _canGoForward ? _goForward : null,
+
+              // ── Period navigator ─────────────────────────────────────
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.chevron_left),
+                    onPressed: _goBack,
+                  ),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: _pickPeriod,
+                      child: Center(
+                        child: Text(
+                          _periodLabel,
+                          style: theme.textTheme.bodyMedium
+                              ?.copyWith(fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(
+                      Icons.chevron_right,
+                      color: _canGoForward
+                          ? null
+                          : theme.colorScheme.onSurface.withValues(alpha: 0.3),
+                    ),
+                    onPressed: _canGoForward ? _goForward : null,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+
+              // ── Analytics strip ───────────────────────────────────────
+              Row(
+                children: [
+                  Expanded(
+                    child: _AnalyticsTile(
+                      icon: Icons.arrow_upward_rounded,
+                      amount: income,
+                      color: Colors.green,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _AnalyticsTile(
+                      icon: Icons.arrow_downward_rounded,
+                      amount: expenses,
+                      color: Colors.red,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _AnalyticsTile(
+                      icon: Icons.account_balance_wallet_outlined,
+                      amount: net,
+                      color: net >= 0 ? Colors.green : Colors.red,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
-          const SizedBox(height: 8),
+        ),
 
-          // ── Analytics strip ──────────────────────────────────────────────
-          Row(
-            children: [
-              Expanded(
-                child: _AnalyticsTile(
-                  icon: Icons.arrow_upward_rounded,
-                  amount: income,
-                  color: Colors.green,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _AnalyticsTile(
-                  icon: Icons.arrow_downward_rounded,
-                  amount: expenses,
-                  color: Colors.red,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _AnalyticsTile(
-                  icon: Icons.account_balance_wallet_outlined,
-                  amount: net,
-                  color: net >= 0 ? Colors.green : Colors.red,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-
-          // ── Divider ──────────────────────────────────────────────────────
-          const Divider(height: 40),
-
-          // ── Transaction list ─────────────────────────────────────────────
-          Expanded(
+        // ── Transaction list ───────────────────────────────────────────────
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
             child: filtered.isEmpty
                 ? Center(
                     child: Text(
@@ -869,8 +898,8 @@ class HistoryPageState extends State<HistoryPage> {
                   )
                 : _buildGroupedList(filtered, theme),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
