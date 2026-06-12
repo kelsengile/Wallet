@@ -58,7 +58,9 @@ class _WalletHomePageState extends State<WalletHomePage> {
   }
 
   void _onPageScroll() {
-    final t = (_pageController.page ?? 0.0).clamp(0.0, 1.0);
+    // Store raw page position (not clamped to 1) so status-bar notifier also
+    // covers the History→Analytics transition.
+    final t = (_pageController.page ?? 0.0).clamp(0.0, 3.0);
     if ((t - _pageTNotifier.value).abs() > 0.005) {
       _pageTNotifier.value = t;
     }
@@ -107,9 +109,9 @@ class _WalletHomePageState extends State<WalletHomePage> {
     return ValueListenableBuilder<double>(
       valueListenable: _pageTNotifier,
       builder: (context, pageT, child) {
-        // Status bar icons: light (white) on accounts tab, dark on all others.
-        // Switches at the midpoint of the drag so it's never jarring.
-        final overlayStyle = pageT < 0.5
+        // Status bar icons: light (white) on Accounts + History, dark on Analytics+.
+        // Switches at the midpoint of the History→Analytics swipe (pageT crosses 1.5).
+        final overlayStyle = pageT < 1.5
             ? const SystemUiOverlayStyle(
                 statusBarColor: Colors.transparent,
                 statusBarIconBrightness: Brightness.light,
@@ -557,7 +559,8 @@ class _TopNavBar extends StatefulWidget {
 }
 
 class _TopNavBarState extends State<_TopNavBar> {
-  double _t = 0.0; // 0 = accounts, 1 = any other page
+  double _page =
+      0.0; // raw page position (0.0 = accounts, 1.0 = history, 2.0 = analytics …)
 
   @override
   void initState() {
@@ -582,30 +585,54 @@ class _TopNavBarState extends State<_TopNavBar> {
 
   void _onScroll() {
     final page = widget.pageController.page ?? 0.0;
-    // Clamp to [0,1]: fully white at page 0, fully theme-colored from page 1+.
-    final t = page.clamp(0.0, 1.0);
-    if ((t - _t).abs() > 0.001) setState(() => _t = t);
+    if ((page - _page).abs() > 0.001) setState(() => _page = page);
+  }
+
+  /// Returns a color that smoothly lerps across three waypoints:
+  ///   page 0 → [c0]  (Accounts)
+  ///   page 1 → [c1]  (History)
+  ///   page 2+ → [c2] (Analytics and beyond)
+  Color _lerpColor(Color c0, Color c1, Color c2) {
+    if (_page <= 1.0) {
+      // Segment 1: Accounts → History
+      return Color.lerp(c0, c1, _page.clamp(0.0, 1.0))!;
+    } else {
+      // Segment 2: History → Analytics
+      return Color.lerp(c1, c2, (_page - 1.0).clamp(0.0, 1.0))!;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     final topPadding = MediaQuery.paddingOf(context).top;
 
-    // Lerp icon color: white → onSurface
-    final iconColor = Color.lerp(
+    // ── Colour waypoints ──────────────────────────────────────────────────────
+    // Accounts (page 0):  white icons over gradient hero
+    // History  (page 1):  deep-indigo tinted icons
+    // Analytics (page 2): teal/tertiary tinted icons
+
+    // Icon colour:  white (Accounts) → white (History) → onSurface/dark (Analytics+)
+    final iconColor = _lerpColor(
       Colors.white,
-      theme.colorScheme.onSurface,
-      _t,
-    )!;
-    // Lerp subtitle color: white70 → onSurfaceVariant
-    final subtitleColor = Color.lerp(
+      Colors.white,
+      cs.onSurface,
+    );
+
+    // Subtitle colour:  white70 → white70 → onSurfaceVariant
+    final subtitleColor = _lerpColor(
       Colors.white70,
-      theme.colorScheme.onSurfaceVariant,
-      _t,
-    )!;
-    // Lerp wallet icon pill background: white.20 → transparent
-    final pillColor = Colors.white.withValues(alpha: (1 - _t) * 0.2);
+      Colors.white70,
+      cs.onSurfaceVariant,
+    );
+
+    // Pill background:  white.20 → white.20 → onSurface.10
+    final pillColor = _lerpColor(
+      Colors.white.withValues(alpha: 0.20),
+      Colors.white.withValues(alpha: 0.20),
+      cs.onSurface.withValues(alpha: 0.10),
+    );
 
     return RepaintBoundary(
       child: Container(
