@@ -11,6 +11,38 @@ class TransferResult {
   const TransferResult({required this.debitId, required this.creditId});
 }
 
+// ── Trash-bin item wrappers ────────────────────────────────────────────────────
+
+/// A soft-deleted transaction with metadata about when it was trashed.
+class TrashedTransaction {
+  /// Primary key of the row in [trash_transactions].
+  final int trashId;
+  final WalletTransaction transaction;
+  final String deletedAt; // ISO-8601 timestamp
+  final String? accountName; // denormalised for display (account may be gone)
+
+  const TrashedTransaction({
+    required this.trashId,
+    required this.transaction,
+    required this.deletedAt,
+    this.accountName,
+  });
+}
+
+/// A soft-deleted account with metadata about when it was trashed.
+class TrashedAccount {
+  /// Primary key of the row in [trash_accounts].
+  final int trashId;
+  final Account account;
+  final String deletedAt; // ISO-8601 timestamp
+
+  const TrashedAccount({
+    required this.trashId,
+    required this.account,
+    required this.deletedAt,
+  });
+}
+
 class DatabaseHelper {
   // ── Singleton ──────────────────────────────────────────────────────────────
   static final DatabaseHelper instance = DatabaseHelper._internal();
@@ -31,7 +63,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 3, // bumped from 2 → 3 to add settings table
+      version: 4, // bumped from 3 → 4 to add trash tables
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -71,6 +103,41 @@ class DatabaseHelper {
       )
     ''');
 
+    // ── Trash bin tables ─────────────────────────────────────────────────────
+
+    /// Soft-deleted transactions. Mirrors the transactions table plus
+    /// `deleted_at` (ISO-8601) and `account_name` (denormalised snapshot).
+    await db.execute('''
+      CREATE TABLE trash_transactions (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        orig_id      INTEGER NOT NULL,
+        title        TEXT    NOT NULL,
+        amount       REAL    NOT NULL,
+        date         TEXT    NOT NULL,
+        type         TEXT    NOT NULL,
+        category     TEXT    NOT NULL,
+        note         TEXT    DEFAULT '',
+        account_id   INTEGER,
+        account_name TEXT    DEFAULT '',
+        deleted_at   TEXT    NOT NULL
+      )
+    ''');
+
+    /// Soft-deleted accounts. Mirrors the accounts table plus `deleted_at`.
+    await db.execute('''
+      CREATE TABLE trash_accounts (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        orig_id     INTEGER NOT NULL,
+        name        TEXT    NOT NULL,
+        balance     REAL    NOT NULL DEFAULT 0.0,
+        type        TEXT    NOT NULL,
+        category    TEXT    NOT NULL DEFAULT 'personal',
+        color_hex   TEXT    NOT NULL DEFAULT '#6366F1',
+        icon        TEXT    NOT NULL DEFAULT 'wallet',
+        deleted_at  TEXT    NOT NULL
+      )
+    ''');
+
     // Seed default Cash account
     await db.insert('accounts', {
       'name': 'Cash',
@@ -82,8 +149,6 @@ class DatabaseHelper {
     });
   }
 
-  /// Migrate existing installs from v1 → v2:
-  /// adds the `category` column to the accounts table if it doesn't exist.
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
       await db.execute(
@@ -95,6 +160,38 @@ class DatabaseHelper {
         CREATE TABLE IF NOT EXISTS settings (
           key   TEXT PRIMARY KEY,
           value TEXT NOT NULL
+        )
+      ''');
+    }
+    if (oldVersion < 4) {
+      // Add trash tables for existing installs
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS trash_transactions (
+          id           INTEGER PRIMARY KEY AUTOINCREMENT,
+          orig_id      INTEGER NOT NULL,
+          title        TEXT    NOT NULL,
+          amount       REAL    NOT NULL,
+          date         TEXT    NOT NULL,
+          type         TEXT    NOT NULL,
+          category     TEXT    NOT NULL,
+          note         TEXT    DEFAULT '',
+          account_id   INTEGER,
+          account_name TEXT    DEFAULT '',
+          deleted_at   TEXT    NOT NULL
+        )
+      ''');
+
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS trash_accounts (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          orig_id     INTEGER NOT NULL,
+          name        TEXT    NOT NULL,
+          balance     REAL    NOT NULL DEFAULT 0.0,
+          type        TEXT    NOT NULL,
+          category    TEXT    NOT NULL DEFAULT 'personal',
+          color_hex   TEXT    NOT NULL DEFAULT '#6366F1',
+          icon        TEXT    NOT NULL DEFAULT 'wallet',
+          deleted_at  TEXT    NOT NULL
         )
       ''');
     }
@@ -176,8 +273,57 @@ class DatabaseHelper {
     );
   }
 
+  /// Soft-deletes an account and all its transactions into the trash bin,
+  /// then hard-deletes them from the live tables.
   Future<int> deleteAccount(int id) async {
     final db = await database;
+    final now = DateTime.now().toIso8601String();
+
+    // Snapshot the account before deletion
+    final accountRows = await db.query(
+      'accounts',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (accountRows.isNotEmpty) {
+      final row = Map<String, dynamic>.from(accountRows.first);
+      await db.insert('trash_accounts', {
+        'orig_id': row['id'],
+        'name': row['name'],
+        'balance': row['balance'],
+        'type': row['type'],
+        'category': row['category'] ?? 'personal',
+        'color_hex': row['color_hex'],
+        'icon': row['icon'],
+        'deleted_at': now,
+      });
+    }
+
+    // Snapshot all linked transactions before deletion
+    final txRows = await db.query(
+      'transactions',
+      where: 'account_id = ?',
+      whereArgs: [id],
+    );
+    for (final row in txRows) {
+      await db.insert('trash_transactions', {
+        'orig_id': row['id'],
+        'title': row['title'],
+        'amount': row['amount'],
+        'date': row['date'],
+        'type': row['type'],
+        'category': row['category'],
+        'note': row['note'] ?? '',
+        'account_id': row['account_id'],
+        'account_name': accountRows.isNotEmpty
+            ? accountRows.first['name'] as String? ?? ''
+            : '',
+        'deleted_at': now,
+      });
+    }
+
+    // Hard-delete from live tables
     await db.delete('transactions', where: 'account_id = ?', whereArgs: [id]);
     return await db.delete('accounts', where: 'id = ?', whereArgs: [id]);
   }
@@ -250,9 +396,9 @@ class DatabaseHelper {
     double newDelta;
 
     if (oldTx.type == 'transfer_out') {
-      oldDelta = oldTx.amount; // reversal: add back
+      oldDelta = oldTx.amount;
     } else if (oldTx.type == 'transfer_in') {
-      oldDelta = -oldTx.amount; // reversal: subtract
+      oldDelta = -oldTx.amount;
     } else {
       oldDelta = oldTx.type == 'income' ? -oldTx.amount : oldTx.amount;
     }
@@ -265,9 +411,7 @@ class DatabaseHelper {
       newDelta = newTx.type == 'income' ? newTx.amount : -newTx.amount;
     }
 
-    // Reverse old
     await adjustAccountBalance(oldTx.accountId ?? 1, oldDelta);
-    // Apply new
     await adjustAccountBalance(newTx.accountId ?? 1, newDelta);
 
     return await db.update(
@@ -278,36 +422,59 @@ class DatabaseHelper {
     );
   }
 
+  /// Soft-deletes a transaction into the trash bin, then hard-deletes it from
+  /// the live table and adjusts the account balance.
   Future<int> deleteTransaction(WalletTransaction tx) async {
     final db = await database;
+    final now = DateTime.now().toIso8601String();
 
+    // Resolve account name for the denormalised snapshot
+    String accountName = '';
+    if (tx.accountId != null) {
+      final acctRows = await db.query(
+        'accounts',
+        columns: ['name'],
+        where: 'id = ?',
+        whereArgs: [tx.accountId],
+        limit: 1,
+      );
+      if (acctRows.isNotEmpty) {
+        accountName = acctRows.first['name'] as String? ?? '';
+      }
+    }
+
+    // Snapshot into trash
+    await db.insert('trash_transactions', {
+      'orig_id': tx.id,
+      'title': tx.title,
+      'amount': tx.amount,
+      'date': tx.date,
+      'type': tx.type,
+      'category': tx.category,
+      'note': tx.note ?? '',
+      'account_id': tx.accountId,
+      'account_name': accountName,
+      'deleted_at': now,
+    });
+
+    // Reverse balance
     if (tx.type == 'transfer_out' || tx.type == 'transfer_in') {
-      // Reverse the balance effect for this leg only
       await adjustAccountBalance(
         tx.accountId ?? 1,
         tx.type == 'transfer_in' ? -tx.amount : tx.amount,
       );
-      return await db
-          .delete('transactions', where: 'id = ?', whereArgs: [tx.id]);
+    } else {
+      await adjustAccountBalance(
+        tx.accountId ?? 1,
+        tx.type == 'income' ? -tx.amount : tx.amount,
+      );
     }
 
-    await adjustAccountBalance(
-      tx.accountId ?? 1,
-      tx.type == 'income' ? -tx.amount : tx.amount,
-    );
     return await db.delete('transactions', where: 'id = ?', whereArgs: [tx.id]);
   }
 
   // ── Transfer ───────────────────────────────────────────────────────────────
 
-  /// Inserts two linked transfer transactions atomically inside a DB transaction.
-  ///
-  /// * The **debit** leg is stored as `type = 'transfer_out'` on [fromAccountId].
-  /// * The **credit** leg is stored as `type = 'transfer_in'`  on [toAccountId].
-  ///
-  /// Both rows share the same [refId] so they can be identified as a pair.
-  /// The [refId] is embedded in the `note` field as `__ref:<refId>__` and
-  /// appended after any user-supplied note.
   Future<TransferResult> insertTransfer({
     required int fromAccountId,
     required int toAccountId,
@@ -318,8 +485,6 @@ class DatabaseHelper {
   }) async {
     final db = await database;
     final ref = refId ?? '${DateTime.now().millisecondsSinceEpoch}';
-
-    // Build the note suffix that links the two legs.
     final noteWithRef =
         note.isEmpty ? '__ref:${ref}__' : '$note __ref:${ref}__';
 
@@ -327,7 +492,6 @@ class DatabaseHelper {
     late int creditId;
 
     await db.transaction((txn) async {
-      // Debit leg — expense-like, deducted from source account
       debitId = await txn.insert('transactions', {
         'title': 'Transfer Out',
         'amount': amount,
@@ -338,7 +502,6 @@ class DatabaseHelper {
         'account_id': fromAccountId,
       });
 
-      // Credit leg — income-like, added to destination account
       creditId = await txn.insert('transactions', {
         'title': 'Transfer In',
         'amount': amount,
@@ -349,7 +512,6 @@ class DatabaseHelper {
         'account_id': toAccountId,
       });
 
-      // Adjust balances
       await txn.rawUpdate(
         'UPDATE accounts SET balance = balance - ? WHERE id = ?',
         [amount, fromAccountId],
@@ -430,7 +592,6 @@ class DatabaseHelper {
     ''', ['$prefix%']);
   }
 
-  /// Returns last 6 months of [{ month, income, expenses }]
   Future<List<Map<String, dynamic>>> getLast6MonthsSummary() async {
     final db = await database;
     return await db.rawQuery('''
@@ -448,7 +609,6 @@ class DatabaseHelper {
 
   // ── Generic settings ──────────────────────────────────────────────────────
 
-  /// Reads a single value from the settings table. Returns null if not set.
   Future<String?> getSetting(String key) async {
     final db = await database;
     final rows = await db.query(
@@ -461,7 +621,6 @@ class DatabaseHelper {
     return rows.first['value'] as String?;
   }
 
-  /// Writes (or overwrites) a value in the settings table.
   Future<void> saveSetting(String key, String value) async {
     final db = await database;
     await db.insert(
@@ -471,12 +630,185 @@ class DatabaseHelper {
     );
   }
 
+  // ── Trash bin ──────────────────────────────────────────────────────────────
+
+  /// Returns all trashed transactions, most recently deleted first.
+  Future<List<TrashedTransaction>> getTrashedTransactions() async {
+    final db = await database;
+    final rows = await db.query(
+      'trash_transactions',
+      orderBy: 'deleted_at DESC',
+    );
+    return rows.map((row) {
+      final tx = WalletTransaction(
+        id: row['orig_id'] as int?,
+        title: row['title'] as String,
+        amount: (row['amount'] as num).toDouble(),
+        date: row['date'] as String,
+        type: row['type'] as String,
+        category: row['category'] as String,
+        note: row['note'] as String?,
+        accountId: row['account_id'] as int?,
+      );
+      return TrashedTransaction(
+        trashId: row['id'] as int,
+        transaction: tx,
+        deletedAt: row['deleted_at'] as String,
+        accountName: row['account_name'] as String?,
+      );
+    }).toList();
+  }
+
+  /// Returns all trashed accounts, most recently deleted first.
+  Future<List<TrashedAccount>> getTrashedAccounts() async {
+    final db = await database;
+    final rows = await db.query(
+      'trash_accounts',
+      orderBy: 'deleted_at DESC',
+    );
+    return rows.map((row) {
+      final account = Account(
+        id: row['orig_id'] as int?,
+        name: row['name'] as String,
+        balance: (row['balance'] as num).toDouble(),
+        type: row['type'] as String,
+        category: (row['category'] as String?) ?? 'personal',
+        colorHex: row['color_hex'] as String,
+        icon: row['icon'] as String,
+      );
+      return TrashedAccount(
+        trashId: row['id'] as int,
+        account: account,
+        deletedAt: row['deleted_at'] as String,
+      );
+    }).toList();
+  }
+
+  /// Restores a trashed transaction back to the live transactions table
+  /// and re-applies its balance effect. The trash row is removed.
+  Future<void> restoreTransaction(int trashId) async {
+    final db = await database;
+
+    final rows = await db.query(
+      'trash_transactions',
+      where: 'id = ?',
+      whereArgs: [trashId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return;
+
+    final row = rows.first;
+    final type = row['type'] as String;
+    final amount = (row['amount'] as num).toDouble();
+    final accountId = row['account_id'] as int?;
+
+    // Re-insert into live table (without the orig_id — let DB assign new id)
+    await db.insert('transactions', {
+      'title': row['title'],
+      'amount': amount,
+      'date': row['date'],
+      'type': type,
+      'category': row['category'],
+      'note': row['note'] ?? '',
+      'account_id': accountId,
+    });
+
+    // Re-apply balance effect
+    if (accountId != null) {
+      double delta;
+      if (type == 'transfer_out') {
+        delta = -amount;
+      } else if (type == 'transfer_in') {
+        delta = amount;
+      } else {
+        delta = type == 'income' ? amount : -amount;
+      }
+      await adjustAccountBalance(accountId, delta);
+    }
+
+    await db
+        .delete('trash_transactions', where: 'id = ?', whereArgs: [trashId]);
+  }
+
+  /// Restores a trashed account (and only the account row) back to the live
+  /// accounts table. Note: linked transactions are NOT automatically restored
+  /// because they may have already been overwritten by other activity.
+  Future<void> restoreAccount(int trashId) async {
+    final db = await database;
+
+    final rows = await db.query(
+      'trash_accounts',
+      where: 'id = ?',
+      whereArgs: [trashId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return;
+
+    final row = rows.first;
+
+    await db.insert('accounts', {
+      'name': row['name'],
+      'balance': row['balance'],
+      'type': row['type'],
+      'category': row['category'] ?? 'personal',
+      'color_hex': row['color_hex'],
+      'icon': row['icon'],
+    });
+
+    await db.delete('trash_accounts', where: 'id = ?', whereArgs: [trashId]);
+  }
+
+  /// Permanently deletes a single trashed transaction (no balance change —
+  /// balance was already reversed when it was first trashed).
+  Future<void> permanentlyDeleteTransaction(int trashId) async {
+    final db = await database;
+    await db.delete(
+      'trash_transactions',
+      where: 'id = ?',
+      whereArgs: [trashId],
+    );
+  }
+
+  /// Permanently deletes a single trashed account row.
+  Future<void> permanentlyDeleteAccount(int trashId) async {
+    final db = await database;
+    await db.delete(
+      'trash_accounts',
+      where: 'id = ?',
+      whereArgs: [trashId],
+    );
+  }
+
+  /// Permanently deletes ALL items from both trash tables.
+  Future<void> emptyTrash() async {
+    final db = await database;
+    await db.delete('trash_transactions');
+    await db.delete('trash_accounts');
+  }
+
+  /// Returns the total number of items currently in the trash.
+  Future<int> getTrashCount() async {
+    final db = await database;
+    final txCount = Sqflite.firstIntValue(
+          await db.rawQuery('SELECT COUNT(*) FROM trash_transactions'),
+        ) ??
+        0;
+    final acctCount = Sqflite.firstIntValue(
+          await db.rawQuery('SELECT COUNT(*) FROM trash_accounts'),
+        ) ??
+        0;
+    return txCount + acctCount;
+  }
+
   // ── Utility ────────────────────────────────────────────────────────────────
 
+  /// Clears all live data AND the trash bin.
   Future<void> clearAllData() async {
     final db = await database;
     await db.delete('transactions');
     await db.delete('accounts');
+    await db.delete('trash_transactions');
+    await db.delete('trash_accounts');
   }
 
   Future<void> closeDatabase() async {
