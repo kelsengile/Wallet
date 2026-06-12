@@ -166,16 +166,34 @@ class _WalletHomePageState extends State<WalletHomePage> {
                   },
                   physics: const PageScrollPhysics(),
                   children: [
-                    AccountsPage(
-                      key: _accountsKey,
-                      onNavigateToAnalytics: () => _onItemTapped(2),
+                    _PageSeparator(
+                      pageController: _pageController,
+                      index: 0,
+                      child: AccountsPage(
+                        key: _accountsKey,
+                        onNavigateToAnalytics: () => _onItemTapped(2),
+                      ),
                     ),
-                    // Non-accounts pages: add top padding so content
+                    // History page handles its own top padding/overlay,
+                    // like AccountsPage's total balance hero.
+                    _PageSeparator(
+                      pageController: _pageController,
+                      index: 1,
+                      child: HistoryPage(key: _historyKey),
+                    ),
+                    // Remaining pages: add top padding so content
                     // isn't hidden behind the transparent nav overlay.
-                    _WithTopNavPadding(child: HistoryPage(key: _historyKey)),
-                    _WithTopNavPadding(
-                        child: AnalyticsPage(key: _analyticsKey)),
-                    const _WithTopNavPadding(child: ProfilePage()),
+                    _PageSeparator(
+                      pageController: _pageController,
+                      index: 2,
+                      child: _WithTopNavPadding(
+                          child: AnalyticsPage(key: _analyticsKey)),
+                    ),
+                    _PageSeparator(
+                      pageController: _pageController,
+                      index: 3,
+                      child: const _WithTopNavPadding(child: ProfilePage()),
+                    ),
                   ],
                 ),
               ),
@@ -949,6 +967,48 @@ class _WalletDrawer extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ── Page separator ───────────────────────────────────────────────────────────
+
+/// Wraps a PageView child so it scales down very slightly while it's not
+/// the fully-active page. When settled on a page, scale is exactly 1.0 —
+/// the page's own design/layout is untouched. While swiping, both the
+/// outgoing and incoming pages shrink a touch, revealing the scaffold
+/// background between them like a small added buffer.
+class _PageSeparator extends StatelessWidget {
+  final PageController pageController;
+  final int index;
+  final Widget child;
+
+  const _PageSeparator({
+    required this.pageController,
+    required this.index,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: pageController,
+      builder: (context, child) {
+        double scaleX = 1.0;
+        if (pageController.hasClients &&
+            pageController.position.haveDimensions) {
+          final page =
+              pageController.page ?? pageController.initialPage.toDouble();
+          final distance = (page - index).abs().clamp(0.0, 1.0);
+          scaleX = 1.0 - distance * 0.03;
+        }
+        return Transform(
+          alignment: Alignment.center,
+          transform: Matrix4.diagonal3Values(scaleX, 1.0, 1.0),
+          child: child,
+        );
+      },
+      child: child,
     );
   }
 }
