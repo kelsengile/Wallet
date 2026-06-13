@@ -877,7 +877,7 @@ class _WalletDrawerState extends State<_WalletDrawer> {
                       context,
                       MaterialPageRoute(
                           builder: (_) => const CategoryManagerPage()),
-                    );
+                    ).then((_) => _loadTrashCount());
                   },
                 ),
 
