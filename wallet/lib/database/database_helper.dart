@@ -1119,13 +1119,30 @@ class DatabaseHelper {
 
   // ── Utility ────────────────────────────────────────────────────────────────
 
-  /// Clears all live data AND the trash bin. Category definitions are kept.
+  /// Clears all live data AND the trash bin, and removes any custom
+  /// categories the user has added. Only the original built-in defaults
+  /// (the ones seeded on first run — marked `is_default` or `is_system`)
+  /// are kept.
   Future<void> clearAllData() async {
     final db = await database;
     await db.delete('transactions');
     await db.delete('accounts');
     await db.delete('trash_transactions');
     await db.delete('trash_accounts');
+    await db.delete(
+      'categories',
+      where: 'is_default = 0 AND is_system = 0',
+    );
+
+    // Re-seed the default Cash account, since it was just deleted above.
+    await db.insert('accounts', {
+      'name': 'Cash',
+      'balance': 0.0,
+      'type': 'cash',
+      'category': 'personal',
+      'color_hex': '#6366F1',
+      'icon': 'wallet',
+    });
   }
 
   Future<void> closeDatabase() async {
