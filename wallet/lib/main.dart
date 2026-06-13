@@ -254,7 +254,7 @@ class _WalletHomePageState extends State<WalletHomePage> {
                               accounts: accounts,
                               categories:
                                   registry.selectableTransactionCategories,
-                              initialType: 'income',
+                              type: 'income',
                             );
                             if (tx == null) return;
                             await DatabaseHelper.instance.insertTransaction(tx);
@@ -271,7 +271,7 @@ class _WalletHomePageState extends State<WalletHomePage> {
                               accounts: accounts,
                               categories:
                                   registry.selectableTransactionCategories,
-                              initialType: 'expense',
+                              type: 'expense',
                             );
                             if (tx == null) return;
                             await DatabaseHelper.instance.insertTransaction(tx);
