@@ -6,13 +6,16 @@ import 'package:wallet/models/category_model.dart';
 // Trash Bin Page
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// Shows two tabs — Transactions and Accounts — containing soft-deleted items.
+// Shows three tabs — Transactions, Accounts, and Categories — containing
+// soft-deleted items.
 //
 // Features:
-//   • View all trashed transactions and accounts grouped by deletion date.
+//   • View all trashed transactions, accounts, and categories grouped by
+//     deletion date (transactions/accounts) or by category group
+//     (categories).
 //   • Restore individual items back to the live tables.
 //   • Permanently delete individual items (no undo).
-//   • Empty-trash action that wipes both tables at once.
+//   • Empty-trash action that wipes all tables at once.
 //   • Live item-count badge shown in the drawer entry (via [TrashBinPage.count]).
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -29,12 +32,14 @@ class _TrashBinPageState extends State<TrashBinPage>
 
   List<TrashedTransaction> _transactions = [];
   List<TrashedAccount> _accounts = [];
+  List<TrashedCategory> _categories = [];
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 2, vsync: this);
+    _tabCtrl = TabController(
+        length: 3, vsync: this); // Transactions, Accounts, Categories
     _load();
   }
 
@@ -48,15 +53,18 @@ class _TrashBinPageState extends State<TrashBinPage>
     setState(() => _loading = true);
     final txs = await DatabaseHelper.instance.getTrashedTransactions();
     final accts = await DatabaseHelper.instance.getTrashedAccounts();
+    final cats = await DatabaseHelper.instance.getTrashedCategories();
     if (!mounted) return;
     setState(() {
       _transactions = txs;
       _accounts = accts;
+      _categories = cats;
       _loading = false;
     });
   }
 
-  int get _totalCount => _transactions.length + _accounts.length;
+  int get _totalCount =>
+      _transactions.length + _accounts.length + _categories.length;
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
@@ -115,6 +123,37 @@ class _TrashBinPageState extends State<TrashBinPage>
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Account permanently deleted.'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+    _load();
+  }
+
+  Future<void> _restoreCategory(TrashedCategory item, int trashId) async {
+    await DatabaseHelper.instance.restoreCategory(trashId);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('\"${item.category.name}\" restored.'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+    _load();
+  }
+
+  Future<void> _permanentDeleteCategory(
+      TrashedCategory item, int trashId) async {
+    final confirm = await _confirmDialog(
+      title: 'Delete Permanently?',
+      body:
+          '"${item.category.name}" will be gone forever. This cannot be undone.',
+    );
+    if (!confirm) return;
+    await DatabaseHelper.instance.permanentlyDeleteCategory(trashId);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Category permanently deleted.'),
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -240,6 +279,20 @@ class _TrashBinPageState extends State<TrashBinPage>
                 ],
               ),
             ),
+            Tab(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.category_outlined, size: 16),
+                  const SizedBox(width: 6),
+                  const Text('Categories'),
+                  if (_categories.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    _CountChip(count: _categories.length),
+                  ],
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -257,6 +310,11 @@ class _TrashBinPageState extends State<TrashBinPage>
                   items: _accounts,
                   onRestore: _restoreAccount,
                   onDelete: _permanentDeleteAccount,
+                ),
+                _CategoriesTab(
+                  items: _categories,
+                  onRestore: _restoreCategory,
+                  onDelete: _permanentDeleteCategory,
                 ),
               ],
             ),
@@ -373,6 +431,191 @@ class _AccountsTab extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+// ── Categories tab ───────────────────────────────────────────────────────────
+
+class _CategoriesTab extends StatelessWidget {
+  final List<TrashedCategory> items;
+  final void Function(TrashedCategory item, int trashId) onRestore;
+  final void Function(TrashedCategory item, int trashId) onDelete;
+
+  const _CategoriesTab({
+    required this.items,
+    required this.onRestore,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (items.isEmpty) return const _EmptyState(label: 'No deleted categories');
+
+    // Build a flat, ordered list of (sectionLabel, items) pairs.
+    // Transaction categories are split into Income / Expense / Transfer
+    // sub-sections instead of one combined block.
+    final List<(String, List<TrashedCategory>)> sections = [];
+
+    void addSection(String label, List<TrashedCategory> slice) {
+      if (slice.isNotEmpty) sections.add((label, slice));
+    }
+
+    addSection(
+      'ACCOUNT TYPES',
+      items
+          .where((c) => c.category.groupType == kCategoryGroupAccountType)
+          .toList(),
+    );
+    addSection(
+      'ACCOUNT CATEGORIES',
+      items
+          .where((c) => c.category.groupType == kCategoryGroupAccountCategory)
+          .toList(),
+    );
+    addSection(
+      'INCOME CATEGORIES',
+      items
+          .where((c) =>
+              c.category.groupType == kCategoryGroupTransactionCategory &&
+              c.category.subType == kSubTypeIncome)
+          .toList(),
+    );
+    addSection(
+      'EXPENSE CATEGORIES',
+      items
+          .where((c) =>
+              c.category.groupType == kCategoryGroupTransactionCategory &&
+              c.category.subType == kSubTypeExpense)
+          .toList(),
+    );
+    // Any remaining transaction categories (e.g. Transfer/system or unknown subType)
+    final accounted = {kSubTypeIncome, kSubTypeExpense};
+    addSection(
+      'OTHER CATEGORIES',
+      items
+          .where((c) =>
+              c.category.groupType == kCategoryGroupTransactionCategory &&
+              !accounted.contains(c.category.subType))
+          .toList(),
+    );
+
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 24),
+      itemCount: sections.length,
+      itemBuilder: (ctx, sectionIdx) {
+        final (label, slice) = sections[sectionIdx];
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _DateHeader(label: label),
+            ...slice.map((item) => _TrashedCategoryTile(
+                  item: item,
+                  onRestore: () => onRestore(item, item.trashId),
+                  onDelete: () => onDelete(item, item.trashId),
+                )),
+          ],
+        );
+      },
+    );
+  }
+}
+
+// ── Trashed category tile ─────────────────────────────────────────────────────
+
+class _TrashedCategoryTile extends StatelessWidget {
+  final TrashedCategory item;
+  final VoidCallback onRestore;
+  final VoidCallback onDelete;
+
+  const _TrashedCategoryTile({
+    required this.item,
+    required this.onRestore,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final cat = item.category;
+
+    Color catColor;
+    try {
+      final hex = cat.colorHex.replaceAll('#', '');
+      catColor = Color(int.parse('FF$hex', radix: 16));
+    } catch (_) {
+      catColor = cs.primary;
+    }
+
+    final icon = kCategoryIcons[cat.icon] ?? Icons.label_outline;
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: cs.surfaceContainerLow,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+        child: Row(
+          children: [
+            // Category icon
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: catColor.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: catColor, size: 20),
+            ),
+            const SizedBox(width: 12),
+
+            // Name + meta
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    cat.name,
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(fontWeight: FontWeight.w600),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _subTypeLabel(cat.subType),
+                    style:
+                        theme.textTheme.labelSmall?.copyWith(color: cs.outline),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Deleted ${_timeAgo(item.deletedAt)}',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: cs.outlineVariant,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            _ActionMenu(onRestore: onRestore, onDelete: onDelete),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _subTypeLabel(String subType) {
+    switch (subType) {
+      case kSubTypeIncome:
+        return 'Income';
+      case kSubTypeExpense:
+        return 'Expense';
+      default:
+        return subType.isEmpty ? '\u2014' : subType;
+    }
   }
 }
 
