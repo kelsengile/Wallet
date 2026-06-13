@@ -1,20 +1,11 @@
-/// Account categories — displayed in the "New / Edit Account" form.
-const kAccountCategories = [
-  'personal',
-  'business',
-  'family',
-  'savings goal',
-  'emergency fund',
-  'travel',
-  'other',
-];
-
 class Account {
   final int? id;
   final String name;
   final double balance;
-  final String type; // 'cash', 'bank', 'e-wallet', etc.
-  final String category; // 'personal', 'business', etc.
+  final String
+      type; // 'cash', 'bank', 'e-wallet', etc. — managed in Category Manager
+  final String
+      category; // 'personal', 'business', etc. — managed in Category Manager
   final String colorHex;
   final String icon;
 
