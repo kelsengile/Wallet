@@ -3,6 +3,7 @@ import 'package:sqflite/sqlite_api.dart' show ConflictAlgorithm;
 import 'package:path/path.dart';
 import '../models/transaction_model.dart';
 import '../models/account_model.dart';
+import '../models/category_model.dart';
 
 /// Result returned by [DatabaseHelper.insertTransfer].
 class TransferResult {
@@ -63,7 +64,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 4, // bumped from 3 → 4 to add trash tables
+      version: 6, // bumped from 5 → 6 to add sub_type to categories
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -138,6 +139,31 @@ class DatabaseHelper {
       )
     ''');
 
+    // ── Categories table ─────────────────────────────────────────────────────
+    //
+    // Single source of truth for account types, account categories, and
+    // transaction categories. `group_type` partitions the three groups so
+    // they never collide. `is_default` marks the fallback category that
+    // existing accounts/transactions are reassigned to when their category
+    // is deleted. `is_system` marks categories the user can't edit/delete
+    // (currently only the "Transfer" transaction category).
+    await db.execute('''
+      CREATE TABLE categories (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        name        TEXT    NOT NULL,
+        group_type  TEXT    NOT NULL,
+        icon        TEXT    NOT NULL DEFAULT 'label',
+        color_hex   TEXT    NOT NULL DEFAULT '#6366F1',
+        sort_order  INTEGER NOT NULL DEFAULT 0,
+        is_default  INTEGER NOT NULL DEFAULT 0,
+        is_system   INTEGER NOT NULL DEFAULT 0,
+        sub_type    TEXT    NOT NULL DEFAULT '',
+        UNIQUE(group_type, name)
+      )
+    ''');
+
+    await _seedDefaultCategories(db);
+
     // Seed default Cash account
     await db.insert('accounts', {
       'name': 'Cash',
@@ -147,6 +173,74 @@ class DatabaseHelper {
       'color_hex': '#6366F1',
       'icon': 'wallet',
     });
+  }
+
+  /// Seeds the categories table with the app's original built-in
+  /// categories. Safe to call on a fresh DB (onCreate) or when upgrading an
+  /// older install that never had this table.
+  Future<void> _seedDefaultCategories(Database db) async {
+    Future<void> insertAll(
+      String groupType,
+      List<Map<String, Object>> items,
+    ) async {
+      for (int i = 0; i < items.length; i++) {
+        final item = items[i];
+        await db.insert(
+          'categories',
+          {
+            'name': item['name'],
+            'group_type': groupType,
+            'icon': item['icon'],
+            'color_hex': item['color_hex'],
+            'sort_order': i,
+            'is_default': item['is_default'] == true ? 1 : 0,
+            'is_system': item['is_system'] == true ? 1 : 0,
+            'sub_type': item['sub_type'] ?? '',
+          },
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+      }
+    }
+
+    // ── Account types ─────────────────────────────────────────────────────
+    // Start empty except for the single default — the user builds out the
+    // rest of their own types from the Category Manager.
+    await insertAll(kCategoryGroupAccountType, [
+      {
+        'name': 'cash',
+        'icon': 'cash',
+        'color_hex': '#22C55E',
+        'is_default': true
+      },
+    ]);
+
+    // ── Account categories ────────────────────────────────────────────────
+    // Start empty except for the single default.
+    await insertAll(kCategoryGroupAccountCategory, [
+      {
+        'name': 'personal',
+        'icon': 'label',
+        'color_hex': '#6366F1',
+        'is_default': true
+      },
+    ]);
+
+    // ── Transaction categories ────────────────────────────────────────────
+    // Income/Expense start empty — the user adds their own. The only
+    // built-in entry is the system "Transfer" category, which is also the
+    // group's default (used as the fallback if a user-added category that
+    // happened to be marked default is deleted).
+    await insertAll(kCategoryGroupTransactionCategory, [
+      // Non-deletable, non-editable — used for transfer-in/transfer-out legs.
+      {
+        'name': kTransferCategoryName,
+        'icon': 'swap',
+        'color_hex': '#0D9488',
+        'is_system': true,
+        'is_default': true,
+        'sub_type': ''
+      },
+    ]);
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -195,6 +289,229 @@ class DatabaseHelper {
         )
       ''');
     }
+    if (oldVersion < 5) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS categories (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          name        TEXT    NOT NULL,
+          group_type  TEXT    NOT NULL,
+          icon        TEXT    NOT NULL DEFAULT 'label',
+          color_hex   TEXT    NOT NULL DEFAULT '#6366F1',
+          sort_order  INTEGER NOT NULL DEFAULT 0,
+          is_default  INTEGER NOT NULL DEFAULT 0,
+          is_system   INTEGER NOT NULL DEFAULT 0,
+          UNIQUE(group_type, name)
+        )
+      ''');
+      await _seedDefaultCategories(db);
+
+      // Existing installs may have account types/categories or transaction
+      // categories that pre-date this table (e.g. custom data). Make sure
+      // every distinct value already in use has a matching category row so
+      // nothing disappears from the Category Manager.
+      await _backfillCategoriesFromExistingData(db);
+    }
+  }
+
+  /// Ensures any account type/category or transaction category already
+  /// referenced by existing rows has a corresponding entry in [categories],
+  /// so older installs don't lose access to categories they were using.
+  Future<void> _backfillCategoriesFromExistingData(Database db) async {
+    Future<void> ensure(String groupType, String name,
+        {String icon = 'label', String colorHex = '#6366F1'}) async {
+      if (name.trim().isEmpty) return;
+      final existing = await db.query(
+        'categories',
+        where: 'group_type = ? AND name = ?',
+        whereArgs: [groupType, name],
+        limit: 1,
+      );
+      if (existing.isNotEmpty) return;
+      final maxRow = await db.rawQuery(
+        'SELECT MAX(sort_order) as m FROM categories WHERE group_type = ?',
+        [groupType],
+      );
+      final nextOrder = ((maxRow.first['m'] as int?) ?? -1) + 1;
+      await db.insert(
+        'categories',
+        {
+          'name': name,
+          'group_type': groupType,
+          'icon': icon,
+          'color_hex': colorHex,
+          'sort_order': nextOrder,
+          'is_default': 0,
+          'is_system': 0,
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+    }
+
+    final accountRows =
+        await db.query('accounts', columns: ['type', 'category', 'color_hex']);
+    for (final row in accountRows) {
+      await ensure(kCategoryGroupAccountType, row['type'] as String,
+          colorHex: row['color_hex'] as String? ?? '#6366F1');
+      await ensure(kCategoryGroupAccountCategory,
+          (row['category'] as String?) ?? 'personal');
+    }
+
+    final txRows = await db.query('transactions', columns: ['category']);
+    for (final row in txRows) {
+      await ensure(
+          kCategoryGroupTransactionCategory, row['category'] as String);
+    }
+  }
+
+  // ── Category CRUD ────────────────────────────────────────────────────────
+
+  /// Returns every category in [groupType], ordered for display.
+  Future<List<WalletCategory>> getCategories(String groupType) async {
+    final db = await database;
+    final rows = await db.query(
+      'categories',
+      where: 'group_type = ?',
+      whereArgs: [groupType],
+      orderBy: 'sort_order ASC, id ASC',
+    );
+    return rows.map(WalletCategory.fromMap).toList();
+  }
+
+  /// Loads all three category groups at once.
+  Future<CategoryRegistry> getCategoryRegistry() async {
+    final accountTypes = await getCategories(kCategoryGroupAccountType);
+    final accountCategories =
+        await getCategories(kCategoryGroupAccountCategory);
+    final transactionCategories =
+        await getCategories(kCategoryGroupTransactionCategory);
+    return CategoryRegistry(
+      accountTypes: accountTypes,
+      accountCategories: accountCategories,
+      transactionCategories: transactionCategories,
+    );
+  }
+
+  /// Adds a new category to the end of its group. Throws if a category with
+  /// the same name already exists in that group (enforced by a UNIQUE index).
+  Future<int> addCategory(WalletCategory category) async {
+    final db = await database;
+    final maxRow = await db.rawQuery(
+      'SELECT MAX(sort_order) as m FROM categories WHERE group_type = ?',
+      [category.groupType],
+    );
+    final nextOrder = ((maxRow.first['m'] as int?) ?? -1) + 1;
+    final map = category.toMap()
+      ..remove('id')
+      ..['sort_order'] = nextOrder;
+    return await db.insert('categories', map);
+  }
+
+  /// Updates a category's name/icon/color. If the name changed, every
+  /// account or transaction referencing the old name is migrated to the new
+  /// one so existing data keeps showing the right label.
+  Future<void> updateCategory(
+      WalletCategory oldCategory, WalletCategory newCategory) async {
+    if (oldCategory.isSystem) return; // system categories are immutable
+    final db = await database;
+    final map = newCategory.toMap()..remove('id');
+    await db.update('categories', map,
+        where: 'id = ?', whereArgs: [oldCategory.id]);
+
+    if (oldCategory.name == newCategory.name) return;
+
+    switch (oldCategory.groupType) {
+      case kCategoryGroupAccountType:
+        await db.update('accounts', {'type': newCategory.name},
+            where: 'type = ?', whereArgs: [oldCategory.name]);
+        break;
+      case kCategoryGroupAccountCategory:
+        await db.update('accounts', {'category': newCategory.name},
+            where: 'category = ?', whereArgs: [oldCategory.name]);
+        break;
+      case kCategoryGroupTransactionCategory:
+        await db.update('transactions', {'category': newCategory.name},
+            where: 'category = ?', whereArgs: [oldCategory.name]);
+        break;
+    }
+  }
+
+  /// Marks [categoryId] as the default for its group (and unmarks any
+  /// previous default). The default category is the one new
+  /// accounts/transactions fall back to and that other categories in the
+  /// group get reassigned to when deleted, so it can never be deleted
+  /// itself.
+  Future<void> setDefaultCategory(String groupType, int categoryId) async {
+    final db = await database;
+    await db.batch()
+      ..update('categories', {'is_default': 0},
+          where: 'group_type = ?', whereArgs: [groupType])
+      ..update('categories', {'is_default': 1},
+          where: 'id = ?', whereArgs: [categoryId])
+      ..commit(noResult: true);
+  }
+
+  /// Persists a new display order for a category group.
+  Future<void> reorderCategories(String groupType, List<int> orderedIds) async {
+    final db = await database;
+    final batch = db.batch();
+    for (int i = 0; i < orderedIds.length; i++) {
+      batch.update('categories', {'sort_order': i},
+          where: 'id = ?', whereArgs: [orderedIds[i]]);
+    }
+    await batch.commit(noResult: true);
+  }
+
+  /// Deletes [category] and reassigns any accounts/transactions that were
+  /// using it to the group's default category. System categories and the
+  /// current default category cannot be deleted (callers should prevent
+  /// this in the UI; this is a final safety check).
+  ///
+  /// Returns the name of the category everything was reassigned to, or
+  /// `null` if nothing was deleted.
+  Future<String?> deleteCategory(WalletCategory category) async {
+    if (category.id == null || category.isSystem || category.isDefault) {
+      return null;
+    }
+    final db = await database;
+
+    final defaultRows = await db.query(
+      'categories',
+      where: 'group_type = ? AND is_default = 1',
+      whereArgs: [category.groupType],
+      limit: 1,
+    );
+    if (defaultRows.isEmpty) return null; // no fallback configured — abort
+    final fallback = WalletCategory.fromMap(defaultRows.first);
+
+    switch (category.groupType) {
+      case kCategoryGroupAccountType:
+        await db.update(
+          'accounts',
+          {'type': fallback.name, 'color_hex': fallback.colorHex},
+          where: 'type = ?',
+          whereArgs: [category.name],
+        );
+        break;
+      case kCategoryGroupAccountCategory:
+        await db.update(
+          'accounts',
+          {'category': fallback.name},
+          where: 'category = ?',
+          whereArgs: [category.name],
+        );
+        break;
+      case kCategoryGroupTransactionCategory:
+        await db.update(
+          'transactions',
+          {'category': fallback.name},
+          where: 'category = ?',
+          whereArgs: [category.name],
+        );
+        break;
+    }
+
+    await db.delete('categories', where: 'id = ?', whereArgs: [category.id]);
+    return fallback.name;
   }
 
   // ── Account CRUD ───────────────────────────────────────────────────────────
@@ -497,7 +814,7 @@ class DatabaseHelper {
         'amount': amount,
         'date': date,
         'type': 'transfer_out',
-        'category': 'Transfer',
+        'category': kTransferCategoryName,
         'note': noteWithRef,
         'account_id': fromAccountId,
       });
@@ -507,7 +824,7 @@ class DatabaseHelper {
         'amount': amount,
         'date': date,
         'type': 'transfer_in',
-        'category': 'Transfer',
+        'category': kTransferCategoryName,
         'note': noteWithRef,
         'account_id': toAccountId,
       });
@@ -802,7 +1119,7 @@ class DatabaseHelper {
 
   // ── Utility ────────────────────────────────────────────────────────────────
 
-  /// Clears all live data AND the trash bin.
+  /// Clears all live data AND the trash bin. Category definitions are kept.
   Future<void> clearAllData() async {
     final db = await database;
     await db.delete('transactions');
