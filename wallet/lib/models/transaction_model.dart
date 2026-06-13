@@ -87,7 +87,7 @@ class WalletTransaction {
     required List<Account> accounts,
     required List<WalletCategory> categories,
     WalletTransaction? existing,
-    String? initialType,
+    required String type,
   }) {
     return showModalBottomSheet<WalletTransaction>(
       context: context,
@@ -100,7 +100,7 @@ class WalletTransaction {
         accounts: accounts,
         categories: categories,
         existing: existing,
-        initialType: initialType,
+        type: type,
       ),
     );
   }
@@ -156,13 +156,13 @@ class _TransactionForm extends StatefulWidget {
   final List<Account> accounts;
   final List<WalletCategory> categories;
   final WalletTransaction? existing;
-  final String? initialType;
+  final String type;
 
   const _TransactionForm({
     required this.accounts,
     required this.categories,
     this.existing,
-    this.initialType,
+    required this.type,
   });
 
   @override
@@ -173,7 +173,7 @@ class _TransactionFormState extends State<_TransactionForm> {
   late final TextEditingController _titleCtrl;
   late final TextEditingController _amountCtrl;
   late final TextEditingController _noteCtrl;
-  late String _type;
+  late final String _type;
   late String _category;
   late int? _accountId;
 
@@ -186,7 +186,7 @@ class _TransactionFormState extends State<_TransactionForm> {
       text: e != null ? e.amount.toStringAsFixed(2) : '',
     );
     _noteCtrl = TextEditingController(text: e?.note ?? '');
-    _type = e?.type ?? widget.initialType ?? 'expense';
+    _type = widget.type;
 
     final inType = widget.categories.where((c) => c.subType == _type).toList();
     final categoryNames = inType.map((c) => c.name).toSet();
@@ -260,55 +260,13 @@ class _TransactionFormState extends State<_TransactionForm> {
             ),
           ),
           Text(
-            isEdit ? 'Edit Transaction' : 'New Transaction',
+            isEdit
+                ? 'Edit ${_type == 'income' ? 'Income' : 'Expense'}'
+                : 'New ${_type == 'income' ? 'Income' : 'Expense'}',
             style: theme.textTheme.titleLarge
                 ?.copyWith(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 20),
-
-          // ── Type toggle ─────────────────────────────────────────────────
-          // Segmented button is cheap; keep it inline.
-          SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(
-                value: 'expense',
-                label: Text('Expense'),
-                icon: Icon(Icons.arrow_upward, size: 16),
-              ),
-              ButtonSegment(
-                value: 'income',
-                label: Text('Income'),
-                icon: Icon(Icons.arrow_downward, size: 16),
-              ),
-            ],
-            selected: {_type},
-            onSelectionChanged: (v) => setState(() {
-              _type = v.first;
-              // The selected category must belong to the new type's
-              // sub-type (income/expense) — switch to that group's
-              // default (or first) category if the current one doesn't.
-              final inType =
-                  widget.categories.where((c) => c.subType == _type).toList();
-              if (!inType.any((c) => c.name == _category)) {
-                final defaultCat = firstWhereOrNull(inType, (c) => c.isDefault);
-                _category = defaultCat?.name ??
-                    (inType.isNotEmpty ? inType.first.name : _category);
-              }
-            }),
-            style: ButtonStyle(
-              backgroundColor: WidgetStateProperty.resolveWith((states) {
-                if (states.contains(WidgetState.selected)) {
-                  return _type == 'income' ? Colors.green : Colors.red;
-                }
-                return null;
-              }),
-              foregroundColor: WidgetStateProperty.resolveWith((states) {
-                if (states.contains(WidgetState.selected)) return Colors.white;
-                return null;
-              }),
-            ),
-          ),
-          const SizedBox(height: 16),
 
           // ── Title field — RepaintBoundary isolates repaints from the ──────
           // category Wrap below; typing here won't repaint the chip grid.
