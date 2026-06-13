@@ -1720,6 +1720,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
       accounts: _allAccounts,
       categories: _txCategories,
       existing: existing,
+      type: existing.type,
     );
     if (updated == null) return;
     await DatabaseHelper.instance.updateTransaction(existing, updated);
