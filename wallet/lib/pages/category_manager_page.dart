@@ -371,7 +371,8 @@ class _CategoryTabState extends State<_CategoryTab>
     final income = _primary.where((c) => c.subType == kSubTypeIncome).toList();
     final expense =
         _primary.where((c) => c.subType == kSubTypeExpense).toList();
-    final transfer = _primary.where((c) => c.isSystem).toList();
+    final transfer =
+        _primary.where((c) => c.name == kTransferCategoryName).toList();
 
     return [
       _CategorySection(
