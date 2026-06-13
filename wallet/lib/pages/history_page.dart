@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../database/database_helper.dart';
 import '../models/transaction_model.dart';
 import '../models/account_model.dart';
+import '../models/category_model.dart';
 
 final _currencyFmt = NumberFormat('#,##0.00', 'en_PH');
 String _fmt(double v) => _currencyFmt.format(v);
@@ -21,6 +22,7 @@ class HistoryPageState extends State<HistoryPage> {
   final _db = DatabaseHelper.instance;
   List<WalletTransaction> _transactions = [];
   List<Account> _accounts = [];
+  List<WalletCategory> _txCategories = [];
   bool _loading = true;
 
   _FilterMode _filterMode = _FilterMode.monthly;
@@ -158,6 +160,7 @@ class HistoryPageState extends State<HistoryPage> {
   Future<void> _load() async {
     final txs = await _db.getAllTransactions();
     final accounts = await _db.getAllAccounts();
+    final registry = await _db.getCategoryRegistry();
     final savedFilter = await _db.getSetting('history_filter_mode');
     final savedAnchor = await _db.getSetting('history_filter_anchor');
 
@@ -178,6 +181,7 @@ class HistoryPageState extends State<HistoryPage> {
     setState(() {
       _transactions = txs;
       _accounts = accounts;
+      _txCategories = registry.selectableTransactionCategories;
       _filterMode = restoredMode;
       _anchor = restoredAnchor;
       _loading = false;
@@ -248,6 +252,7 @@ class HistoryPageState extends State<HistoryPage> {
     final tx = await WalletTransaction.showDialog(
       context,
       accounts: _accounts,
+      categories: _txCategories,
     );
     if (tx == null) return;
     await _db.insertTransaction(tx);
@@ -264,6 +269,7 @@ class HistoryPageState extends State<HistoryPage> {
     final updated = await WalletTransaction.showDialog(
       context,
       accounts: _accounts,
+      categories: _txCategories,
       existing: existing,
     );
     if (updated == null) return;
@@ -714,8 +720,7 @@ class HistoryPageState extends State<HistoryPage> {
                       radius: 22,
                       backgroundColor: bgColor,
                       child: Icon(
-                        kTransactionCategoryIcons[tx.category] ??
-                            Icons.category,
+                        iconForKey(tx.category),
                         size: 20,
                         color: rowColor,
                       ),

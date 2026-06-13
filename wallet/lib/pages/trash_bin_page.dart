@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:wallet/database/database_helper.dart';
-import 'package:wallet/models/transaction_model.dart';
+import 'package:wallet/models/category_model.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Trash Bin Page
@@ -409,7 +409,7 @@ class _TransactionTile extends StatelessWidget {
             ? '+'
             : '-';
 
-    final icon = kTransactionCategoryIcons[tx.category] ?? Icons.category;
+    final icon = kCategoryIcons[tx.category] ?? Icons.category;
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
