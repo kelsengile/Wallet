@@ -274,11 +274,12 @@ class _CategoryTabState extends State<_CategoryTab>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete Category'),
+        title: const Text('Move to Trash'),
         content: Text(
-          'Delete "${cat.name}"?\n\n'
+          'Move "${cat.name}" to trash?\n\n'
           'All accounts / transactions using this will be reassigned '
-          'to "$fallback".',
+          'to "$fallback". You can restore this category from the trash '
+          'bin later.',
         ),
         actions: [
           TextButton(
@@ -287,7 +288,7 @@ class _CategoryTabState extends State<_CategoryTab>
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
+            child: const Text('Move to Trash'),
           ),
         ],
       ),
@@ -297,7 +298,8 @@ class _CategoryTabState extends State<_CategoryTab>
     final reassignedTo = await DatabaseHelper.instance.deleteCategory(cat);
     if (reassignedTo != null) {
       await _load();
-      _showSnack('"${cat.name}" deleted. Items reassigned to "$reassignedTo".');
+      _showSnack(
+          '"${cat.name}" moved to trash. Items reassigned to "$reassignedTo".');
     } else {
       _showSnack('Could not delete — make sure a default category is set.');
     }
