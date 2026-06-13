@@ -230,10 +230,14 @@ class _WalletHomePageState extends State<WalletHomePage> {
                           onAddIncome: () async {
                             final accounts =
                                 await DatabaseHelper.instance.getAllAccounts();
+                            final registry = await DatabaseHelper.instance
+                                .getCategoryRegistry();
                             if (!context.mounted) return;
                             final tx = await WalletTransaction.showDialog(
                               context,
                               accounts: accounts,
+                              categories:
+                                  registry.selectableTransactionCategories,
                               initialType: 'income',
                             );
                             if (tx == null) return;
@@ -243,10 +247,14 @@ class _WalletHomePageState extends State<WalletHomePage> {
                           onAddExpense: () async {
                             final accounts =
                                 await DatabaseHelper.instance.getAllAccounts();
+                            final registry = await DatabaseHelper.instance
+                                .getCategoryRegistry();
                             if (!context.mounted) return;
                             final tx = await WalletTransaction.showDialog(
                               context,
                               accounts: accounts,
+                              categories:
+                                  registry.selectableTransactionCategories,
                               initialType: 'expense',
                             );
                             if (tx == null) return;
