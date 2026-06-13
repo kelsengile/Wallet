@@ -1,32 +1,6 @@
 import 'package:flutter/material.dart';
 import 'account_model.dart';
-
-// ── Category metadata (single source of truth) ────────────────────────────────
-
-const kTransactionCategories = [
-  'Food',
-  'Transport',
-  'Shopping',
-  'Bills',
-  'Health',
-  'Entertainment',
-  'Salary',
-  'Savings',
-  'Other',
-];
-
-const kTransactionCategoryIcons = <String, IconData>{
-  'Food': Icons.restaurant,
-  'Transport': Icons.directions_car,
-  'Shopping': Icons.shopping_bag,
-  'Bills': Icons.receipt_long,
-  'Health': Icons.favorite,
-  'Entertainment': Icons.movie,
-  'Salary': Icons.work,
-  'Savings': Icons.savings,
-  'Transfer': Icons.swap_horiz,
-  'Other': Icons.category,
-};
+import 'category_model.dart';
 
 // ── Model ─────────────────────────────────────────────────────────────────────
 
@@ -102,10 +76,16 @@ class WalletTransaction {
   // ── Dialog factory — mirrors the Account bottom-sheet pattern ─────────────
 
   /// Shows an add/edit transaction modal bottom sheet.
+  ///
+  /// [categories] should be the user's current transaction categories
+  /// (excluding the system "Transfer" category — see
+  /// [CategoryRegistry.selectableTransactionCategories]).
+  ///
   /// Returns a [WalletTransaction] if the user confirmed, `null` otherwise.
   static Future<WalletTransaction?> showDialog(
     BuildContext context, {
     required List<Account> accounts,
+    required List<WalletCategory> categories,
     WalletTransaction? existing,
     String? initialType,
   }) {
@@ -118,6 +98,7 @@ class WalletTransaction {
       ),
       builder: (ctx) => _TransactionForm(
         accounts: accounts,
+        categories: categories,
         existing: existing,
         initialType: initialType,
       ),
@@ -173,11 +154,16 @@ extension WalletTransactionTransfer on WalletTransaction {
 
 class _TransactionForm extends StatefulWidget {
   final List<Account> accounts;
+  final List<WalletCategory> categories;
   final WalletTransaction? existing;
   final String? initialType;
 
-  const _TransactionForm(
-      {required this.accounts, this.existing, this.initialType});
+  const _TransactionForm({
+    required this.accounts,
+    required this.categories,
+    this.existing,
+    this.initialType,
+  });
 
   @override
   State<_TransactionForm> createState() => _TransactionFormState();
@@ -201,7 +187,17 @@ class _TransactionFormState extends State<_TransactionForm> {
     );
     _noteCtrl = TextEditingController(text: e?.note ?? '');
     _type = e?.type ?? widget.initialType ?? 'expense';
-    _category = e?.category ?? 'Food';
+
+    final inType = widget.categories.where((c) => c.subType == _type).toList();
+    final categoryNames = inType.map((c) => c.name).toSet();
+    if (e != null && categoryNames.contains(e.category)) {
+      _category = e.category;
+    } else {
+      final defaultCat = firstWhereOrNull(inType, (c) => c.isDefault);
+      _category =
+          defaultCat?.name ?? (inType.isNotEmpty ? inType.first.name : 'Other');
+    }
+
     _accountId = e?.accountId ??
         (widget.accounts.isNotEmpty ? widget.accounts.first.id : null);
   }
@@ -286,7 +282,19 @@ class _TransactionFormState extends State<_TransactionForm> {
               ),
             ],
             selected: {_type},
-            onSelectionChanged: (v) => setState(() => _type = v.first),
+            onSelectionChanged: (v) => setState(() {
+              _type = v.first;
+              // The selected category must belong to the new type's
+              // sub-type (income/expense) — switch to that group's
+              // default (or first) category if the current one doesn't.
+              final inType =
+                  widget.categories.where((c) => c.subType == _type).toList();
+              if (!inType.any((c) => c.name == _category)) {
+                final defaultCat = firstWhereOrNull(inType, (c) => c.isDefault);
+                _category = defaultCat?.name ??
+                    (inType.isNotEmpty ? inType.first.name : _category);
+              }
+            }),
             style: ButtonStyle(
               backgroundColor: WidgetStateProperty.resolveWith((states) {
                 if (states.contains(WidgetState.selected)) {
@@ -334,55 +342,71 @@ class _TransactionFormState extends State<_TransactionForm> {
           // Category picker — icon grid (mirrors account type picker style)
           Text('Category', style: theme.textTheme.labelLarge),
           const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: kTransactionCategories.map((cat) {
-              final selected = _category == cat;
-              final color = selected
-                  ? (_type == 'income'
-                      ? Colors.green
-                      : theme.colorScheme.primary)
-                  : theme.colorScheme.outline;
-              return GestureDetector(
-                onTap: () => setState(() => _category = cat),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: selected
-                        ? color.withValues(alpha: 0.12)
-                        : theme.colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: selected ? color : Colors.transparent,
-                      width: 2,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        kTransactionCategoryIcons[cat] ?? Icons.category,
-                        size: 15,
-                        color: selected ? color : null,
-                      ),
-                      const SizedBox(width: 5),
-                      Text(
-                        cat,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: selected ? color : null,
+          ...(() {
+            final inType =
+                widget.categories.where((c) => c.subType == _type).toList();
+            if (inType.isEmpty) {
+              return [
+                Text(
+                  'No ${_type == 'income' ? 'income' : 'expense'} categories yet. '
+                  'Add some in the Category Manager.',
+                  style:
+                      TextStyle(color: theme.colorScheme.outline, fontSize: 12),
+                ),
+              ];
+            }
+            return [
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: inType.map((cat) {
+                  final selected = _category == cat.name;
+                  final color = selected
+                      ? (_type == 'income'
+                          ? Colors.green
+                          : theme.colorScheme.primary)
+                      : theme.colorScheme.outline;
+                  return GestureDetector(
+                    onTap: () => setState(() => _category = cat.name),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? color.withValues(alpha: 0.12)
+                            : theme.colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: selected ? color : Colors.transparent,
+                          width: 2,
                         ),
                       ),
-                    ],
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            cat.iconData,
+                            size: 15,
+                            color: selected ? color : null,
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            cat.name,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: selected ? color : null,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ];
+          })(),
           const SizedBox(height: 12),
 
           if (widget.accounts.isNotEmpty)
