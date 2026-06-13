@@ -103,6 +103,21 @@ class _WalletHomePageState extends State<WalletHomePage> {
     }
   }
 
+  /// Called after the database has been wiped from the "Clear All Data"
+  /// drawer action. Refreshes every page that caches data so the UI
+  /// reflects the empty state immediately, and jumps back to the
+  /// Accounts tab.
+  Future<void> _onDataCleared() async {
+    await Future.wait([
+      _accountsKey.currentState?.refresh() ?? Future.value(),
+      _historyKey.currentState?.refresh() ?? Future.value(),
+      _analyticsKey.currentState?.refresh() ?? Future.value(),
+    ]);
+    if (_selectedIndex != 0) {
+      _onItemTapped(0);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -136,6 +151,7 @@ class _WalletHomePageState extends State<WalletHomePage> {
             _onItemTapped(index);
             Navigator.pop(context);
           },
+          onDataCleared: _onDataCleared,
         ),
         body: RefreshIndicator(
           onRefresh: _onRefresh,
@@ -712,10 +728,12 @@ class _TopNavBarState extends State<_TopNavBar> {
 class _WalletDrawer extends StatefulWidget {
   final int selectedIndex;
   final void Function(int) onNavigate;
+  final VoidCallback onDataCleared;
 
   const _WalletDrawer({
     required this.selectedIndex,
     required this.onNavigate,
+    required this.onDataCleared,
   });
 
   @override
@@ -949,8 +967,12 @@ class _WalletDrawerState extends State<_WalletDrawer> {
                   label: 'Clear All Data',
                   destructive: true,
                   onTap: () {
+                    // Grab a stable reference *before* the drawer closes —
+                    // once popped, the drawer's own context is deactivated
+                    // and can no longer be used to look up ancestors.
+                    final messenger = ScaffoldMessenger.of(context);
                     Navigator.pop(context);
-                    _showClearDataDialog(context);
+                    _showClearDataDialog(context, messenger);
                   },
                 ),
 
@@ -1011,7 +1033,8 @@ class _WalletDrawerState extends State<_WalletDrawer> {
     );
   }
 
-  void _showClearDataDialog(BuildContext context) {
+  void _showClearDataDialog(
+      BuildContext context, ScaffoldMessengerState messenger) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1028,11 +1051,12 @@ class _WalletDrawerState extends State<_WalletDrawer> {
               await DatabaseHelper.instance.clearAllData();
               if (ctx.mounted) {
                 Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
+                messenger.showSnackBar(
                   const SnackBar(content: Text('All data cleared.')),
                 );
               }
               _loadTrashCount();
+              widget.onDataCleared();
             },
             child: const Text('Clear'),
           ),
