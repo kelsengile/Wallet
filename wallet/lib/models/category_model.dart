@@ -23,6 +23,12 @@ const kSubTypeExpense = 'expense';
 /// is hidden from the regular "add transaction" category picker.
 const kTransferCategoryName = 'Transfer';
 
+/// The name of the built-in system transaction category seeded for both
+/// income and expense sub-types. It appears in the category picker just like
+/// any user-added category (unlike Transfer, which is hidden), but cannot be
+/// edited, deleted, or renamed.
+const kMiscellaneousCategoryName = 'Miscellaneous';
+
 // ── Icon registry ────────────────────────────────────────────────────────────
 //
 // Maps a stable string key (stored in the DB) to a Material icon. The
@@ -279,8 +285,11 @@ class CategoryRegistry {
 
   /// All transaction categories *except* the system "Transfer" category —
   /// this is the list shown in the add/edit transaction form.
+  /// Miscellaneous (also system) IS included so it appears as a pick option.
   List<WalletCategory> get selectableTransactionCategories =>
-      transactionCategories.where((c) => !c.isSystem).toList();
+      transactionCategories
+          .where((c) => c.name != kTransferCategoryName)
+          .toList();
 
   WalletCategory? findTransactionCategory(String name) =>
       firstWhereOrNull(transactionCategories, (c) => c.name == name);
