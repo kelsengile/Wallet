@@ -78,7 +78,8 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 7, // bumped from 6 → 7 to add trash_categories table
+      version:
+          9, // bumped from 8 → 9 to widen UNIQUE to (group_type, sub_type, name)
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -189,7 +190,7 @@ class DatabaseHelper {
         is_default  INTEGER NOT NULL DEFAULT 0,
         is_system   INTEGER NOT NULL DEFAULT 0,
         sub_type    TEXT    NOT NULL DEFAULT '',
-        UNIQUE(group_type, name)
+        UNIQUE(group_type, sub_type, name)
       )
     ''');
 
@@ -257,11 +258,28 @@ class DatabaseHelper {
     ]);
 
     // ── Transaction categories ────────────────────────────────────────────
-    // Income/Expense start empty — the user adds their own. The only
-    // built-in entry is the system "Transfer" category, which is also the
-    // group's default (used as the fallback if a user-added category that
-    // happened to be marked default is deleted).
+    // Income and Expense each have a built-in system "Miscellaneous" category
+    // that serves as the fallback for their sub-type. The "Transfer" category
+    // is the group-level default used internally for transfer legs.
     await insertAll(kCategoryGroupTransactionCategory, [
+      // System fallback for income — non-deletable, non-editable.
+      {
+        'name': kMiscellaneousCategoryName,
+        'icon': 'label',
+        'color_hex': '#6366F1',
+        'is_system': true,
+        'is_default': false,
+        'sub_type': kSubTypeIncome,
+      },
+      // System fallback for expense — non-deletable, non-editable.
+      {
+        'name': kMiscellaneousCategoryName,
+        'icon': 'label',
+        'color_hex': '#6366F1',
+        'is_system': true,
+        'is_default': false,
+        'sub_type': kSubTypeExpense,
+      },
       // Non-deletable, non-editable — used for transfer-in/transfer-out legs.
       {
         'name': kTransferCategoryName,
@@ -331,7 +349,8 @@ class DatabaseHelper {
           sort_order  INTEGER NOT NULL DEFAULT 0,
           is_default  INTEGER NOT NULL DEFAULT 0,
           is_system   INTEGER NOT NULL DEFAULT 0,
-          UNIQUE(group_type, name)
+          sub_type    TEXT    NOT NULL DEFAULT '',
+          UNIQUE(group_type, sub_type, name)
         )
       ''');
       await _seedDefaultCategories(db);
@@ -357,6 +376,85 @@ class DatabaseHelper {
           deleted_at  TEXT    NOT NULL
         )
       ''');
+    }
+    if (oldVersion < 9) {
+      // Widen the UNIQUE constraint from (group_type, name) to
+      // (group_type, sub_type, name) so Income and Expense can each have
+      // identically-named categories (e.g. both can have "Food").
+      // SQLite doesn't support ALTER CONSTRAINT, so we recreate the table.
+      await db.execute('''
+        CREATE TABLE categories_new (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          name        TEXT    NOT NULL,
+          group_type  TEXT    NOT NULL,
+          icon        TEXT    NOT NULL DEFAULT 'label',
+          color_hex   TEXT    NOT NULL DEFAULT '#6366F1',
+          sort_order  INTEGER NOT NULL DEFAULT 0,
+          is_default  INTEGER NOT NULL DEFAULT 0,
+          is_system   INTEGER NOT NULL DEFAULT 0,
+          sub_type    TEXT    NOT NULL DEFAULT '',
+          UNIQUE(group_type, sub_type, name)
+        )
+      ''');
+      await db.execute('''
+        INSERT OR IGNORE INTO categories_new
+          (id, name, group_type, icon, color_hex, sort_order, is_default, is_system, sub_type)
+        SELECT id, name, group_type, icon, color_hex, sort_order, is_default, is_system,
+               COALESCE(sub_type, '')
+        FROM categories
+      ''');
+      await db.execute('DROP TABLE categories');
+      await db.execute('ALTER TABLE categories_new RENAME TO categories');
+
+      // Ensure both Miscellaneous system rows exist after the migration.
+      for (final subType in [kSubTypeIncome, kSubTypeExpense]) {
+        final maxRow = await db.rawQuery(
+          'SELECT MAX(sort_order) as m FROM categories WHERE group_type = ?',
+          [kCategoryGroupTransactionCategory],
+        );
+        final nextOrder = ((maxRow.first['m'] as int?) ?? -1) + 1;
+        await db.insert(
+          'categories',
+          {
+            'name': kMiscellaneousCategoryName,
+            'group_type': kCategoryGroupTransactionCategory,
+            'icon': 'label',
+            'color_hex': '#6366F1',
+            'sort_order': nextOrder,
+            'is_default': 0,
+            'is_system': 1,
+            'sub_type': subType,
+          },
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+      }
+    }
+
+    if (oldVersion < 8) {
+      // Add system Miscellaneous categories for income and expense subtypes.
+      // ConflictAlgorithm.ignore means this is safe to run even if the rows
+      // already exist (e.g. a fresh install that went straight to v8).
+      for (final subType in [kSubTypeIncome, kSubTypeExpense]) {
+        final maxRow = await db.rawQuery(
+          'SELECT MAX(sort_order) as m FROM categories WHERE group_type = ?',
+          [kCategoryGroupTransactionCategory],
+        );
+        final nextOrder = ((maxRow.first['m'] as int?) ?? -1) + 1;
+        await db.insert(
+          'categories',
+          {
+            'name': kMiscellaneousCategoryName,
+            'group_type': kCategoryGroupTransactionCategory,
+            'icon': 'label',
+            'color_hex': '#6366F1',
+            'sort_order': nextOrder,
+            'is_default': 0,
+            'is_system': 1,
+            'sub_type': subType,
+          },
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+      }
     }
   }
 
@@ -439,12 +537,21 @@ class DatabaseHelper {
   }
 
   /// Adds a new category to the end of its group. Throws if a category with
-  /// the same name already exists in that group (enforced by a UNIQUE index).
+  /// the same name already exists in that group+sub_type combination
+  /// (enforced by a UNIQUE index on group_type, sub_type, name).
   Future<int> addCategory(WalletCategory category) async {
     final db = await database;
+    // Scope sort_order within the same sub_type bucket for transaction
+    // categories so Income and Expense are ordered independently.
+    final List<dynamic> args = category.subType.isNotEmpty
+        ? [category.groupType, category.subType]
+        : [category.groupType];
+    final whereClause = category.subType.isNotEmpty
+        ? 'group_type = ? AND sub_type = ?'
+        : 'group_type = ?';
     final maxRow = await db.rawQuery(
-      'SELECT MAX(sort_order) as m FROM categories WHERE group_type = ?',
-      [category.groupType],
+      'SELECT MAX(sort_order) as m FROM categories WHERE $whereClause',
+      args,
     );
     final nextOrder = ((maxRow.first['m'] as int?) ?? -1) + 1;
     final map = category.toMap()
@@ -476,8 +583,16 @@ class DatabaseHelper {
             where: 'category = ?', whereArgs: [oldCategory.name]);
         break;
       case kCategoryGroupTransactionCategory:
-        await db.update('transactions', {'category': newCategory.name},
-            where: 'category = ?', whereArgs: [oldCategory.name]);
+        // Scope the rename to transactions of the matching income/expense
+        // type so a rename of an Income "Food" never touches an Expense "Food".
+        final txType =
+            oldCategory.subType == kSubTypeIncome ? 'income' : 'expense';
+        await db.update(
+          'transactions',
+          {'category': newCategory.name},
+          where: 'category = ? AND type = ?',
+          whereArgs: [oldCategory.name, txType],
+        );
         break;
     }
   }
@@ -521,14 +636,41 @@ class DatabaseHelper {
     }
     final db = await database;
 
+    // For transaction categories, find the fallback within the same sub_type
+    // (income or expense) so we never cross-contaminate the two groups.
+    final bool scopeBySubType =
+        category.groupType == kCategoryGroupTransactionCategory &&
+            category.subType.isNotEmpty;
     final defaultRows = await db.query(
       'categories',
-      where: 'group_type = ? AND is_default = 1',
-      whereArgs: [category.groupType],
+      where: scopeBySubType
+          ? 'group_type = ? AND sub_type = ? AND is_default = 1'
+          : 'group_type = ? AND is_default = 1',
+      whereArgs: scopeBySubType
+          ? [category.groupType, category.subType]
+          : [category.groupType],
       limit: 1,
     );
-    if (defaultRows.isEmpty) return null; // no fallback configured — abort
-    final fallback = WalletCategory.fromMap(defaultRows.first);
+    // If no explicit default in this sub_type, fall back to the system
+    // Miscellaneous for the same sub_type.
+    WalletCategory? fallback;
+    if (defaultRows.isNotEmpty) {
+      fallback = WalletCategory.fromMap(defaultRows.first);
+    } else if (scopeBySubType) {
+      final miscRows = await db.query(
+        'categories',
+        where: 'group_type = ? AND sub_type = ? AND name = ? AND is_system = 1',
+        whereArgs: [
+          category.groupType,
+          category.subType,
+          kMiscellaneousCategoryName
+        ],
+        limit: 1,
+      );
+      if (miscRows.isNotEmpty)
+        fallback = WalletCategory.fromMap(miscRows.first);
+    }
+    if (fallback == null) return null; // no fallback configured — abort
 
     switch (category.groupType) {
       case kCategoryGroupAccountType:
@@ -548,11 +690,14 @@ class DatabaseHelper {
         );
         break;
       case kCategoryGroupTransactionCategory:
+        // Only reassign transactions of the matching income/expense type.
+        final txType =
+            category.subType == kSubTypeIncome ? 'income' : 'expense';
         await db.update(
           'transactions',
           {'category': fallback.name},
-          where: 'category = ?',
-          whereArgs: [category.name],
+          where: 'category = ? AND type = ?',
+          whereArgs: [category.name, txType],
         );
         break;
     }
@@ -1178,21 +1323,25 @@ class DatabaseHelper {
 
     final row = rows.first;
     final groupType = row['group_type'] as String;
+    final subType = row['sub_type'] as String? ?? '';
     var name = row['name'] as String;
 
     final clash = await db.query(
       'categories',
-      where: 'group_type = ? AND name = ?',
-      whereArgs: [groupType, name],
+      where: 'group_type = ? AND sub_type = ? AND name = ?',
+      whereArgs: [groupType, subType, name],
       limit: 1,
     );
     if (clash.isNotEmpty) {
       name = '$name (restored)';
     }
 
+    final bool scopeBySubType = subType.isNotEmpty;
     final maxRow = await db.rawQuery(
-      'SELECT MAX(sort_order) as m FROM categories WHERE group_type = ?',
-      [groupType],
+      scopeBySubType
+          ? 'SELECT MAX(sort_order) as m FROM categories WHERE group_type = ? AND sub_type = ?'
+          : 'SELECT MAX(sort_order) as m FROM categories WHERE group_type = ?',
+      scopeBySubType ? [groupType, subType] : [groupType],
     );
     final nextOrder = ((maxRow.first['m'] as int?) ?? -1) + 1;
 
@@ -1204,7 +1353,7 @@ class DatabaseHelper {
       'sort_order': nextOrder,
       'is_default': 0,
       'is_system': 0,
-      'sub_type': row['sub_type'] ?? '',
+      'sub_type': subType,
     });
 
     await db.delete('trash_categories', where: 'id = ?', whereArgs: [trashId]);
