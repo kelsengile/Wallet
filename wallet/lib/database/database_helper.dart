@@ -44,6 +44,20 @@ class TrashedAccount {
   });
 }
 
+/// A soft-deleted category with metadata about when it was trashed.
+class TrashedCategory {
+  /// Primary key of the row in [trash_categories].
+  final int trashId;
+  final WalletCategory category;
+  final String deletedAt; // ISO-8601 timestamp
+
+  const TrashedCategory({
+    required this.trashId,
+    required this.category,
+    required this.deletedAt,
+  });
+}
+
 class DatabaseHelper {
   // ── Singleton ──────────────────────────────────────────────────────────────
   static final DatabaseHelper instance = DatabaseHelper._internal();
@@ -64,7 +78,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 6, // bumped from 5 → 6 to add sub_type to categories
+      version: 7, // bumped from 6 → 7 to add trash_categories table
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -135,6 +149,23 @@ class DatabaseHelper {
         category    TEXT    NOT NULL DEFAULT 'personal',
         color_hex   TEXT    NOT NULL DEFAULT '#6366F1',
         icon        TEXT    NOT NULL DEFAULT 'wallet',
+        deleted_at  TEXT    NOT NULL
+      )
+    ''');
+
+    /// Soft-deleted categories. Mirrors the categories table (minus the
+    /// is_default/is_system flags, which never apply to a trashed category)
+    /// plus `deleted_at`.
+    await db.execute('''
+      CREATE TABLE trash_categories (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        orig_id     INTEGER,
+        name        TEXT    NOT NULL,
+        group_type  TEXT    NOT NULL,
+        icon        TEXT    NOT NULL DEFAULT 'label',
+        color_hex   TEXT    NOT NULL DEFAULT '#6366F1',
+        sort_order  INTEGER NOT NULL DEFAULT 0,
+        sub_type    TEXT    NOT NULL DEFAULT '',
         deleted_at  TEXT    NOT NULL
       )
     ''');
@@ -310,6 +341,22 @@ class DatabaseHelper {
       // every distinct value already in use has a matching category row so
       // nothing disappears from the Category Manager.
       await _backfillCategoriesFromExistingData(db);
+    }
+    if (oldVersion < 7) {
+      // Add trash table for soft-deleted categories
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS trash_categories (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          orig_id     INTEGER,
+          name        TEXT    NOT NULL,
+          group_type  TEXT    NOT NULL,
+          icon        TEXT    NOT NULL DEFAULT 'label',
+          color_hex   TEXT    NOT NULL DEFAULT '#6366F1',
+          sort_order  INTEGER NOT NULL DEFAULT 0,
+          sub_type    TEXT    NOT NULL DEFAULT '',
+          deleted_at  TEXT    NOT NULL
+        )
+      ''');
     }
   }
 
@@ -509,6 +556,18 @@ class DatabaseHelper {
         );
         break;
     }
+
+    final catMap = category.toMap();
+    await db.insert('trash_categories', {
+      'orig_id': category.id,
+      'name': catMap['name'],
+      'group_type': catMap['group_type'],
+      'icon': catMap['icon'],
+      'color_hex': catMap['color_hex'],
+      'sort_order': catMap['sort_order'] ?? 0,
+      'sub_type': catMap['sub_type'] ?? '',
+      'deleted_at': DateTime.now().toIso8601String(),
+    });
 
     await db.delete('categories', where: 'id = ?', whereArgs: [category.id]);
     return fallback.name;
@@ -1001,6 +1060,33 @@ class DatabaseHelper {
     }).toList();
   }
 
+  /// Returns all trashed categories, most recently deleted first.
+  Future<List<TrashedCategory>> getTrashedCategories() async {
+    final db = await database;
+    final rows = await db.query(
+      'trash_categories',
+      orderBy: 'deleted_at DESC',
+    );
+    return rows.map((row) {
+      final category = WalletCategory.fromMap({
+        'id': row['orig_id'],
+        'name': row['name'],
+        'group_type': row['group_type'],
+        'icon': row['icon'],
+        'color_hex': row['color_hex'],
+        'sort_order': row['sort_order'],
+        'is_default': 0,
+        'is_system': 0,
+        'sub_type': row['sub_type'] ?? '',
+      });
+      return TrashedCategory(
+        trashId: row['id'] as int,
+        category: category,
+        deletedAt: row['deleted_at'] as String,
+      );
+    }).toList();
+  }
+
   /// Restores a trashed transaction back to the live transactions table
   /// and re-applies its balance effect. The trash row is removed.
   Future<void> restoreTransaction(int trashId) async {
@@ -1075,6 +1161,55 @@ class DatabaseHelper {
     await db.delete('trash_accounts', where: 'id = ?', whereArgs: [trashId]);
   }
 
+  /// Restores a trashed category back to the live categories table. If a
+  /// category with the same name already exists in that group (e.g. it was
+  /// re-created after deletion), the restored name is suffixed to avoid the
+  /// UNIQUE(group_type, name) constraint.
+  Future<void> restoreCategory(int trashId) async {
+    final db = await database;
+
+    final rows = await db.query(
+      'trash_categories',
+      where: 'id = ?',
+      whereArgs: [trashId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return;
+
+    final row = rows.first;
+    final groupType = row['group_type'] as String;
+    var name = row['name'] as String;
+
+    final clash = await db.query(
+      'categories',
+      where: 'group_type = ? AND name = ?',
+      whereArgs: [groupType, name],
+      limit: 1,
+    );
+    if (clash.isNotEmpty) {
+      name = '$name (restored)';
+    }
+
+    final maxRow = await db.rawQuery(
+      'SELECT MAX(sort_order) as m FROM categories WHERE group_type = ?',
+      [groupType],
+    );
+    final nextOrder = ((maxRow.first['m'] as int?) ?? -1) + 1;
+
+    await db.insert('categories', {
+      'name': name,
+      'group_type': groupType,
+      'icon': row['icon'],
+      'color_hex': row['color_hex'],
+      'sort_order': nextOrder,
+      'is_default': 0,
+      'is_system': 0,
+      'sub_type': row['sub_type'] ?? '',
+    });
+
+    await db.delete('trash_categories', where: 'id = ?', whereArgs: [trashId]);
+  }
+
   /// Permanently deletes a single trashed transaction (no balance change —
   /// balance was already reversed when it was first trashed).
   Future<void> permanentlyDeleteTransaction(int trashId) async {
@@ -1096,11 +1231,22 @@ class DatabaseHelper {
     );
   }
 
-  /// Permanently deletes ALL items from both trash tables.
+  /// Permanently deletes a single trashed category row.
+  Future<void> permanentlyDeleteCategory(int trashId) async {
+    final db = await database;
+    await db.delete(
+      'trash_categories',
+      where: 'id = ?',
+      whereArgs: [trashId],
+    );
+  }
+
+  /// Permanently deletes ALL items from all trash tables.
   Future<void> emptyTrash() async {
     final db = await database;
     await db.delete('trash_transactions');
     await db.delete('trash_accounts');
+    await db.delete('trash_categories');
   }
 
   /// Returns the total number of items currently in the trash.
@@ -1114,7 +1260,11 @@ class DatabaseHelper {
           await db.rawQuery('SELECT COUNT(*) FROM trash_accounts'),
         ) ??
         0;
-    return txCount + acctCount;
+    final catCount = Sqflite.firstIntValue(
+          await db.rawQuery('SELECT COUNT(*) FROM trash_categories'),
+        ) ??
+        0;
+    return txCount + acctCount + catCount;
   }
 
   // ── Utility ────────────────────────────────────────────────────────────────
@@ -1129,6 +1279,7 @@ class DatabaseHelper {
     await db.delete('accounts');
     await db.delete('trash_transactions');
     await db.delete('trash_accounts');
+    await db.delete('trash_categories');
     await db.delete(
       'categories',
       where: 'is_default = 0 AND is_system = 0',
