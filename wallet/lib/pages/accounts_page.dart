@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../database/database_helper.dart';
 import '../models/account_model.dart';
 import '../models/transaction_model.dart';
+import '../models/category_model.dart';
 
 // ── Number formatter ───────────────────────────────────────────────────────────
 
@@ -62,16 +63,6 @@ const _typeColorHexMap = {
   'investment': '#0EA5E9',
   'savings': '#14B8A6',
 };
-
-const _allTypes = [
-  'cash',
-  'bank',
-  'e-wallet',
-  'credit',
-  'loan',
-  'investment',
-  'savings'
-];
 
 // ── Page ───────────────────────────────────────────────────────────────────────
 
@@ -136,8 +127,7 @@ class AccountsPageState extends State<AccountsPage> {
 
     // Remove types no longer present, append any new types not yet in order.
     newOrder = newOrder.where((t) => grouped.containsKey(t)).toList();
-    final presentTypes = _allTypes.where((t) => grouped.containsKey(t));
-    for (final t in presentTypes) {
+    for (final t in grouped.keys) {
       if (!newOrder.contains(t)) newOrder.add(t);
     }
 
@@ -607,6 +597,16 @@ class _DraggableSectionTile extends StatefulWidget {
 class _DraggableSectionTileState extends State<_DraggableSectionTile> {
   bool _isDropTarget = false;
 
+  Color _resolveTypeColor(BuildContext context) {
+    if (_typeColors.containsKey(widget.type)) {
+      return _typeColors[widget.type]!;
+    }
+    if (widget.accounts.isNotEmpty) {
+      return colorFromHex(widget.accounts.first.colorHex);
+    }
+    return Theme.of(context).colorScheme.primary;
+  }
+
   // Full section header row, shared by normal and collapsed builds
   Widget _buildHeader(BuildContext context, Color typeColor) {
     final theme = Theme.of(context);
@@ -657,10 +657,7 @@ class _DraggableSectionTileState extends State<_DraggableSectionTile> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildHeader(
-              context,
-              _typeColors[widget.type] ??
-                  Theme.of(context).colorScheme.primary),
+          _buildHeader(context, _resolveTypeColor(context)),
           const SizedBox(height: 12),
           _DraggableCardCarousel(
             type: widget.type,
@@ -679,8 +676,7 @@ class _DraggableSectionTileState extends State<_DraggableSectionTile> {
 
   // Compact header-only view used in the drag feedback ghost
   Widget _buildCompactContent() {
-    final theme = Theme.of(context);
-    final typeColor = _typeColors[widget.type] ?? theme.colorScheme.primary;
+    final typeColor = _resolveTypeColor(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 14),
       child: _buildHeader(context, typeColor),
@@ -689,8 +685,7 @@ class _DraggableSectionTileState extends State<_DraggableSectionTile> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final typeColor = _typeColors[widget.type] ?? theme.colorScheme.primary;
+    final typeColor = _resolveTypeColor(context);
 
     final isCardDropTarget = widget.cardDragActive &&
         widget.draggingCard != null &&
@@ -747,7 +742,6 @@ class _DraggableSectionTileState extends State<_DraggableSectionTile> {
               width: MediaQuery.of(context).size.width - 32,
               child: Container(
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.surface,
                   borderRadius: BorderRadius.circular(14),
                   boxShadow: [
                     BoxShadow(
@@ -812,8 +806,10 @@ class _DraggableCardCarousel extends StatefulWidget {
 class _DraggableCardCarouselState extends State<_DraggableCardCarousel> {
   @override
   Widget build(BuildContext context) {
-    final typeColor =
-        _typeColors[widget.type] ?? Theme.of(context).colorScheme.primary;
+    final typeColor = _typeColors[widget.type] ??
+        (widget.accounts.isNotEmpty
+            ? colorFromHex(widget.accounts.first.colorHex)
+            : Theme.of(context).colorScheme.primary);
     final n = widget.accounts.length;
 
     return SizedBox(
@@ -1062,8 +1058,11 @@ class _AccountCardInert extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accountColor = account.colorHex.isNotEmpty
+        ? colorFromHex(account.colorHex)
+        : const Color(0xFF6366F1);
     final gradients = _typeGradients[account.type] ??
-        [const Color(0xFF6366F1), const Color(0xFF818CF8)];
+        [accountColor, accountColor.withOpacity(0.92)];
     final br = _borderRadius();
 
     Widget card = Container(
@@ -1203,8 +1202,11 @@ class _AccountCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accountColor = account.colorHex.isNotEmpty
+        ? colorFromHex(account.colorHex)
+        : const Color(0xFF6366F1);
     final gradients = _typeGradients[account.type] ??
-        [const Color(0xFF6366F1), const Color(0xFF818CF8)];
+        [accountColor, accountColor.withOpacity(0.92)];
     final br = _borderRadius();
 
     Widget card = Container(
@@ -1354,6 +1356,12 @@ class _AccountFormSheetState extends State<_AccountFormSheet> {
   late String _selectedType;
   late String _selectedCategory;
 
+  // Loaded from DB so the form always reflects whatever the user has configured
+  // in the Category Manager.
+  List<WalletCategory> _accountTypes = [];
+  List<WalletCategory> _accountCategoryItems = [];
+  bool _registryLoaded = false;
+
   @override
   void initState() {
     super.initState();
@@ -1364,6 +1372,27 @@ class _AccountFormSheetState extends State<_AccountFormSheet> {
     );
     _selectedType = e?.type ?? 'cash';
     _selectedCategory = e?.category ?? 'personal';
+    _loadRegistry();
+  }
+
+  Future<void> _loadRegistry() async {
+    final registry = await DatabaseHelper.instance.getCategoryRegistry();
+    if (!mounted) return;
+    setState(() {
+      _accountTypes = registry.accountTypes;
+      _accountCategoryItems = registry.accountCategories;
+      // Snap selections to valid values in case the user's prior data pointed
+      // at a category that no longer exists.
+      if (_accountTypes.isNotEmpty &&
+          !_accountTypes.any((t) => t.name == _selectedType)) {
+        _selectedType = registry.defaultAccountType;
+      }
+      if (_accountCategoryItems.isNotEmpty &&
+          !_accountCategoryItems.any((c) => c.name == _selectedCategory)) {
+        _selectedCategory = registry.defaultAccountCategory;
+      }
+      _registryLoaded = true;
+    });
   }
 
   @override
@@ -1446,87 +1475,93 @@ class _AccountFormSheetState extends State<_AccountFormSheet> {
           // ── Type picker — only rebuilds when _selectedType changes ────────
           Text('Account Type', style: theme.textTheme.labelLarge),
           const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _allTypes.map((t) {
-              final selected = _selectedType == t;
-              final color = _typeColors[t]!;
-              return GestureDetector(
-                onTap: () => setState(() => _selectedType = t),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  width: (MediaQuery.sizeOf(context).width - 40 - 24) / 4,
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  decoration: BoxDecoration(
-                    color: selected
-                        ? color.withValues(alpha: 0.15)
-                        : theme.colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: selected ? color : Colors.transparent,
-                      width: 2,
+          if (!_registryLoaded)
+            const Center(child: CircularProgressIndicator())
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _accountTypes.map((t) {
+                final selected = _selectedType == t.name;
+                final color = t.color;
+                return GestureDetector(
+                  onTap: () => setState(() => _selectedType = t.name),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    width: (MediaQuery.sizeOf(context).width - 40 - 24) / 4,
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? color.withValues(alpha: 0.15)
+                          : theme.colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: selected ? color : Colors.transparent,
+                        width: 2,
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(t.iconData,
+                            color: selected ? color : null, size: 20),
+                        const SizedBox(height: 3),
+                        Text(
+                          _capitalize(t.name),
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            color: selected ? color : null,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
                     ),
                   ),
-                  child: Column(
-                    children: [
-                      Icon(_typeIcons[t],
-                          color: selected ? color : null, size: 20),
-                      const SizedBox(height: 3),
-                      Text(
-                        _typeLabels[t]!,
-                        style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
-                          color: selected ? color : null,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
+                );
+              }).toList(),
+            ),
           const SizedBox(height: 16),
 
           // ── Category picker — same isolation benefit ───────────────────────
           Text('Category', style: theme.textTheme.labelLarge),
           const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: kAccountCategories.map((cat) {
-              final selected = _selectedCategory == cat;
-              final color = theme.colorScheme.primary;
-              return GestureDetector(
-                onTap: () => setState(() => _selectedCategory = cat),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: selected
-                        ? color.withValues(alpha: 0.12)
-                        : theme.colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: selected ? color : Colors.transparent,
-                      width: 2,
+          if (!_registryLoaded)
+            const SizedBox.shrink()
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _accountCategoryItems.map((cat) {
+                final selected = _selectedCategory == cat.name;
+                final color = theme.colorScheme.primary;
+                return GestureDetector(
+                  onTap: () => setState(() => _selectedCategory = cat.name),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? color.withValues(alpha: 0.12)
+                          : theme.colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: selected ? color : Colors.transparent,
+                        width: 2,
+                      ),
+                    ),
+                    child: Text(
+                      _capitalize(cat.name),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: selected ? color : null,
+                      ),
                     ),
                   ),
-                  child: Text(
-                    _capitalize(cat),
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: selected ? color : null,
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
+                );
+              }).toList(),
+            ),
           const SizedBox(height: 20),
 
           // Submit
@@ -1539,12 +1574,26 @@ class _AccountFormSheetState extends State<_AccountFormSheet> {
                   padding: const EdgeInsets.symmetric(vertical: 14)),
               onPressed: () async {
                 if (_nameCtrl.text.trim().isEmpty) return;
+                // Resolve the hex for the selected type from the loaded registry.
+                final typeHex = _accountTypes
+                    .firstWhere(
+                      (t) => t.name == _selectedType,
+                      orElse: () => _accountTypes.isNotEmpty
+                          ? _accountTypes.first
+                          : WalletCategory(
+                              name: _selectedType,
+                              groupType: kCategoryGroupAccountType,
+                              icon: 'wallet',
+                              colorHex: '#6366F1',
+                            ),
+                    )
+                    .colorHex;
                 final account = isEdit
                     ? widget.existing!.copyWith(
                         name: _nameCtrl.text.trim(),
                         type: _selectedType,
                         category: _selectedCategory,
-                        colorHex: _typeColorHexMap[_selectedType] ?? '#6366F1',
+                        colorHex: typeHex,
                       )
                     : Account(
                         name: _nameCtrl.text.trim(),
@@ -1552,7 +1601,7 @@ class _AccountFormSheetState extends State<_AccountFormSheet> {
                             double.tryParse(_balanceCtrl.text.trim()) ?? 0.0,
                         type: _selectedType,
                         category: _selectedCategory,
-                        colorHex: _typeColorHexMap[_selectedType] ?? '#6366F1',
+                        colorHex: typeHex,
                         icon: 'wallet',
                       );
                 await widget.onSave(account);
@@ -1607,6 +1656,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
   List<WalletTransaction> _transactions = [];
   List<Account> _allAccounts = [];
   List<WalletTransaction> _allTransferTxs = [];
+  List<WalletCategory> _txCategories = [];
   bool _loading = true;
 
   // ── Current-month transactions ────────────────────────────────────────────
@@ -1646,6 +1696,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
         .getTransactionsByAccount(widget.account.id!);
     final accounts = await DatabaseHelper.instance.getAllAccounts();
     final allTxs = await DatabaseHelper.instance.getAllTransactions();
+    final registry = await DatabaseHelper.instance.getCategoryRegistry();
     if (mounted) {
       setState(() {
         _transactions = txs;
@@ -1653,6 +1704,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
         _allTransferTxs = allTxs
             .where((t) => t.type == 'transfer_out' || t.type == 'transfer_in')
             .toList();
+        _txCategories = registry.selectableTransactionCategories;
         _loading = false;
       });
     }
@@ -1666,6 +1718,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
     final updated = await WalletTransaction.showDialog(
       context,
       accounts: _allAccounts,
+      categories: _txCategories,
       existing: existing,
     );
     if (updated == null) return;
@@ -1803,8 +1856,10 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final typeColor =
-        _typeColors[widget.account.type] ?? theme.colorScheme.primary;
+    final typeColor = _typeColors[widget.account.type] ??
+        (widget.account.colorHex.isNotEmpty
+            ? colorFromHex(widget.account.colorHex)
+            : theme.colorScheme.primary);
 
     return DraggableScrollableSheet(
       expand: false,
@@ -2254,8 +2309,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                       radius: 22,
                       backgroundColor: bgColor,
                       child: Icon(
-                        kTransactionCategoryIcons[tx.category] ??
-                            Icons.category,
+                        iconForKey(tx.category),
                         size: 20,
                         color: rowColor,
                       ),
