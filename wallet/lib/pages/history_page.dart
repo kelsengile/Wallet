@@ -253,6 +253,7 @@ class HistoryPageState extends State<HistoryPage> {
       context,
       accounts: _accounts,
       categories: _txCategories,
+      type: 'expense',
     );
     if (tx == null) return;
     await _db.insertTransaction(tx);
@@ -271,6 +272,7 @@ class HistoryPageState extends State<HistoryPage> {
       accounts: _accounts,
       categories: _txCategories,
       existing: existing,
+      type: existing.type,
     );
     if (updated == null) return;
     await _db.updateTransaction(existing, updated);
