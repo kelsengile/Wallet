@@ -10,9 +10,8 @@ import '../database/database_helper.dart';
 //                      (kCategoryGroupAccountType / kCategoryGroupAccountCategory),
 //                      each shown as its own section with a header.
 //   • Transactions   (kCategoryGroupTransactionCategory) → split into Income
-//                      and Expense sections, each with a header. The system
-//                      "Transfer" category is hidden here (it's not user
-//                      manageable).
+//                      and Expense sections, each with a header, followed by
+//                      the system "Transfer" category (locked, shown last).
 //
 // Rules enforced here (mirroring the DB layer):
 //   • System categories (Transfer) → shown with a lock badge; no edit/delete.
@@ -373,19 +372,6 @@ class _CategoryTabState extends State<_CategoryTab>
     final transfer = _primary.where((c) => c.isSystem).toList();
 
     return [
-      // Locked system "Transfer" category — used internally for the two
-      // legs of a transfer and not editable/deletable/reorderable.
-      _CategorySection(
-        title: 'Transfer',
-        items: transfer,
-        showColor: false,
-        emptyLabel: '',
-        onReorder: (_, __) {},
-        onEdit: (_) {},
-        onDelete: (_) {},
-        onSetDefault: (_) {},
-      ),
-      const SizedBox(height: 24),
       _CategorySection(
         title: 'Income',
         items: income,
@@ -416,6 +402,19 @@ class _CategoryTabState extends State<_CategoryTab>
           kCategoryGroupTransactionCategory,
           subType: kSubTypeExpense,
         ),
+      ),
+      const SizedBox(height: 24),
+      // Locked system "Transfer" category — used internally for the two
+      // legs of a transfer and not editable/deletable/reorderable.
+      _CategorySection(
+        title: 'Transfer',
+        items: transfer,
+        showColor: false,
+        emptyLabel: '',
+        onReorder: (_, __) {},
+        onEdit: (_) {},
+        onDelete: (_) {},
+        onSetDefault: (_) {},
       ),
     ];
   }
