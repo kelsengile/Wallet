@@ -152,6 +152,9 @@ class _WalletHomePageState extends State<WalletHomePage> {
             Navigator.pop(context);
           },
           onDataCleared: _onDataCleared,
+          onCategoryChanged: () async {
+            await _accountsKey.currentState?.refresh();
+          },
         ),
         body: RefreshIndicator(
           onRefresh: _onRefresh,
@@ -729,11 +732,13 @@ class _WalletDrawer extends StatefulWidget {
   final int selectedIndex;
   final void Function(int) onNavigate;
   final VoidCallback onDataCleared;
+  final VoidCallback onCategoryChanged;
 
   const _WalletDrawer({
     required this.selectedIndex,
     required this.onNavigate,
     required this.onDataCleared,
+    required this.onCategoryChanged,
   });
 
   @override
@@ -877,7 +882,10 @@ class _WalletDrawerState extends State<_WalletDrawer> {
                       context,
                       MaterialPageRoute(
                           builder: (_) => const CategoryManagerPage()),
-                    ).then((_) => _loadTrashCount());
+                    ).then((_) {
+                      _loadTrashCount();
+                      widget.onCategoryChanged();
+                    });
                   },
                 ),
 
