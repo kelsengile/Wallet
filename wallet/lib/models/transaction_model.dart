@@ -90,6 +90,7 @@ class WalletTransaction {
     required List<WalletCategory> accountCategories,
     WalletTransaction? existing,
     required String type,
+    List<String>? typeOrder,
   }) {
     return showModalBottomSheet<WalletTransaction>(
       context: context,
@@ -105,6 +106,7 @@ class WalletTransaction {
         accountCategories: accountCategories,
         existing: existing,
         type: type,
+        typeOrder: typeOrder,
       ),
     );
   }
@@ -139,6 +141,7 @@ extension WalletTransactionTransfer on WalletTransaction {
     required List<Account> accounts,
     required List<WalletCategory> accountTypes,
     int? preselectedFromId,
+    List<String>? typeOrder,
   }) {
     return showModalBottomSheet<TransferResult>(
       context: context,
@@ -151,6 +154,7 @@ extension WalletTransactionTransfer on WalletTransaction {
         accounts: accounts,
         accountTypes: accountTypes,
         preselectedFromId: preselectedFromId,
+        typeOrder: typeOrder,
       ),
     );
   }
@@ -165,6 +169,7 @@ class _TransactionForm extends StatefulWidget {
   final List<WalletCategory> accountCategories;
   final WalletTransaction? existing;
   final String type;
+  final List<String>? typeOrder;
 
   const _TransactionForm({
     required this.accounts,
@@ -173,6 +178,7 @@ class _TransactionForm extends StatefulWidget {
     required this.accountCategories,
     this.existing,
     required this.type,
+    this.typeOrder,
   });
 
   @override
@@ -360,6 +366,28 @@ class _TransactionFormState extends State<_TransactionForm> {
       (grouped[a.type] ??= []).add(a);
     }
 
+    // Sort the type sections to match accounts page order:
+    // 1. Saved typeOrder (drag-and-drop order from accounts page) takes priority
+    // 2. Falls back to accountTypes sort_order from the category registry
+    final savedOrder = widget.typeOrder;
+    final typeIndexMap = {
+      for (int i = 0; i < widget.accountTypes.length; i++)
+        widget.accountTypes[i].name: i,
+    };
+    final sortedGroupEntries = grouped.entries.toList()
+      ..sort((a, b) {
+        if (savedOrder != null) {
+          final ai = savedOrder.indexOf(a.key);
+          final bi = savedOrder.indexOf(b.key);
+          final ai2 = ai < 0 ? 9999 : ai;
+          final bi2 = bi < 0 ? 9999 : bi;
+          if (ai2 != bi2) return ai2.compareTo(bi2);
+        }
+        final ai = typeIndexMap[a.key] ?? 9999;
+        final bi = typeIndexMap[b.key] ?? 9999;
+        return ai.compareTo(bi);
+      });
+
     final picked = await showModalBottomSheet<int>(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -388,7 +416,7 @@ class _TransactionFormState extends State<_TransactionForm> {
                   style: theme.textTheme.titleMedium
                       ?.copyWith(fontWeight: FontWeight.bold)),
               const SizedBox(height: 16),
-              ...grouped.entries.map((entry) {
+              ...sortedGroupEntries.map((entry) {
                 final typeName = entry.key;
                 final accs = entry.value;
                 final typeCategory = typeIconMap[typeName];
@@ -704,11 +732,13 @@ class _TransferForm extends StatefulWidget {
   final List<Account> accounts;
   final List<WalletCategory> accountTypes;
   final int? preselectedFromId;
+  final List<String>? typeOrder;
 
   const _TransferForm({
     required this.accounts,
     required this.accountTypes,
     this.preselectedFromId,
+    this.typeOrder,
   });
 
   @override
@@ -773,6 +803,26 @@ class _TransferFormState extends State<_TransferForm> {
       (grouped[a.type] ??= []).add(a);
     }
 
+    // Sort type sections to match accounts page order
+    final savedOrder = widget.typeOrder;
+    final typeIndexMap = {
+      for (int i = 0; i < widget.accountTypes.length; i++)
+        widget.accountTypes[i].name: i,
+    };
+    final sortedGroupEntries = grouped.entries.toList()
+      ..sort((a, b) {
+        if (savedOrder != null) {
+          final ai = savedOrder.indexOf(a.key);
+          final bi = savedOrder.indexOf(b.key);
+          final ai2 = ai < 0 ? 9999 : ai;
+          final bi2 = bi < 0 ? 9999 : bi;
+          if (ai2 != bi2) return ai2.compareTo(bi2);
+        }
+        final ai = typeIndexMap[a.key] ?? 9999;
+        final bi = typeIndexMap[b.key] ?? 9999;
+        return ai.compareTo(bi);
+      });
+
     return showModalBottomSheet<int>(
       context: context,
       isScrollControlled: true,
@@ -801,7 +851,7 @@ class _TransferFormState extends State<_TransferForm> {
                   style: theme.textTheme.titleMedium
                       ?.copyWith(fontWeight: FontWeight.bold)),
               const SizedBox(height: 16),
-              ...grouped.entries.map((entry) {
+              ...sortedGroupEntries.map((entry) {
                 final typeName = entry.key;
                 final accs = entry.value;
                 final typeCategory = typeIconMap[typeName];

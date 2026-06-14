@@ -247,10 +247,12 @@ class _WalletHomePageState extends State<WalletHomePage> {
                         padding: const EdgeInsets.only(bottom: 16),
                         child: _SpeedDialFab(
                           onAddIncome: () async {
-                            final accounts =
-                                await DatabaseHelper.instance.getAllAccounts();
+                            final accounts = await DatabaseHelper.instance
+                                .getAccountsSortedByLatestTransaction();
                             final registry = await DatabaseHelper.instance
                                 .getCategoryRegistry();
+                            final typeOrder =
+                                await DatabaseHelper.instance.getTypeOrder();
                             if (!context.mounted) return;
                             final tx = await WalletTransaction.showDialog(
                               context,
@@ -260,16 +262,19 @@ class _WalletHomePageState extends State<WalletHomePage> {
                               accountTypes: registry.accountTypes,
                               accountCategories: registry.accountCategories,
                               type: 'income',
+                              typeOrder: typeOrder,
                             );
                             if (tx == null) return;
                             await DatabaseHelper.instance.insertTransaction(tx);
                             _historyKey.currentState?.refresh();
                           },
                           onAddExpense: () async {
-                            final accounts =
-                                await DatabaseHelper.instance.getAllAccounts();
+                            final accounts = await DatabaseHelper.instance
+                                .getAccountsSortedByLatestTransaction();
                             final registry = await DatabaseHelper.instance
                                 .getCategoryRegistry();
+                            final typeOrder =
+                                await DatabaseHelper.instance.getTypeOrder();
                             if (!context.mounted) return;
                             final tx = await WalletTransaction.showDialog(
                               context,
@@ -279,16 +284,19 @@ class _WalletHomePageState extends State<WalletHomePage> {
                               accountTypes: registry.accountTypes,
                               accountCategories: registry.accountCategories,
                               type: 'expense',
+                              typeOrder: typeOrder,
                             );
                             if (tx == null) return;
                             await DatabaseHelper.instance.insertTransaction(tx);
                             _historyKey.currentState?.refresh();
                           },
                           onTransfer: () async {
-                            final accounts =
-                                await DatabaseHelper.instance.getAllAccounts();
+                            final accounts = await DatabaseHelper.instance
+                                .getAccountsSortedByLatestTransaction();
                             final registry = await DatabaseHelper.instance
                                 .getCategoryRegistry();
+                            final typeOrder =
+                                await DatabaseHelper.instance.getTypeOrder();
                             if (!context.mounted) return;
                             if (accounts.length < 2) {
                               ScaffoldMessenger.of(context).showSnackBar(
@@ -304,6 +312,7 @@ class _WalletHomePageState extends State<WalletHomePage> {
                               context,
                               accounts: accounts,
                               accountTypes: registry.accountTypes,
+                              typeOrder: typeOrder,
                             );
                             if (result == null) return;
                             await DatabaseHelper.instance.insertTransfer(
