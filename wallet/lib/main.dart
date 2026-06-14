@@ -258,6 +258,7 @@ class _WalletHomePageState extends State<WalletHomePage> {
                               categories:
                                   registry.selectableTransactionCategories,
                               accountTypes: registry.accountTypes,
+                              accountCategories: registry.accountCategories,
                               type: 'income',
                             );
                             if (tx == null) return;
@@ -276,6 +277,7 @@ class _WalletHomePageState extends State<WalletHomePage> {
                               categories:
                                   registry.selectableTransactionCategories,
                               accountTypes: registry.accountTypes,
+                              accountCategories: registry.accountCategories,
                               type: 'expense',
                             );
                             if (tx == null) return;
