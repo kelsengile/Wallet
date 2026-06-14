@@ -197,7 +197,7 @@ class AccountsPageState extends State<AccountsPage> {
   Future<void> _deleteAccount(Account account) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => _DeleteAccountDialog(accountName: account.name),
+      builder: (ctx) => _DeleteAccountDialog(account: account),
     );
     if (confirmed == true && account.id != null) {
       await _db.deleteAccount(account.id!);
@@ -1706,7 +1706,7 @@ class _AccountFormSheetState extends State<_AccountFormSheet> {
                   final confirmed = await showDialog<bool>(
                     context: context,
                     builder: (ctx) => _DeleteAccountDialog(
-                      accountName: widget.existing!.name,
+                      account: widget.existing!,
                     ),
                   );
                   if (confirmed == true && context.mounted) {
@@ -2737,13 +2737,14 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
 // ── Delete Account Dialog ─────────────────────────────────────────────────────
 
 class _DeleteAccountDialog extends StatelessWidget {
-  final String accountName;
+  final Account account;
 
-  const _DeleteAccountDialog({required this.accountName});
+  const _DeleteAccountDialog({required this.account});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final typeIcon = _registryNotifier.value.typeIcon(account.type);
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
@@ -2803,12 +2804,11 @@ class _DeleteAccountDialog extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.account_balance_wallet_outlined,
-                          size: 15, color: Colors.red.shade700),
+                      Icon(typeIcon, size: 15, color: Colors.red.shade700),
                       const SizedBox(width: 6),
                       Flexible(
                         child: Text(
-                          accountName,
+                          account.name,
                           style: TextStyle(
                             fontWeight: FontWeight.w700,
                             color: Colors.red.shade700,
