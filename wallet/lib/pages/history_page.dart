@@ -23,6 +23,7 @@ class HistoryPageState extends State<HistoryPage> {
   List<WalletTransaction> _transactions = [];
   List<Account> _accounts = [];
   List<WalletCategory> _txCategories = [];
+  List<WalletCategory> _accountTypes = [];
   bool _loading = true;
 
   _FilterMode _filterMode = _FilterMode.monthly;
@@ -182,6 +183,7 @@ class HistoryPageState extends State<HistoryPage> {
       _transactions = txs;
       _accounts = accounts;
       _txCategories = registry.selectableTransactionCategories;
+      _accountTypes = registry.accountTypes;
       _filterMode = restoredMode;
       _anchor = restoredAnchor;
       _loading = false;
@@ -253,6 +255,7 @@ class HistoryPageState extends State<HistoryPage> {
       context,
       accounts: _accounts,
       categories: _txCategories,
+      accountTypes: _accountTypes,
       type: 'expense',
     );
     if (tx == null) return;
@@ -271,6 +274,7 @@ class HistoryPageState extends State<HistoryPage> {
       context,
       accounts: _accounts,
       categories: _txCategories,
+      accountTypes: _accountTypes,
       existing: existing,
       type: existing.type,
     );
