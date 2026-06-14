@@ -2601,6 +2601,11 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
         final rowColor = isIncome ? Colors.green : Colors.red;
         final bgColor = isIncome ? Colors.green.shade100 : Colors.red.shade100;
         final amountPrefix = isIncome ? '+' : '−';
+        final txCatIcon = _txCategories
+                .cast<WalletCategory?>()
+                .firstWhere((c) => c?.name == tx.category, orElse: () => null)
+                ?.iconData ??
+            iconForKey(tx.category);
 
         return Column(
           mainAxisSize: MainAxisSize.min,
@@ -2636,7 +2641,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                       radius: 22,
                       backgroundColor: bgColor,
                       child: Icon(
-                        iconForKey(tx.category),
+                        txCatIcon,
                         size: 20,
                         color: rowColor,
                       ),
