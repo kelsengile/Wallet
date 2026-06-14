@@ -1977,6 +1977,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
   List<WalletTransaction> _allTransferTxs = [];
   List<WalletCategory> _txCategories = [];
   List<WalletCategory> _accountTypes = [];
+  List<WalletCategory> _accountCategories = [];
   bool _loading = true;
 
   // ── Current-month transactions ────────────────────────────────────────────
@@ -2026,6 +2027,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
             .toList();
         _txCategories = registry.selectableTransactionCategories;
         _accountTypes = registry.accountTypes;
+        _accountCategories = registry.accountCategories;
         _loading = false;
       });
     }
@@ -2041,6 +2043,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
       accounts: _allAccounts,
       categories: _txCategories,
       accountTypes: _accountTypes,
+      accountCategories: _accountCategories,
       existing: existing,
       type: existing.type,
     );
