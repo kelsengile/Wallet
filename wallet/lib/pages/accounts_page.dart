@@ -148,21 +148,7 @@ class AccountsPageState extends State<AccountsPage> {
   Future<void> _deleteAccount(Account account) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete Account'),
-        content: Text(
-            'Delete "${account.name}" and all its transactions? This cannot be undone.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+      builder: (ctx) => _DeleteAccountDialog(accountName: account.name),
     );
     if (confirmed == true && account.id != null) {
       await _db.deleteAccount(account.id!);
@@ -1670,23 +1656,8 @@ class _AccountFormSheetState extends State<_AccountFormSheet> {
                 onPressed: () async {
                   final confirmed = await showDialog<bool>(
                     context: context,
-                    builder: (ctx) => AlertDialog(
-                      title: const Text('Delete Account'),
-                      content: Text(
-                        'Delete "\${widget.existing!.name}" and all its transactions? This cannot be undone.',
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx, false),
-                          child: const Text('Cancel'),
-                        ),
-                        FilledButton(
-                          style: FilledButton.styleFrom(
-                              backgroundColor: Colors.red),
-                          onPressed: () => Navigator.pop(ctx, true),
-                          child: const Text('Delete'),
-                        ),
-                      ],
+                    builder: (ctx) => _DeleteAccountDialog(
+                      accountName: widget.existing!.name,
                     ),
                   );
                   if (confirmed == true && context.mounted) {
@@ -1726,83 +1697,42 @@ class _PickerButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isSet = value != null;
-    final resolvedColor =
-        isSet ? color ?? theme.colorScheme.primary : theme.colorScheme.outline;
+    final iconColor = isSet
+        ? color ?? theme.colorScheme.primary
+        : theme.colorScheme.onSurfaceVariant;
 
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: isSet
-                ? resolvedColor.withValues(alpha: 0.4)
-                : theme.colorScheme.outlineVariant,
-            width: 1.5,
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          border: const OutlineInputBorder(),
+          enabledBorder: OutlineInputBorder(
+            borderSide: BorderSide(color: theme.colorScheme.outline),
           ),
+          prefixIcon: Icon(
+            isSet ? icon : Icons.touch_app_outlined,
+            color: iconColor,
+            size: 18,
+          ),
+          suffixIcon: Icon(
+            Icons.expand_more_rounded,
+            size: 20,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
         ),
-        child: Row(
-          children: [
-            Icon(
-              isSet ? icon : Icons.touch_app_outlined,
-              color: resolvedColor,
-              size: 18,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: isSet
-                  ? Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Top sublabel
-                        Text(
-                          label,
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                        // Value
-                        Text(
-                          value!,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: resolvedColor,
-                          ),
-                          textAlign: TextAlign.start,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    )
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const SizedBox(height: 2),
-                        Text(
-                          label,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: resolvedColor,
-                          ),
-                          textAlign: TextAlign.start,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 2),
-                      ],
-                    ),
-            ),
-            Icon(
-              Icons.expand_more_rounded,
-              size: 18,
-              color: resolvedColor.withValues(alpha: 0.7),
-            ),
-          ],
-        ),
+        isEmpty: !isSet,
+        child: isSet
+            ? Text(
+                value!,
+                style: theme.textTheme.bodyLarge
+                    ?.copyWith(color: theme.colorScheme.onSurface),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              )
+            : const SizedBox.shrink(),
       ),
     );
   }
@@ -2742,6 +2672,147 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
 
   String _capitalize(String s) =>
       s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
+}
+
+// ── Delete Account Dialog ─────────────────────────────────────────────────────
+
+class _DeleteAccountDialog extends StatelessWidget {
+  final String accountName;
+
+  const _DeleteAccountDialog({required this.accountName});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // ── Red header banner ──────────────────────────────────────────
+          Container(
+            width: double.infinity,
+            color: Colors.red.shade600,
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Column(
+              children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.delete_forever_rounded,
+                    color: Colors.white,
+                    size: 30,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Delete Account',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // ── Body ──────────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+            child: Column(
+              children: [
+                // Account name pill
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border:
+                        Border.all(color: Colors.red.withValues(alpha: 0.25)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.account_balance_wallet_outlined,
+                          size: 15, color: Colors.red.shade700),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          accountName,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: Colors.red.shade700,
+                            fontSize: 14,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'All transactions linked to this account will be permanently removed. This action cannot be undone.',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
+            ),
+          ),
+
+          // ── Actions ───────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+            child: Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('Cancel'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton.icon(
+                    icon: const Icon(Icons.delete_rounded, size: 17),
+                    label: const Text('Delete'),
+                    onPressed: () => Navigator.pop(context, true),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.red.shade600,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ── Local _TxItem discriminated union (for _AccountDetailSheet) ───────────────
