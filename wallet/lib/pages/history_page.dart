@@ -695,6 +695,11 @@ class HistoryPageState extends State<HistoryPage> {
               ),
             )
             .name;
+        final txCatIcon = _txCategories
+                .cast<WalletCategory?>()
+                .firstWhere((c) => c?.name == tx.category, orElse: () => null)
+                ?.iconData ??
+            iconForKey(tx.category);
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -730,7 +735,7 @@ class HistoryPageState extends State<HistoryPage> {
                       radius: 22,
                       backgroundColor: bgColor,
                       child: Icon(
-                        iconForKey(tx.category),
+                        txCatIcon,
                         size: 20,
                         color: rowColor,
                       ),
