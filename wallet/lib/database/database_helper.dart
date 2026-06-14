@@ -195,13 +195,14 @@ class DatabaseHelper {
 
     await _seedDefaultCategories(db);
 
-    // Seed default Cash account
+    // Seed default Cash account — color must match the 'cash' account-type
+    // category color so the card gradient is correct on first run.
     await db.insert('accounts', {
       'name': 'Cash',
       'balance': 0.0,
       'type': 'cash',
       'category': 'personal',
-      'color_hex': '#6366F1',
+      'color_hex': '#22C55E',
       'icon': 'wallet',
     });
   }
@@ -1853,7 +1854,7 @@ class DatabaseHelper {
       'balance': 0.0,
       'type': 'cash',
       'category': 'personal',
-      'color_hex': '#6366F1',
+      'color_hex': '#22C55E',
       'icon': 'wallet',
     });
   }
