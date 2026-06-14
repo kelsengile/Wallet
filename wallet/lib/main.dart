@@ -257,6 +257,7 @@ class _WalletHomePageState extends State<WalletHomePage> {
                               accounts: accounts,
                               categories:
                                   registry.selectableTransactionCategories,
+                              accountTypes: registry.accountTypes,
                               type: 'income',
                             );
                             if (tx == null) return;
@@ -274,6 +275,7 @@ class _WalletHomePageState extends State<WalletHomePage> {
                               accounts: accounts,
                               categories:
                                   registry.selectableTransactionCategories,
+                              accountTypes: registry.accountTypes,
                               type: 'expense',
                             );
                             if (tx == null) return;
@@ -283,6 +285,8 @@ class _WalletHomePageState extends State<WalletHomePage> {
                           onTransfer: () async {
                             final accounts =
                                 await DatabaseHelper.instance.getAllAccounts();
+                            final registry = await DatabaseHelper.instance
+                                .getCategoryRegistry();
                             if (!context.mounted) return;
                             if (accounts.length < 2) {
                               ScaffoldMessenger.of(context).showSnackBar(
@@ -297,6 +301,7 @@ class _WalletHomePageState extends State<WalletHomePage> {
                                 .showTransferDialog(
                               context,
                               accounts: accounts,
+                              accountTypes: registry.accountTypes,
                             );
                             if (result == null) return;
                             await DatabaseHelper.instance.insertTransfer(
