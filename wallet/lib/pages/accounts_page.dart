@@ -180,7 +180,37 @@ class AccountsPageState extends State<AccountsPage> {
       builder: (ctx) => _AccountDetailSheet(
         account: account,
         onTransactionChanged: _loadAccounts,
-        onEditAccount: (a) => _showAddAccountDialog(existing: a),
+        onEditAccount: (a) {
+          // Open the edit form; on save, pop the detail sheet too so the
+          // freshly-reloaded card reflects the new colors immediately.
+          _showEditAndRefreshDetail(a, ctx);
+        },
+      ),
+    );
+  }
+
+  void _showEditAndRefreshDetail(Account account, BuildContext detailCtx) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => _AccountFormSheet(
+        existing: account,
+        onSave: (updated) async {
+          await _db.updateAccount(updated);
+          // Refresh registry so color-sensitive widgets rebuild everywhere.
+          await _refreshRegistry();
+          if (ctx.mounted) Navigator.pop(ctx); // close edit form
+          if (detailCtx.mounted) Navigator.pop(detailCtx); // close detail sheet
+          _loadAccounts(); // reload cards list
+        },
+        onDelete: () async {
+          if (detailCtx.mounted) Navigator.pop(detailCtx); // close detail sheet
+          _loadAccounts();
+        },
       ),
     );
   }
@@ -1230,22 +1260,27 @@ class _AccountCard extends StatelessWidget {
               ),
             ),
           ),
-          // Delete button
+          // Category icon (top-right corner)
           Positioned(
             top: 12,
             right: 12,
-            child: GestureDetector(
-              onTap: onDelete,
-              child: Container(
-                width: 26,
-                height: 26,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(7),
-                ),
-                child: const Icon(Icons.delete_outline,
-                    color: Colors.white70, size: 15),
-              ),
+            child: ValueListenableBuilder<CategoryRegistry>(
+              valueListenable: _registryNotifier,
+              builder: (context, registry, _) {
+                final catEntry = registry.accountCategories
+                    .where((c) => c.name == account.category)
+                    .firstOrNull;
+                final catIcon = catEntry?.iconData ?? Icons.folder_outlined;
+                return Container(
+                  width: 26,
+                  height: 26,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(7),
+                  ),
+                  child: Icon(catIcon, color: Colors.white70, size: 15),
+                );
+              },
             ),
           ),
           // Card body
@@ -1326,8 +1361,9 @@ class _AccountCard extends StatelessWidget {
 class _AccountFormSheet extends StatefulWidget {
   final Account? existing;
   final Future<void> Function(Account) onSave;
+  final Future<void> Function()? onDelete;
 
-  const _AccountFormSheet({this.existing, required this.onSave});
+  const _AccountFormSheet({this.existing, required this.onSave, this.onDelete});
 
   @override
   State<_AccountFormSheet> createState() => _AccountFormSheetState();
@@ -1336,8 +1372,8 @@ class _AccountFormSheet extends StatefulWidget {
 class _AccountFormSheetState extends State<_AccountFormSheet> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _balanceCtrl;
-  late String _selectedType;
-  late String _selectedCategory;
+  String? _selectedType;
+  String? _selectedCategory;
 
   // Loaded from DB so the form always reflects whatever the user has configured
   // in the Category Manager.
@@ -1353,8 +1389,8 @@ class _AccountFormSheetState extends State<_AccountFormSheet> {
     _balanceCtrl = TextEditingController(
       text: e != null ? e.balance.toStringAsFixed(2) : '',
     );
-    _selectedType = e?.type ?? 'cash';
-    _selectedCategory = e?.category ?? 'personal';
+    _selectedType = e?.type; // null = unset (new account)
+    _selectedCategory = e?.category; // null = unset (new account)
     _loadRegistry();
   }
 
@@ -1364,13 +1400,16 @@ class _AccountFormSheetState extends State<_AccountFormSheet> {
     setState(() {
       _accountTypes = registry.accountTypes;
       _accountCategoryItems = registry.accountCategories;
-      // Snap selections to valid values in case the user's prior data pointed
-      // at a category that no longer exists.
-      if (_accountTypes.isNotEmpty &&
+      // For edit mode: snap to a valid value if the stored type/category was
+      // deleted from the registry. For new accounts the values are null and
+      // should stay null until the user actively picks.
+      if (_selectedType != null &&
+          _accountTypes.isNotEmpty &&
           !_accountTypes.any((t) => t.name == _selectedType)) {
         _selectedType = registry.defaultAccountType;
       }
-      if (_accountCategoryItems.isNotEmpty &&
+      if (_selectedCategory != null &&
+          _accountCategoryItems.isNotEmpty &&
           !_accountCategoryItems.any((c) => c.name == _selectedCategory)) {
         _selectedCategory = registry.defaultAccountCategory;
       }
@@ -1455,95 +1494,115 @@ class _AccountFormSheetState extends State<_AccountFormSheet> {
             const SizedBox(height: 12),
           ],
 
-          // ── Type picker — only rebuilds when _selectedType changes ────────
-          Text('Account Type', style: theme.textTheme.labelLarge),
-          const SizedBox(height: 8),
+          // ── Type & Category — side-by-side picker buttons ─────────────────
           if (!_registryLoaded)
             const Center(child: CircularProgressIndicator())
           else
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _accountTypes.map((t) {
-                final selected = _selectedType == t.name;
-                final color = t.color;
-                return GestureDetector(
-                  onTap: () => setState(() => _selectedType = t.name),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 180),
-                    width: (MediaQuery.sizeOf(context).width - 40 - 24) / 4,
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    decoration: BoxDecoration(
-                      color: selected
-                          ? color.withValues(alpha: 0.15)
-                          : theme.colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: selected ? color : Colors.transparent,
-                        width: 2,
-                      ),
-                    ),
-                    child: Column(
-                      children: [
-                        Icon(t.iconData,
-                            color: selected ? color : null, size: 20),
-                        const SizedBox(height: 3),
-                        Text(
-                          _capitalize(t.name),
-                          style: TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
-                            color: selected ? color : null,
-                          ),
-                          textAlign: TextAlign.center,
+            Row(
+              children: [
+                // Account Type button
+                Expanded(
+                  child: _PickerButton(
+                    label: 'Type',
+                    value: _selectedType != null
+                        ? _capitalize(_selectedType!)
+                        : null,
+                    icon: _selectedType != null
+                        ? _accountTypes
+                            .firstWhere(
+                              (t) => t.name == _selectedType,
+                              orElse: () => _accountTypes.isNotEmpty
+                                  ? _accountTypes.first
+                                  : WalletCategory(
+                                      name: _selectedType!,
+                                      groupType: kCategoryGroupAccountType,
+                                      icon: 'wallet',
+                                      colorHex: '#6366F1',
+                                    ),
+                            )
+                            .iconData
+                        : null,
+                    color: _selectedType != null
+                        ? _accountTypes
+                            .firstWhere(
+                              (t) => t.name == _selectedType,
+                              orElse: () => _accountTypes.isNotEmpty
+                                  ? _accountTypes.first
+                                  : WalletCategory(
+                                      name: _selectedType!,
+                                      groupType: kCategoryGroupAccountType,
+                                      icon: 'wallet',
+                                      colorHex: '#6366F1',
+                                    ),
+                            )
+                            .color
+                        : null,
+                    onTap: () async {
+                      final picked = await showModalBottomSheet<String>(
+                        context: context,
+                        shape: const RoundedRectangleBorder(
+                          borderRadius:
+                              BorderRadius.vertical(top: Radius.circular(20)),
                         ),
-                      ],
-                    ),
+                        builder: (ctx) => _TypePickerSheet(
+                          title: 'Type',
+                          items: _accountTypes,
+                          selected: _selectedType,
+                          capitalize: _capitalize,
+                        ),
+                      );
+                      if (picked != null) {
+                        setState(() => _selectedType = picked);
+                      }
+                    },
                   ),
-                );
-              }).toList(),
-            ),
-          const SizedBox(height: 16),
-
-          // ── Category picker — same isolation benefit ───────────────────────
-          Text('Category', style: theme.textTheme.labelLarge),
-          const SizedBox(height: 8),
-          if (!_registryLoaded)
-            const SizedBox.shrink()
-          else
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _accountCategoryItems.map((cat) {
-                final selected = _selectedCategory == cat.name;
-                final color = theme.colorScheme.primary;
-                return GestureDetector(
-                  onTap: () => setState(() => _selectedCategory = cat.name),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 180),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: selected
-                          ? color.withValues(alpha: 0.12)
-                          : theme.colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: selected ? color : Colors.transparent,
-                        width: 2,
-                      ),
-                    ),
-                    child: Text(
-                      _capitalize(cat.name),
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: selected ? color : null,
-                      ),
-                    ),
+                ),
+                const SizedBox(width: 10),
+                // Category button
+                Expanded(
+                  child: _PickerButton(
+                    label: 'Category',
+                    value: _selectedCategory != null
+                        ? _capitalize(_selectedCategory!)
+                        : null,
+                    icon: _selectedCategory != null
+                        ? _accountCategoryItems
+                            .firstWhere(
+                              (c) => c.name == _selectedCategory,
+                              orElse: () => _accountCategoryItems.isNotEmpty
+                                  ? _accountCategoryItems.first
+                                  : WalletCategory(
+                                      name: _selectedCategory!,
+                                      groupType: 'account_category',
+                                      icon: 'folder',
+                                      colorHex: '#6366F1',
+                                    ),
+                            )
+                            .iconData
+                        : null,
+                    color: theme.colorScheme.primary,
+                    onTap: () async {
+                      final picked = await showModalBottomSheet<String>(
+                        context: context,
+                        shape: const RoundedRectangleBorder(
+                          borderRadius:
+                              BorderRadius.vertical(top: Radius.circular(20)),
+                        ),
+                        builder: (ctx) => _CategoryPickerSheet(
+                          title: 'Category',
+                          items: _accountCategoryItems,
+                          selected: _selectedCategory,
+                          accentColor: theme.colorScheme.primary,
+                          capitalize: _capitalize,
+                        ),
+                      );
+                      if (picked != null) {
+                        setState(() => _selectedCategory = picked);
+                      }
+                    },
                   ),
-                );
-              }).toList(),
+                ),
+              ],
             ),
           const SizedBox(height: 20),
 
@@ -1557,6 +1616,7 @@ class _AccountFormSheetState extends State<_AccountFormSheet> {
                   padding: const EdgeInsets.symmetric(vertical: 14)),
               onPressed: () async {
                 if (_nameCtrl.text.trim().isEmpty) return;
+                if (_selectedType == null || _selectedCategory == null) return;
                 // Resolve the hex for the selected type from the loaded registry.
                 final typeHex = _accountTypes
                     .firstWhere(
@@ -1564,7 +1624,7 @@ class _AccountFormSheetState extends State<_AccountFormSheet> {
                       orElse: () => _accountTypes.isNotEmpty
                           ? _accountTypes.first
                           : WalletCategory(
-                              name: _selectedType,
+                              name: _selectedType!,
                               groupType: kCategoryGroupAccountType,
                               icon: 'wallet',
                               colorHex: '#6366F1',
@@ -1574,16 +1634,16 @@ class _AccountFormSheetState extends State<_AccountFormSheet> {
                 final account = isEdit
                     ? widget.existing!.copyWith(
                         name: _nameCtrl.text.trim(),
-                        type: _selectedType,
-                        category: _selectedCategory,
+                        type: _selectedType!,
+                        category: _selectedCategory!,
                         colorHex: typeHex,
                       )
                     : Account(
                         name: _nameCtrl.text.trim(),
                         balance:
                             double.tryParse(_balanceCtrl.text.trim()) ?? 0.0,
-                        type: _selectedType,
-                        category: _selectedCategory,
+                        type: _selectedType!,
+                        category: _selectedCategory!,
                         colorHex: typeHex,
                         icon: 'wallet',
                       );
@@ -1591,7 +1651,353 @@ class _AccountFormSheetState extends State<_AccountFormSheet> {
               },
             ),
           ),
+
+          // Delete button — only shown when editing an existing account
+          if (isEdit && widget.existing?.id != null) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.delete_outline, color: Colors.red),
+                label: const Text(
+                  'Delete Account',
+                  style: TextStyle(color: Colors.red),
+                ),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  side: const BorderSide(color: Colors.red, width: 1.5),
+                ),
+                onPressed: () async {
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('Delete Account'),
+                      content: Text(
+                        'Delete "\${widget.existing!.name}" and all its transactions? This cannot be undone.',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('Cancel'),
+                        ),
+                        FilledButton(
+                          style: FilledButton.styleFrom(
+                              backgroundColor: Colors.red),
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: const Text('Delete'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirmed == true && context.mounted) {
+                    await DatabaseHelper.instance
+                        .deleteAccount(widget.existing!.id!);
+                    if (context.mounted) Navigator.pop(context);
+                    await widget.onDelete?.call();
+                  }
+                },
+              ),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+// ── Picker button (shows selected value, opens a sub-modal) ───────────────────
+
+class _PickerButton extends StatelessWidget {
+  final String label;
+  final String? value; // null = nothing picked yet
+  final IconData? icon; // null = nothing picked yet
+  final Color? color; // null = use outline/muted style
+  final VoidCallback onTap;
+
+  const _PickerButton({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isSet = value != null;
+    final resolvedColor =
+        isSet ? color ?? theme.colorScheme.primary : theme.colorScheme.outline;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isSet
+                ? resolvedColor.withValues(alpha: 0.4)
+                : theme.colorScheme.outlineVariant,
+            width: 1.5,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              isSet ? icon : Icons.touch_app_outlined,
+              color: resolvedColor,
+              size: 18,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: isSet
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Top sublabel
+                        Text(
+                          label,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        // Value
+                        Text(
+                          value!,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: resolvedColor,
+                          ),
+                          textAlign: TextAlign.start,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(height: 2),
+                        Text(
+                          label,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: resolvedColor,
+                          ),
+                          textAlign: TextAlign.start,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                      ],
+                    ),
+            ),
+            Icon(
+              Icons.expand_more_rounded,
+              size: 18,
+              color: resolvedColor.withValues(alpha: 0.7),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Account Type picker sheet ──────────────────────────────────────────────────
+
+class _TypePickerSheet extends StatelessWidget {
+  final String title;
+  final List<WalletCategory> items;
+  final String? selected;
+  final String Function(String) capitalize;
+
+  const _TypePickerSheet({
+    required this.title,
+    required this.items,
+    required this.selected,
+    required this.capitalize,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Handle bar
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.outlineVariant,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Text(title,
+                style: theme.textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: items.map((t) {
+                final isSelected = t.name == selected;
+                final color = t.color;
+                return GestureDetector(
+                  onTap: () => Navigator.pop(context, t.name),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 160),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? color.withValues(alpha: 0.15)
+                          : theme.colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: isSelected ? color : Colors.transparent,
+                        width: 2,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(t.iconData,
+                            color: isSelected
+                                ? color
+                                : theme.colorScheme.onSurfaceVariant,
+                            size: 18),
+                        const SizedBox(width: 8),
+                        Text(
+                          capitalize(t.name),
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: isSelected
+                                ? color
+                                : theme.colorScheme.onSurface,
+                          ),
+                        ),
+                        if (isSelected) ...[
+                          const SizedBox(width: 6),
+                          Icon(Icons.check_circle_rounded,
+                              size: 15, color: color),
+                        ],
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Account Category picker sheet ──────────────────────────────────────────────
+
+class _CategoryPickerSheet extends StatelessWidget {
+  final String title;
+  final List<WalletCategory> items;
+  final String? selected;
+  final Color accentColor;
+  final String Function(String) capitalize;
+
+  const _CategoryPickerSheet({
+    required this.title,
+    required this.items,
+    required this.selected,
+    required this.accentColor,
+    required this.capitalize,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Handle bar
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.outlineVariant,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Text(title,
+                style: theme.textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: items.map((cat) {
+                final isSelected = cat.name == selected;
+                return GestureDetector(
+                  onTap: () => Navigator.pop(context, cat.name),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 160),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? accentColor.withValues(alpha: 0.12)
+                          : theme.colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: isSelected ? accentColor : Colors.transparent,
+                        width: 2,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          capitalize(cat.name),
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: isSelected
+                                ? accentColor
+                                : theme.colorScheme.onSurface,
+                          ),
+                        ),
+                        if (isSelected) ...[
+                          const SizedBox(width: 6),
+                          Icon(Icons.check_circle_rounded,
+                              size: 15, color: accentColor),
+                        ],
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+        ),
       ),
     );
   }
