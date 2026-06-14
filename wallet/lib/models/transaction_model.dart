@@ -87,6 +87,7 @@ class WalletTransaction {
     required List<Account> accounts,
     required List<WalletCategory> categories,
     required List<WalletCategory> accountTypes,
+    required List<WalletCategory> accountCategories,
     WalletTransaction? existing,
     required String type,
   }) {
@@ -101,6 +102,7 @@ class WalletTransaction {
         accounts: accounts,
         categories: categories,
         accountTypes: accountTypes,
+        accountCategories: accountCategories,
         existing: existing,
         type: type,
       ),
@@ -160,6 +162,7 @@ class _TransactionForm extends StatefulWidget {
   final List<Account> accounts;
   final List<WalletCategory> categories;
   final List<WalletCategory> accountTypes;
+  final List<WalletCategory> accountCategories;
   final WalletTransaction? existing;
   final String type;
 
@@ -167,6 +170,7 @@ class _TransactionForm extends StatefulWidget {
     required this.accounts,
     required this.categories,
     required this.accountTypes,
+    required this.accountCategories,
     this.existing,
     required this.type,
   });
@@ -340,9 +344,14 @@ class _TransactionFormState extends State<_TransactionForm> {
     final theme = Theme.of(context);
     if (widget.accounts.isEmpty) return;
 
-    // Build a map from type name → WalletCategory for icon lookup
+    // Build a map from type name → WalletCategory for section headers
     final typeIconMap = {
       for (final t in widget.accountTypes) t.name: t,
+    };
+
+    // Build a map from account category name → WalletCategory for chip icons
+    final catIconMap = {
+      for (final c in widget.accountCategories) c.name: c,
     };
 
     // Group accounts by their type
@@ -388,7 +397,7 @@ class _TransactionFormState extends State<_TransactionForm> {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Section header
+                    // Section header — uses type icon
                     Padding(
                       padding: const EdgeInsets.only(bottom: 10),
                       child: Row(
@@ -413,7 +422,13 @@ class _TransactionFormState extends State<_TransactionForm> {
                       runSpacing: 10,
                       children: accs.map((a) {
                         final isSelected = a.id == _accountId;
-                        final color = theme.colorScheme.primary;
+                        // Use the account's own color from colorHex
+                        final accColor = a.colorHex.isNotEmpty
+                            ? colorFromHex(a.colorHex)
+                            : theme.colorScheme.primary;
+                        // Use the account category icon
+                        final catIcon = catIconMap[a.category]?.iconData ??
+                            Icons.folder_outlined;
                         return GestureDetector(
                           onTap: () => Navigator.pop(ctx, a.id),
                           child: AnimatedContainer(
@@ -422,20 +437,21 @@ class _TransactionFormState extends State<_TransactionForm> {
                                 horizontal: 16, vertical: 10),
                             decoration: BoxDecoration(
                               color: isSelected
-                                  ? color.withValues(alpha: 0.12)
+                                  ? accColor.withValues(alpha: 0.15)
                                   : theme.colorScheme.surfaceContainerHighest,
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(
-                                color: isSelected ? color : Colors.transparent,
+                                color:
+                                    isSelected ? accColor : Colors.transparent,
                                 width: 2,
                               ),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(typeIcon,
+                                Icon(catIcon,
                                     color: isSelected
-                                        ? color
+                                        ? accColor
                                         : theme.colorScheme.onSurfaceVariant,
                                     size: 16),
                                 const SizedBox(width: 8),
@@ -445,14 +461,14 @@ class _TransactionFormState extends State<_TransactionForm> {
                                     fontSize: 13,
                                     fontWeight: FontWeight.w600,
                                     color: isSelected
-                                        ? color
+                                        ? accColor
                                         : theme.colorScheme.onSurface,
                                   ),
                                 ),
                                 if (isSelected) ...[
                                   const SizedBox(width: 6),
                                   Icon(Icons.check_circle_rounded,
-                                      size: 15, color: color),
+                                      size: 15, color: accColor),
                                 ],
                               ],
                             ),
@@ -609,13 +625,15 @@ class _TransactionFormState extends State<_TransactionForm> {
                       ),
                       prefixIcon: Icon(
                         selectedAcc != null
-                            ? (firstWhereOrNull(widget.accountTypes,
-                                        (t) => t.name == selectedAcc.type)
+                            ? (firstWhereOrNull(widget.accountCategories,
+                                        (c) => c.name == selectedAcc.category)
                                     ?.iconData ??
-                                Icons.account_balance_wallet)
+                                Icons.folder_outlined)
                             : Icons.touch_app_outlined,
                         color: selectedAcc != null
-                            ? theme.colorScheme.primary
+                            ? (selectedAcc.colorHex.isNotEmpty
+                                ? colorFromHex(selectedAcc.colorHex)
+                                : theme.colorScheme.primary)
                             : theme.colorScheme.onSurfaceVariant,
                         size: 18,
                       ),
