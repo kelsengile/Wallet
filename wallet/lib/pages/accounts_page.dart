@@ -69,10 +69,15 @@ class AccountsPageState extends State<AccountsPage> {
   Future<void> _loadAccounts() async {
     // Accounts are fetched in most-recent-transaction order so that within
     // each type section the card with the latest activity appears first.
-    final accounts = await _db.getAccountsSortedByLatestTransaction();
-    final income = await _db.getTotalIncome();
-    final expenses = await _db.getTotalExpenses();
-    await _refreshRegistry(); // keep the registry in sync with DB
+    final results = await Future.wait([
+      _db.getAccountsSortedByLatestTransaction(),
+      _db.getTotalIncome(),
+      _db.getTotalExpenses(),
+      _refreshRegistry(), // keep the registry in sync with DB
+    ]);
+    final accounts = results[0] as List<Account>;
+    final income = results[1] as double;
+    final expenses = results[2] as double;
     if (!mounted) return;
 
     final grouped = <String, List<Account>>{};

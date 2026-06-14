@@ -28,13 +28,15 @@ class AnalyticsPageState extends State<AnalyticsPage> {
   Future<void> refresh() => _load();
 
   Future<void> _load() async {
-    final income = await _db.getTotalIncome();
-    final expenses = await _db.getTotalExpenses();
-    final byCategory = await _db.getExpensesByCategory();
+    final results = await Future.wait([
+      _db.getTotalIncome(),
+      _db.getTotalExpenses(),
+      _db.getExpensesByCategory(),
+    ]);
     setState(() {
-      _totalIncome = income;
-      _totalExpenses = expenses;
-      _byCategory = byCategory;
+      _totalIncome = results[0] as double;
+      _totalExpenses = results[1] as double;
+      _byCategory = results[2] as List<Map<String, dynamic>>;
       _loading = false;
     });
   }

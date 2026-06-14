@@ -160,11 +160,18 @@ class HistoryPageState extends State<HistoryPage> {
   }
 
   Future<void> _load() async {
-    final txs = await _db.getAllTransactions();
-    final accounts = await _db.getAllAccounts();
-    final registry = await _db.getCategoryRegistry();
-    final savedFilter = await _db.getSetting('history_filter_mode');
-    final savedAnchor = await _db.getSetting('history_filter_anchor');
+    final results = await Future.wait([
+      _db.getAllTransactions(),
+      _db.getAllAccounts(),
+      _db.getCategoryRegistry(),
+      _db.getSetting('history_filter_mode'),
+      _db.getSetting('history_filter_anchor'),
+    ]);
+    final txs = results[0] as List<WalletTransaction>;
+    final accounts = results[1] as List<Account>;
+    final registry = results[2] as CategoryRegistry;
+    final savedFilter = results[3] as String?;
+    final savedAnchor = results[4] as String?;
 
     _FilterMode restoredMode = _filterMode;
     DateTime restoredAnchor = _anchor;
