@@ -69,15 +69,10 @@ class AccountsPageState extends State<AccountsPage> {
   Future<void> _loadAccounts() async {
     // Accounts are fetched in most-recent-transaction order so that within
     // each type section the card with the latest activity appears first.
-    final results = await Future.wait([
-      _db.getAccountsSortedByLatestTransaction(),
-      _db.getTotalIncome(),
-      _db.getTotalExpenses(),
-      _refreshRegistry(), // keep the registry in sync with DB
-    ]);
-    final accounts = results[0] as List<Account>;
-    final income = results[1] as double;
-    final expenses = results[2] as double;
+    final accounts = await _db.getAccountsSortedByLatestTransaction();
+    final income = await _db.getTotalIncome();
+    final expenses = await _db.getTotalExpenses();
+    await _refreshRegistry(); // keep the registry in sync with DB
     if (!mounted) return;
 
     final grouped = <String, List<Account>>{};
@@ -124,6 +119,55 @@ class AccountsPageState extends State<AccountsPage> {
       _totalIncome = income;
       _totalExpenses = expenses;
       _loading = false;
+    });
+  }
+
+  /// Instantly updates the balance of [accountId] by [delta] in the UI
+  /// without a DB round-trip. Call this right after inserting a transaction
+  /// so the account card reflects the new balance immediately.
+  void applyBalanceDelta(int accountId, double delta) {
+    setState(() {
+      _accounts = _accounts.map((a) {
+        if (a.id != accountId) return a;
+        return a.copyWith(balance: a.balance + delta);
+      }).toList();
+
+      // Rebuild _grouped from the updated _accounts list.
+      final grouped = <String, List<Account>>{};
+      double total = 0;
+      for (final a in _accounts) {
+        total += a.balance;
+        (grouped[a.type] ??= []).add(a);
+      }
+      _grouped = grouped;
+      _totalBalance = total;
+
+      if (delta > 0) {
+        _totalIncome += delta;
+      } else {
+        _totalExpenses += -delta;
+      }
+    });
+  }
+
+  /// Convenience for a transfer: debits [fromId] and credits [toId].
+  void applyTransferDelta(int fromId, int toId, double amount) {
+    setState(() {
+      _accounts = _accounts.map((a) {
+        if (a.id == fromId) return a.copyWith(balance: a.balance - amount);
+        if (a.id == toId) return a.copyWith(balance: a.balance + amount);
+        return a;
+      }).toList();
+
+      final grouped = <String, List<Account>>{};
+      double total = 0;
+      for (final a in _accounts) {
+        total += a.balance;
+        (grouped[a.type] ??= []).add(a);
+      }
+      _grouped = grouped;
+      _totalBalance = total;
+      // Net balance unchanged for a transfer, but individual cards update.
     });
   }
 

@@ -155,6 +155,9 @@ class _WalletHomePageState extends State<WalletHomePage> {
           onCategoryChanged: () async {
             await _accountsKey.currentState?.refresh();
           },
+          onAccountRestored: () {
+            _accountsKey.currentState?.refresh();
+          },
         ),
         body: RefreshIndicator(
           onRefresh: _onRefresh,
@@ -266,6 +269,10 @@ class _WalletHomePageState extends State<WalletHomePage> {
                             );
                             if (tx == null) return;
                             await DatabaseHelper.instance.insertTransaction(tx);
+                            if (tx.accountId != null) {
+                              _accountsKey.currentState
+                                  ?.applyBalanceDelta(tx.accountId!, tx.amount);
+                            }
                             _historyKey.currentState?.refresh();
                           },
                           onAddExpense: () async {
@@ -288,6 +295,10 @@ class _WalletHomePageState extends State<WalletHomePage> {
                             );
                             if (tx == null) return;
                             await DatabaseHelper.instance.insertTransaction(tx);
+                            if (tx.accountId != null) {
+                              _accountsKey.currentState?.applyBalanceDelta(
+                                  tx.accountId!, -tx.amount);
+                            }
                             _historyKey.currentState?.refresh();
                           },
                           onTransfer: () async {
@@ -321,6 +332,11 @@ class _WalletHomePageState extends State<WalletHomePage> {
                               amount: result.amount,
                               date: result.date,
                               note: result.note,
+                            );
+                            _accountsKey.currentState?.applyTransferDelta(
+                              result.fromAccountId,
+                              result.toAccountId,
+                              result.amount,
                             );
                             _historyKey.currentState?.refresh();
                           },
@@ -749,12 +765,14 @@ class _WalletDrawer extends StatefulWidget {
   final void Function(int) onNavigate;
   final VoidCallback onDataCleared;
   final VoidCallback onCategoryChanged;
+  final VoidCallback onAccountRestored;
 
   const _WalletDrawer({
     required this.selectedIndex,
     required this.onNavigate,
     required this.onDataCleared,
     required this.onCategoryChanged,
+    required this.onAccountRestored,
   });
 
   @override
@@ -981,7 +999,10 @@ class _WalletDrawerState extends State<_WalletDrawer> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(builder: (_) => const TrashBinPage()),
-                    ).then((_) => _loadTrashCount());
+                    ).then((_) {
+                      _loadTrashCount();
+                      widget.onAccountRestored();
+                    });
                   },
                 ),
 
