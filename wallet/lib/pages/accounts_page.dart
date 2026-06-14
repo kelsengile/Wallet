@@ -67,6 +67,8 @@ class AccountsPageState extends State<AccountsPage> {
   Future<void> refresh() => _loadAccounts();
 
   Future<void> _loadAccounts() async {
+    // Accounts are fetched in most-recent-transaction order so that within
+    // each type section the card with the latest activity appears first.
     final accounts = await _db.getAccountsSortedByLatestTransaction();
     final income = await _db.getTotalIncome();
     final expenses = await _db.getTotalExpenses();
@@ -85,7 +87,20 @@ class AccountsPageState extends State<AccountsPage> {
     List<String> newOrder;
     if (_typeOrder.isEmpty) {
       final saved = await _db.getTypeOrder();
-      newOrder = saved ?? [];
+      if (saved != null) {
+        newOrder = saved;
+      } else {
+        // First-ever run: seed order from the categories table sort_order
+        // so it matches the Category Manager sequence, not transaction recency.
+        final registryTypes = _registryNotifier.value.accountTypes
+            .map((c) => c.name)
+            .where((t) => grouped.containsKey(t))
+            .toList();
+        // Append any account types that exist but aren't in the registry yet.
+        final extra =
+            grouped.keys.where((t) => !registryTypes.contains(t)).toList();
+        newOrder = [...registryTypes, ...extra];
+      }
     } else {
       newOrder = List.of(_typeOrder);
     }
