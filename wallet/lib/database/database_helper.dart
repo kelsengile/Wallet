@@ -968,12 +968,28 @@ class DatabaseHelper {
     await db.update('categories', map,
         where: 'id = ?', whereArgs: [oldCategory.id]);
 
+    // Always sync account color when the account-type color changes, even when
+    // the name is unchanged, so card gradients update without a manual edit.
+    if (oldCategory.groupType == kCategoryGroupAccountType &&
+        oldCategory.colorHex != newCategory.colorHex) {
+      await db.update(
+        'accounts',
+        {'color_hex': newCategory.colorHex},
+        where: 'type = ?',
+        whereArgs: [oldCategory.name],
+      );
+    }
+
     if (oldCategory.name == newCategory.name) return;
 
     switch (oldCategory.groupType) {
       case kCategoryGroupAccountType:
-        await db.update('accounts', {'type': newCategory.name},
-            where: 'type = ?', whereArgs: [oldCategory.name]);
+        await db.update(
+          'accounts',
+          {'type': newCategory.name, 'color_hex': newCategory.colorHex},
+          where: 'type = ?',
+          whereArgs: [oldCategory.name],
+        );
         break;
       case kCategoryGroupAccountCategory:
         await db.update('accounts', {'category': newCategory.name},
