@@ -78,8 +78,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version:
-          9, // bumped from 8 → 9 to widen UNIQUE to (group_type, sub_type, name)
+      version: 10, // bumped from 9 → 10 to seed expanded built-in categories
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -235,25 +234,112 @@ class DatabaseHelper {
     }
 
     // ── Account types ─────────────────────────────────────────────────────
-    // Start empty except for the single default — the user builds out the
-    // rest of their own types from the Category Manager.
     await insertAll(kCategoryGroupAccountType, [
       {
         'name': 'cash',
         'icon': 'cash',
         'color_hex': '#22C55E',
-        'is_default': true
+        'is_default': true,
+      },
+      {
+        'name': 'bank',
+        'icon': 'bank',
+        'color_hex': '#3B82F6',
+        'is_default': false,
+      },
+      {
+        'name': 'credit',
+        'icon': 'credit_card',
+        'color_hex': '#EF4444',
+        'is_default': false,
+      },
+      {
+        'name': 'ewallet',
+        'icon': 'ewallet',
+        'color_hex': '#A855F7',
+        'is_default': false,
+      },
+      {
+        'name': 'investment',
+        'icon': 'trending_up',
+        'color_hex': '#F59E0B',
+        'is_default': false,
+      },
+      {
+        'name': 'assets',
+        'icon': 'home',
+        'color_hex': '#14B8A6',
+        'is_default': false,
+      },
+      {
+        'name': 'debt',
+        'icon': 'handshake',
+        'color_hex': '#F97316',
+        'is_default': false,
+      },
+      {
+        'name': 'business',
+        'icon': 'business',
+        'color_hex': '#6366F1',
+        'is_default': false,
       },
     ]);
 
     // ── Account categories ────────────────────────────────────────────────
-    // Start empty except for the single default.
     await insertAll(kCategoryGroupAccountCategory, [
       {
         'name': 'personal',
         'icon': 'label',
         'color_hex': '#6366F1',
-        'is_default': true
+        'is_default': true,
+      },
+      {
+        'name': 'family',
+        'icon': 'family',
+        'color_hex': '#EC4899',
+        'is_default': false,
+      },
+      {
+        'name': 'savings',
+        'icon': 'savings',
+        'color_hex': '#22C55E',
+        'is_default': false,
+      },
+      {
+        'name': 'future',
+        'icon': 'goal',
+        'color_hex': '#F59E0B',
+        'is_default': false,
+      },
+      {
+        'name': 'work',
+        'icon': 'work',
+        'color_hex': '#3B82F6',
+        'is_default': false,
+      },
+      {
+        'name': 'travel',
+        'icon': 'travel',
+        'color_hex': '#0EA5E9',
+        'is_default': false,
+      },
+      {
+        'name': 'health',
+        'icon': 'health',
+        'color_hex': '#EF4444',
+        'is_default': false,
+      },
+      {
+        'name': 'investment',
+        'icon': 'trending_up',
+        'color_hex': '#10B981',
+        'is_default': false,
+      },
+      {
+        'name': 'debt',
+        'icon': 'handshake',
+        'color_hex': '#F97316',
+        'is_default': false,
       },
     ]);
 
@@ -262,22 +348,185 @@ class DatabaseHelper {
     // that serves as the fallback for their sub-type. The "Transfer" category
     // is the group-level default used internally for transfer legs.
     await insertAll(kCategoryGroupTransactionCategory, [
-      // System fallback for income — non-deletable, non-editable.
+      // ── Income categories ───────────────────────────────────────────────
       {
-        'name': kMiscellaneousCategoryName,
-        'icon': 'label',
-        'color_hex': '#6366F1',
-        'is_system': true,
+        'name': 'Salary',
+        'icon': 'cash',
+        'color_hex': '#22C55E',
         'is_default': false,
         'sub_type': kSubTypeIncome,
       },
-      // System fallback for expense — non-deletable, non-editable.
+      {
+        'name': 'Bonus',
+        'icon': 'star',
+        'color_hex': '#F59E0B',
+        'is_default': false,
+        'sub_type': kSubTypeIncome,
+      },
+      {
+        'name': 'Commission',
+        'icon': 'handshake',
+        'color_hex': '#10B981',
+        'is_default': false,
+        'sub_type': kSubTypeIncome,
+      },
+      {
+        'name': 'Allowance',
+        'icon': 'wallet',
+        'color_hex': '#3B82F6',
+        'is_default': false,
+        'sub_type': kSubTypeIncome,
+      },
+      {
+        'name': 'Freelance',
+        'icon': 'work',
+        'color_hex': '#A855F7',
+        'is_default': false,
+        'sub_type': kSubTypeIncome,
+      },
+      {
+        'name': 'Business',
+        'icon': 'business',
+        'color_hex': '#6366F1',
+        'is_default': false,
+        'sub_type': kSubTypeIncome,
+      },
+      {
+        'name': 'Investment',
+        'icon': 'trending_up',
+        'color_hex': '#0EA5E9',
+        'is_default': false,
+        'sub_type': kSubTypeIncome,
+      },
+      {
+        'name': 'Online',
+        'icon': 'ewallet',
+        'color_hex': '#14B8A6',
+        'is_default': false,
+        'sub_type': kSubTypeIncome,
+      },
+      {
+        'name': 'Gift',
+        'icon': 'gift',
+        'color_hex': '#EC4899',
+        'is_default': false,
+        'sub_type': kSubTypeIncome,
+      },
+      {
+        'name': 'Scholarship',
+        'icon': 'school',
+        'color_hex': '#8B5CF6',
+        'is_default': false,
+        'sub_type': kSubTypeIncome,
+      },
+      {
+        'name': 'Refund',
+        'icon': 'savings',
+        'color_hex': '#F97316',
+        'is_default': false,
+        'sub_type': kSubTypeIncome,
+      },
+      {
+        'name': 'Loan',
+        'icon': 'bank',
+        'color_hex': '#64748B',
+        'is_default': false,
+        'sub_type': kSubTypeIncome,
+      },
+      // System fallback for income — non-deletable, non-editable, default.
       {
         'name': kMiscellaneousCategoryName,
         'icon': 'label',
         'color_hex': '#6366F1',
         'is_system': true,
+        'is_default': true,
+        'sub_type': kSubTypeIncome,
+      },
+      // ── Expense categories ──────────────────────────────────────────────
+      {
+        'name': 'Food',
+        'icon': 'restaurant',
+        'color_hex': '#F97316',
         'is_default': false,
+        'sub_type': kSubTypeExpense,
+      },
+      {
+        'name': 'Transportation',
+        'icon': 'transport',
+        'color_hex': '#3B82F6',
+        'is_default': false,
+        'sub_type': kSubTypeExpense,
+      },
+      {
+        'name': 'Shopping',
+        'icon': 'shopping',
+        'color_hex': '#EC4899',
+        'is_default': false,
+        'sub_type': kSubTypeExpense,
+      },
+      {
+        'name': 'Bills',
+        'icon': 'bills',
+        'color_hex': '#EF4444',
+        'is_default': false,
+        'sub_type': kSubTypeExpense,
+      },
+      {
+        'name': 'Health',
+        'icon': 'health',
+        'color_hex': '#10B981',
+        'is_default': false,
+        'sub_type': kSubTypeExpense,
+      },
+      {
+        'name': 'Education',
+        'icon': 'school',
+        'color_hex': '#8B5CF6',
+        'is_default': false,
+        'sub_type': kSubTypeExpense,
+      },
+      {
+        'name': 'Entertainment',
+        'icon': 'entertainment',
+        'color_hex': '#A855F7',
+        'is_default': false,
+        'sub_type': kSubTypeExpense,
+      },
+      {
+        'name': 'Tax',
+        'icon': 'bills',
+        'color_hex': '#64748B',
+        'is_default': false,
+        'sub_type': kSubTypeExpense,
+      },
+      {
+        'name': 'Debt',
+        'icon': 'handshake',
+        'color_hex': '#F59E0B',
+        'is_default': false,
+        'sub_type': kSubTypeExpense,
+      },
+      {
+        'name': 'Gift',
+        'icon': 'gift',
+        'color_hex': '#22C55E',
+        'is_default': false,
+        'sub_type': kSubTypeExpense,
+      },
+      {
+        'name': 'Travel',
+        'icon': 'travel',
+        'color_hex': '#0EA5E9',
+        'is_default': false,
+        'sub_type': kSubTypeExpense,
+      },
+      // System fallback for expense — non-deletable, non-editable, default.
+      {
+        'name': kMiscellaneousCategoryName,
+        'icon': 'label',
+        'color_hex': '#6366F1',
+        'is_system': true,
+        'is_default': true,
         'sub_type': kSubTypeExpense,
       },
       // Non-deletable, non-editable — used for transfer-in/transfer-out legs.
@@ -287,7 +536,7 @@ class DatabaseHelper {
         'color_hex': '#0D9488',
         'is_system': true,
         'is_default': true,
-        'sub_type': ''
+        'sub_type': '',
       },
     ]);
   }
@@ -451,6 +700,154 @@ class DatabaseHelper {
             'is_default': 0,
             'is_system': 1,
             'sub_type': subType,
+          },
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+      }
+    }
+
+    if (oldVersion < 10) {
+      // Seed all expanded built-in categories for existing installs.
+      // ConflictAlgorithm.ignore keeps user data safe — any category the user
+      // already created with the same name is left untouched.
+
+      // ── Account types ─────────────────────────────────────────────────
+      final newAccountTypes = [
+        {'name': 'bank', 'icon': 'bank', 'color_hex': '#3B82F6'},
+        {'name': 'credit', 'icon': 'credit_card', 'color_hex': '#EF4444'},
+        {'name': 'ewallet', 'icon': 'ewallet', 'color_hex': '#A855F7'},
+        {'name': 'investment', 'icon': 'trending_up', 'color_hex': '#F59E0B'},
+        {'name': 'assets', 'icon': 'home', 'color_hex': '#14B8A6'},
+        {'name': 'debt', 'icon': 'handshake', 'color_hex': '#F97316'},
+        {'name': 'business', 'icon': 'business', 'color_hex': '#6366F1'},
+      ];
+      for (final item in newAccountTypes) {
+        final maxRow = await db.rawQuery(
+          'SELECT MAX(sort_order) as m FROM categories WHERE group_type = ?',
+          [kCategoryGroupAccountType],
+        );
+        final nextOrder = ((maxRow.first['m'] as int?) ?? -1) + 1;
+        await db.insert(
+          'categories',
+          {
+            'name': item['name'],
+            'group_type': kCategoryGroupAccountType,
+            'icon': item['icon'],
+            'color_hex': item['color_hex'],
+            'sort_order': nextOrder,
+            'is_default': 0,
+            'is_system': 0,
+            'sub_type': '',
+          },
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+      }
+
+      // ── Account categories ─────────────────────────────────────────────
+      final newAccountCategories = [
+        {'name': 'family', 'icon': 'family', 'color_hex': '#EC4899'},
+        {'name': 'savings', 'icon': 'savings', 'color_hex': '#22C55E'},
+        {'name': 'future', 'icon': 'goal', 'color_hex': '#F59E0B'},
+        {'name': 'work', 'icon': 'work', 'color_hex': '#3B82F6'},
+        {'name': 'travel', 'icon': 'travel', 'color_hex': '#0EA5E9'},
+        {'name': 'health', 'icon': 'health', 'color_hex': '#EF4444'},
+        {'name': 'investment', 'icon': 'trending_up', 'color_hex': '#10B981'},
+        {'name': 'debt', 'icon': 'handshake', 'color_hex': '#F97316'},
+      ];
+      for (final item in newAccountCategories) {
+        final maxRow = await db.rawQuery(
+          'SELECT MAX(sort_order) as m FROM categories WHERE group_type = ?',
+          [kCategoryGroupAccountCategory],
+        );
+        final nextOrder = ((maxRow.first['m'] as int?) ?? -1) + 1;
+        await db.insert(
+          'categories',
+          {
+            'name': item['name'],
+            'group_type': kCategoryGroupAccountCategory,
+            'icon': item['icon'],
+            'color_hex': item['color_hex'],
+            'sort_order': nextOrder,
+            'is_default': 0,
+            'is_system': 0,
+            'sub_type': '',
+          },
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+      }
+
+      // ── Income categories ──────────────────────────────────────────────
+      final newIncomeCategories = [
+        {'name': 'Salary', 'icon': 'cash', 'color_hex': '#22C55E'},
+        {'name': 'Bonus', 'icon': 'star', 'color_hex': '#F59E0B'},
+        {'name': 'Commission', 'icon': 'handshake', 'color_hex': '#10B981'},
+        {'name': 'Allowance', 'icon': 'wallet', 'color_hex': '#3B82F6'},
+        {'name': 'Freelance', 'icon': 'work', 'color_hex': '#A855F7'},
+        {'name': 'Business', 'icon': 'business', 'color_hex': '#6366F1'},
+        {'name': 'Investment', 'icon': 'trending_up', 'color_hex': '#0EA5E9'},
+        {'name': 'Online', 'icon': 'ewallet', 'color_hex': '#14B8A6'},
+        {'name': 'Gift', 'icon': 'gift', 'color_hex': '#EC4899'},
+        {'name': 'Scholarship', 'icon': 'school', 'color_hex': '#8B5CF6'},
+        {'name': 'Refund', 'icon': 'savings', 'color_hex': '#F97316'},
+        {'name': 'Loan', 'icon': 'bank', 'color_hex': '#64748B'},
+      ];
+      for (final item in newIncomeCategories) {
+        final maxRow = await db.rawQuery(
+          'SELECT MAX(sort_order) as m FROM categories WHERE group_type = ? AND sub_type = ?',
+          [kCategoryGroupTransactionCategory, kSubTypeIncome],
+        );
+        final nextOrder = ((maxRow.first['m'] as int?) ?? -1) + 1;
+        await db.insert(
+          'categories',
+          {
+            'name': item['name'],
+            'group_type': kCategoryGroupTransactionCategory,
+            'icon': item['icon'],
+            'color_hex': item['color_hex'],
+            'sort_order': nextOrder,
+            'is_default': 0,
+            'is_system': 0,
+            'sub_type': kSubTypeIncome,
+          },
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+      }
+
+      // ── Expense categories ─────────────────────────────────────────────
+      final newExpenseCategories = [
+        {'name': 'Food', 'icon': 'restaurant', 'color_hex': '#F97316'},
+        {'name': 'Transportation', 'icon': 'transport', 'color_hex': '#3B82F6'},
+        {'name': 'Shopping', 'icon': 'shopping', 'color_hex': '#EC4899'},
+        {'name': 'Bills', 'icon': 'bills', 'color_hex': '#EF4444'},
+        {'name': 'Health', 'icon': 'health', 'color_hex': '#10B981'},
+        {'name': 'Education', 'icon': 'school', 'color_hex': '#8B5CF6'},
+        {
+          'name': 'Entertainment',
+          'icon': 'entertainment',
+          'color_hex': '#A855F7'
+        },
+        {'name': 'Tax', 'icon': 'bills', 'color_hex': '#64748B'},
+        {'name': 'Debt', 'icon': 'handshake', 'color_hex': '#F59E0B'},
+        {'name': 'Gift', 'icon': 'gift', 'color_hex': '#22C55E'},
+        {'name': 'Travel', 'icon': 'travel', 'color_hex': '#0EA5E9'},
+      ];
+      for (final item in newExpenseCategories) {
+        final maxRow = await db.rawQuery(
+          'SELECT MAX(sort_order) as m FROM categories WHERE group_type = ? AND sub_type = ?',
+          [kCategoryGroupTransactionCategory, kSubTypeExpense],
+        );
+        final nextOrder = ((maxRow.first['m'] as int?) ?? -1) + 1;
+        await db.insert(
+          'categories',
+          {
+            'name': item['name'],
+            'group_type': kCategoryGroupTransactionCategory,
+            'icon': item['icon'],
+            'color_hex': item['color_hex'],
+            'sort_order': nextOrder,
+            'is_default': 0,
+            'is_system': 0,
+            'sub_type': kSubTypeExpense,
           },
           conflictAlgorithm: ConflictAlgorithm.ignore,
         );
