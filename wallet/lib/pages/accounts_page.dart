@@ -13,56 +13,20 @@ final _currencyFmt = NumberFormat('#,##0.00', 'en_PH');
 String _fmt(double v) => _currencyFmt.format(v);
 
 // ── Type metadata ──────────────────────────────────────────────────────────────
+//
+// All account-type colors, icons, gradients, and labels now come from the
+// CategoryRegistry (loaded from the DB), so changes in the Category Manager
+// are immediately reflected on account cards. The registry is stored in a
+// module-level notifier so widgets at any depth can rebuild when it updates.
 
-const _typeColors = {
-  'cash': Color(0xFF22C55E),
-  'bank': Color(0xFF3B82F6),
-  'e-wallet': Color(0xFFA855F7),
-  'credit': Color(0xFFEF4444),
-  'loan': Color(0xFFF97316),
-  'investment': Color(0xFF0EA5E9),
-  'savings': Color(0xFF14B8A6),
-};
+final _registryNotifier =
+    ValueNotifier<CategoryRegistry>(CategoryRegistry.empty());
 
-const _typeIcons = {
-  'cash': Icons.payments_outlined,
-  'bank': Icons.account_balance_outlined,
-  'e-wallet': Icons.phone_android_outlined,
-  'credit': Icons.credit_card_outlined,
-  'loan': Icons.handshake_outlined,
-  'investment': Icons.trending_up_outlined,
-  'savings': Icons.savings_outlined,
-};
-
-const _typeGradients = {
-  'cash': [Color(0xFF16A34A), Color(0xFF4ADE80)],
-  'bank': [Color(0xFF1D4ED8), Color(0xFF60A5FA)],
-  'e-wallet': [Color(0xFF7C3AED), Color(0xFFC084FC)],
-  'credit': [Color(0xFFB91C1C), Color(0xFFF87171)],
-  'loan': [Color(0xFFC2410C), Color(0xFFFB923C)],
-  'investment': [Color(0xFF0369A1), Color(0xFF38BDF8)],
-  'savings': [Color(0xFF0F766E), Color(0xFF2DD4BF)],
-};
-
-const _typeLabels = {
-  'cash': 'Cash',
-  'bank': 'Bank',
-  'e-wallet': 'E-Wallet',
-  'credit': 'Credits',
-  'loan': 'Loans',
-  'investment': 'Investments',
-  'savings': 'Savings',
-};
-
-const _typeColorHexMap = {
-  'cash': '#22C55E',
-  'bank': '#3B82F6',
-  'e-wallet': '#A855F7',
-  'credit': '#EF4444',
-  'loan': '#F97316',
-  'investment': '#0EA5E9',
-  'savings': '#14B8A6',
-};
+/// Loads the latest registry from the DB and pushes it into [_registryNotifier].
+Future<void> _refreshRegistry() async {
+  final reg = await DatabaseHelper.instance.getCategoryRegistry();
+  _registryNotifier.value = reg;
+}
 
 // ── Page ───────────────────────────────────────────────────────────────────────
 
@@ -106,6 +70,7 @@ class AccountsPageState extends State<AccountsPage> {
     final accounts = await _db.getAccountsSortedByLatestTransaction();
     final income = await _db.getTotalIncome();
     final expenses = await _db.getTotalExpenses();
+    await _refreshRegistry(); // keep the registry in sync with DB
     if (!mounted) return;
 
     final grouped = <String, List<Account>>{};
@@ -209,9 +174,10 @@ class AccountsPageState extends State<AccountsPage> {
 
   Future<void> _moveCardToType(Account account, String newType) async {
     if (account.type == newType) return;
+    final colorHex = _registryNotifier.value.typeColorHex(newType);
     final updated = account.copyWith(
       type: newType,
-      colorHex: _typeColorHexMap[newType] ?? '#6366F1',
+      colorHex: colorHex,
     );
     await _db.updateAccount(updated);
     _loadAccounts();
@@ -598,9 +564,9 @@ class _DraggableSectionTileState extends State<_DraggableSectionTile> {
   bool _isDropTarget = false;
 
   Color _resolveTypeColor(BuildContext context) {
-    if (_typeColors.containsKey(widget.type)) {
-      return _typeColors[widget.type]!;
-    }
+    final reg = _registryNotifier.value;
+    final cat = reg.findAccountType(widget.type);
+    if (cat != null) return cat.color;
     if (widget.accounts.isNotEmpty) {
       return colorFromHex(widget.accounts.first.colorHex);
     }
@@ -624,12 +590,12 @@ class _DraggableSectionTileState extends State<_DraggableSectionTile> {
                   : typeColor.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(_typeIcons[widget.type] ?? Icons.wallet,
+            child: Icon(_registryNotifier.value.typeIcon(widget.type),
                 color: typeColor, size: 15),
           ),
           const SizedBox(width: 8),
           Text(
-            _typeLabels[widget.type] ?? widget.type,
+            _registryNotifier.value.typeLabel(widget.type),
             style: theme.textTheme.titleSmall
                 ?.copyWith(fontWeight: FontWeight.bold),
           ),
@@ -685,85 +651,90 @@ class _DraggableSectionTileState extends State<_DraggableSectionTile> {
 
   @override
   Widget build(BuildContext context) {
-    final typeColor = _resolveTypeColor(context);
+    return ValueListenableBuilder<CategoryRegistry>(
+      valueListenable: _registryNotifier,
+      builder: (context, _, __) {
+        final typeColor = _resolveTypeColor(context);
 
-    final isCardDropTarget = widget.cardDragActive &&
-        widget.draggingCard != null &&
-        widget.draggingCard!.type != widget.type;
+        final isCardDropTarget = widget.cardDragActive &&
+            widget.draggingCard != null &&
+            widget.draggingCard!.type != widget.type;
 
-    // Inner content with drop-target highlight
-    Widget sectionBody = AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        border: _isDropTarget
-            ? Border.all(color: typeColor, width: 2)
-            : Border.all(color: Colors.transparent, width: 2),
-        color: _isDropTarget
-            ? typeColor.withValues(alpha: 0.07)
-            : Colors.transparent,
-      ),
-      child: _buildSectionContent(),
-    );
+        // Inner content with drop-target highlight
+        Widget sectionBody = AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: _isDropTarget
+                ? Border.all(color: typeColor, width: 2)
+                : Border.all(color: Colors.transparent, width: 2),
+            color: _isDropTarget
+                ? typeColor.withValues(alpha: 0.07)
+                : Colors.transparent,
+          ),
+          child: _buildSectionContent(),
+        );
 
-    // Card drop target wrapper
-    if (isCardDropTarget) {
-      sectionBody = DragTarget<Account>(
-        onWillAcceptWithDetails: (d) => d.data.type != widget.type,
-        onAcceptWithDetails: (d) {
-          widget.onCardDropped(d.data);
-          setState(() => _isDropTarget = false);
-        },
-        onMove: (_) {
-          if (!_isDropTarget) setState(() => _isDropTarget = true);
-        },
-        onLeave: (_) => setState(() => _isDropTarget = false),
-        builder: (_, candidateData, __) => sectionBody,
-      );
-    }
+        // Card drop target wrapper
+        if (isCardDropTarget) {
+          sectionBody = DragTarget<Account>(
+            onWillAcceptWithDetails: (d) => d.data.type != widget.type,
+            onAcceptWithDetails: (d) {
+              widget.onCardDropped(d.data);
+              setState(() => _isDropTarget = false);
+            },
+            onMove: (_) {
+              if (!_isDropTarget) setState(() => _isDropTarget = true);
+            },
+            onLeave: (_) => setState(() => _isDropTarget = false),
+            builder: (_, candidateData, __) => sectionBody,
+          );
+        }
 
-    // Section reorder: only active in reorderMode; short 400 ms delay
-    if (widget.reorderMode) {
-      return LongPressDraggable<String>(
-        data: widget.type,
-        delay: const Duration(milliseconds: 400),
-        onDragStarted: () {
-          widget.onSectionDragStart();
-          HapticFeedback.heavyImpact();
-        },
-        onDragEnd: (_) => widget.onSectionDragEnd(),
-        onDraggableCanceled: (_, __) => widget.onSectionDragEnd(),
-        // Feedback: compact header-only card that fits within the drop slots
-        feedback: Material(
-          color: Colors.transparent,
-          child: Opacity(
-            opacity: 0.95,
-            child: SizedBox(
-              width: MediaQuery.of(context).size.width - 32,
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(14),
-                  boxShadow: [
-                    BoxShadow(
-                      color: typeColor.withValues(alpha: 0.45),
-                      blurRadius: 28,
-                      offset: const Offset(0, 10),
+        // Section reorder: only active in reorderMode; short 400 ms delay
+        if (widget.reorderMode) {
+          return LongPressDraggable<String>(
+            data: widget.type,
+            delay: const Duration(milliseconds: 400),
+            onDragStarted: () {
+              widget.onSectionDragStart();
+              HapticFeedback.heavyImpact();
+            },
+            onDragEnd: (_) => widget.onSectionDragEnd(),
+            onDraggableCanceled: (_, __) => widget.onSectionDragEnd(),
+            // Feedback: compact header-only card that fits within the drop slots
+            feedback: Material(
+              color: Colors.transparent,
+              child: Opacity(
+                opacity: 0.95,
+                child: SizedBox(
+                  width: MediaQuery.of(context).size.width - 32,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: [
+                        BoxShadow(
+                          color: typeColor.withValues(alpha: 0.45),
+                          blurRadius: 28,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                      border: Border.all(color: typeColor, width: 2),
                     ),
-                  ],
-                  border: Border.all(color: typeColor, width: 2),
+                    child: _buildCompactContent(),
+                  ),
                 ),
-                child: _buildCompactContent(),
               ),
             ),
-          ),
-        ),
-        // childWhenDragging: collapse height to 0 so the space disappears
-        childWhenDragging: const SizedBox(height: 0),
-        child: sectionBody,
-      );
-    }
+            // childWhenDragging: collapse height to 0 so the space disappears
+            childWhenDragging: const SizedBox(height: 0),
+            child: sectionBody,
+          );
+        }
 
-    return sectionBody;
+        return sectionBody;
+      },
+    );
   }
 }
 
@@ -806,10 +777,9 @@ class _DraggableCardCarousel extends StatefulWidget {
 class _DraggableCardCarouselState extends State<_DraggableCardCarousel> {
   @override
   Widget build(BuildContext context) {
-    final typeColor = _typeColors[widget.type] ??
-        (widget.accounts.isNotEmpty
-            ? colorFromHex(widget.accounts.first.colorHex)
-            : Theme.of(context).colorScheme.primary);
+    final typeColor = widget.accounts.isNotEmpty
+        ? colorFromHex(widget.accounts.first.colorHex)
+        : _registryNotifier.value.typeColor(widget.type);
     final n = widget.accounts.length;
 
     return SizedBox(
@@ -1061,8 +1031,7 @@ class _AccountCardInert extends StatelessWidget {
     final accountColor = account.colorHex.isNotEmpty
         ? colorFromHex(account.colorHex)
         : const Color(0xFF6366F1);
-    final gradients = _typeGradients[account.type] ??
-        [accountColor, accountColor.withOpacity(0.92)];
+    final gradients = gradientForColor(accountColor);
     final br = _borderRadius();
 
     Widget card = Container(
@@ -1205,8 +1174,7 @@ class _AccountCard extends StatelessWidget {
     final accountColor = account.colorHex.isNotEmpty
         ? colorFromHex(account.colorHex)
         : const Color(0xFF6366F1);
-    final gradients = _typeGradients[account.type] ??
-        [accountColor, accountColor.withOpacity(0.92)];
+    final gradients = gradientForColor(accountColor);
     final br = _borderRadius();
 
     Widget card = Container(
@@ -1857,8 +1825,10 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final typeColor = _typeColors[widget.account.type] ??
-        (widget.account.colorHex.isNotEmpty
+    final typeColor = _registryNotifier.value.typeColor(widget.account.type) !=
+            const Color(0xFF6366F1)
+        ? _registryNotifier.value.typeColor(widget.account.type)
+        : (widget.account.colorHex.isNotEmpty
             ? colorFromHex(widget.account.colorHex)
             : theme.colorScheme.primary);
 
@@ -1891,8 +1861,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: Icon(
-                    _typeIcons[widget.account.type] ??
-                        Icons.account_balance_wallet,
+                    _registryNotifier.value.typeIcon(widget.account.type),
                     color: typeColor,
                   ),
                 ),
@@ -1913,8 +1882,8 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                       Row(
                         children: [
                           Text(
-                            (_typeLabels[widget.account.type] ??
-                                    widget.account.type)
+                            _registryNotifier.value
+                                .typeLabel(widget.account.type)
                                 .toUpperCase(),
                             style: TextStyle(
                                 fontSize: 11,
