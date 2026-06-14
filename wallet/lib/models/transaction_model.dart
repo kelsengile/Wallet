@@ -228,19 +228,215 @@ class _TransactionFormState extends State<_TransactionForm> {
     Navigator.pop(context, tx);
   }
 
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  String _capitalize(String s) =>
+      s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
+
+  Color get _accentColor =>
+      _type == 'income' ? Colors.green : Colors.red.shade600;
+
+  /// Opens the category picker modal (mirrors _TypePickerSheet from accounts_page).
+  Future<void> _pickCategory(BuildContext context) async {
+    final theme = Theme.of(context);
+    final inType = widget.categories.where((c) => c.subType == _type).toList();
+    if (inType.isEmpty) return;
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Text('Category',
+                  style: theme.textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: inType.map((cat) {
+                  final isSelected = cat.name == _category;
+                  final color = _accentColor;
+                  return GestureDetector(
+                    onTap: () => Navigator.pop(ctx, cat.name),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 160),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? color.withValues(alpha: 0.15)
+                            : theme.colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: isSelected ? color : Colors.transparent,
+                          width: 2,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(cat.iconData,
+                              color: isSelected
+                                  ? color
+                                  : theme.colorScheme.onSurfaceVariant,
+                              size: 18),
+                          const SizedBox(width: 8),
+                          Text(
+                            _capitalize(cat.name),
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: isSelected
+                                  ? color
+                                  : theme.colorScheme.onSurface,
+                            ),
+                          ),
+                          if (isSelected) ...[
+                            const SizedBox(width: 6),
+                            Icon(Icons.check_circle_rounded,
+                                size: 15, color: color),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (picked != null) setState(() => _category = picked);
+  }
+
+  /// Opens the account picker modal (mirrors _CategoryPickerSheet from accounts_page).
+  Future<void> _pickAccount(BuildContext context) async {
+    final theme = Theme.of(context);
+    if (widget.accounts.isEmpty) return;
+    final picked = await showModalBottomSheet<int>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Text('Account',
+                  style: theme.textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: widget.accounts.map((a) {
+                  final isSelected = a.id == _accountId;
+                  final color = theme.colorScheme.primary;
+                  return GestureDetector(
+                    onTap: () => Navigator.pop(ctx, a.id),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 160),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? color.withValues(alpha: 0.12)
+                            : theme.colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: isSelected ? color : Colors.transparent,
+                          width: 2,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.account_balance_wallet_outlined,
+                              color: isSelected
+                                  ? color
+                                  : theme.colorScheme.onSurfaceVariant,
+                              size: 16),
+                          const SizedBox(width: 8),
+                          Text(
+                            a.name,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: isSelected
+                                  ? color
+                                  : theme.colorScheme.onSurface,
+                            ),
+                          ),
+                          if (isSelected) ...[
+                            const SizedBox(width: 6),
+                            Icon(Icons.check_circle_rounded,
+                                size: 15, color: color),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (picked != null) setState(() => _accountId = picked);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isEdit = widget.existing != null;
+    final accent = _accentColor;
 
-    return Padding(
+    // Resolve display names for picker buttons
+    final inType = widget.categories.where((c) => c.subType == _type).toList();
+    final selectedCat = firstWhereOrNull(inType, (c) => c.name == _category);
+    final selectedAcc = widget.accounts
+        .cast<Account?>()
+        .firstWhere((a) => a?.id == _accountId, orElse: () => null);
+
+    return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(
         20,
         16,
         20,
-        // viewInsetsOf is cheaper than MediaQuery.of — it only triggers a
-        // rebuild when the keyboard height changes, not on every MediaQuery
-        // aspect (brightness, textScaleFactor, etc.).
         MediaQuery.viewInsetsOf(context).bottom + 24,
       ),
       child: Column(
@@ -268,8 +464,7 @@ class _TransactionFormState extends State<_TransactionForm> {
           ),
           const SizedBox(height: 20),
 
-          // ── Title field — RepaintBoundary isolates repaints from the ──────
-          // category Wrap below; typing here won't repaint the chip grid.
+          // ── Title ────────────────────────────────────────────────────────
           RepaintBoundary(
             child: TextField(
               controller: _titleCtrl,
@@ -283,121 +478,130 @@ class _TransactionFormState extends State<_TransactionForm> {
           ),
           const SizedBox(height: 12),
 
+          // ── Amount ───────────────────────────────────────────────────────
           RepaintBoundary(
             child: TextField(
               controller: _amountCtrl,
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Amount (₱)',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.payments_outlined),
+                border: const OutlineInputBorder(),
+                prefixIcon: Icon(Icons.payments_outlined, color: accent),
               ),
             ),
           ),
           const SizedBox(height: 12),
 
-          // Category picker — icon grid (mirrors account type picker style)
-          Text('Category', style: theme.textTheme.labelLarge),
-          const SizedBox(height: 8),
-          ...(() {
-            final inType =
-                widget.categories.where((c) => c.subType == _type).toList();
-            if (inType.isEmpty) {
-              return [
-                Text(
-                  'No ${_type == 'income' ? 'income' : 'expense'} categories yet. '
-                  'Add some in the Category Manager.',
-                  style:
-                      TextStyle(color: theme.colorScheme.outline, fontSize: 12),
-                ),
-              ];
-            }
-            return [
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: inType.map((cat) {
-                  final selected = _category == cat.name;
-                  final color = selected
-                      ? (_type == 'income'
-                          ? Colors.green
-                          : theme.colorScheme.primary)
-                      : theme.colorScheme.outline;
-                  return GestureDetector(
-                    onTap: () => setState(() => _category = cat.name),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: selected
-                            ? color.withValues(alpha: 0.12)
-                            : theme.colorScheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: selected ? color : Colors.transparent,
-                          width: 2,
-                        ),
+          // ── Category & Account — side-by-side picker buttons ─────────────
+          Row(
+            children: [
+              // Category picker button
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => _pickCategory(context),
+                  child: InputDecorator(
+                    decoration: InputDecoration(
+                      labelText: 'Category',
+                      border: const OutlineInputBorder(),
+                      enabledBorder: OutlineInputBorder(
+                        borderSide:
+                            BorderSide(color: theme.colorScheme.outline),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            cat.iconData,
-                            size: 15,
-                            color: selected ? color : null,
-                          ),
-                          const SizedBox(width: 5),
-                          Text(
-                            cat.name,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: selected ? color : null,
-                            ),
-                          ),
-                        ],
+                      prefixIcon: Icon(
+                        selectedCat != null
+                            ? selectedCat.iconData
+                            : Icons.touch_app_outlined,
+                        color: selectedCat != null
+                            ? accent
+                            : theme.colorScheme.onSurfaceVariant,
+                        size: 18,
                       ),
+                      suffixIcon: Icon(Icons.expand_more_rounded,
+                          size: 20, color: theme.colorScheme.onSurfaceVariant),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 16),
                     ),
-                  );
-                }).toList(),
+                    isEmpty: selectedCat == null,
+                    child: selectedCat != null
+                        ? Text(
+                            _capitalize(selectedCat.name),
+                            style: theme.textTheme.bodyLarge
+                                ?.copyWith(color: theme.colorScheme.onSurface),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                ),
               ),
-            ];
-          })(),
+              const SizedBox(width: 10),
+              // Account picker button
+              Expanded(
+                child: GestureDetector(
+                  onTap: widget.accounts.isNotEmpty
+                      ? () => _pickAccount(context)
+                      : null,
+                  child: InputDecorator(
+                    decoration: InputDecoration(
+                      labelText: 'Account',
+                      border: const OutlineInputBorder(),
+                      enabledBorder: OutlineInputBorder(
+                        borderSide:
+                            BorderSide(color: theme.colorScheme.outline),
+                      ),
+                      prefixIcon: Icon(
+                        selectedAcc != null
+                            ? Icons.account_balance_wallet
+                            : Icons.touch_app_outlined,
+                        color: selectedAcc != null
+                            ? theme.colorScheme.primary
+                            : theme.colorScheme.onSurfaceVariant,
+                        size: 18,
+                      ),
+                      suffixIcon: Icon(Icons.expand_more_rounded,
+                          size: 20, color: theme.colorScheme.onSurfaceVariant),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 16),
+                    ),
+                    isEmpty: selectedAcc == null,
+                    child: selectedAcc != null
+                        ? Text(
+                            selectedAcc.name,
+                            style: theme.textTheme.bodyLarge
+                                ?.copyWith(color: theme.colorScheme.onSurface),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 12),
 
-          if (widget.accounts.isNotEmpty)
-            DropdownButtonFormField<int>(
-              value: _accountId,
-              items: widget.accounts
-                  .map((a) => DropdownMenuItem(
-                        value: a.id,
-                        child: Text(a.name),
-                      ))
-                  .toList(),
-              onChanged: (v) => setState(() => _accountId = v),
-              decoration: const InputDecoration(
-                labelText: 'Account',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.account_balance_wallet_outlined),
-              ),
-            ),
-          const SizedBox(height: 12),
-
+          // ── Note — taller box ─────────────────────────────────────────────
           RepaintBoundary(
             child: TextField(
               controller: _noteCtrl,
               textCapitalization: TextCapitalization.sentences,
+              maxLines: 3,
+              minLines: 3,
               decoration: const InputDecoration(
                 labelText: 'Note (optional)',
                 border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.note_outlined),
+                prefixIcon: Padding(
+                  padding: EdgeInsets.only(bottom: 40),
+                  child: Icon(Icons.note_outlined),
+                ),
+                alignLabelWithHint: true,
               ),
             ),
           ),
           const SizedBox(height: 20),
 
+          // ── Submit ────────────────────────────────────────────────────────
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
@@ -406,9 +610,7 @@ class _TransactionFormState extends State<_TransactionForm> {
               label: Text(isEdit ? 'Save Changes' : 'Add Transaction'),
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                backgroundColor: _type == 'income'
-                    ? Colors.green
-                    : theme.colorScheme.primary,
+                backgroundColor: accent,
               ),
             ),
           ),
@@ -473,12 +675,170 @@ class _TransferFormState extends State<_TransferForm> {
     );
   }
 
+  /// Opens a modal sheet to pick an account, excluding [excludeId].
+  Future<int?> _pickTransferAccount(
+    BuildContext context, {
+    required String label,
+    required int? current,
+    int? excludeId,
+  }) {
+    final theme = Theme.of(context);
+    const teal = Color(0xFF0D9488);
+    return showModalBottomSheet<int>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Text(label,
+                  style: theme.textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: widget.accounts.map((a) {
+                  final isExcluded = a.id == excludeId;
+                  final isSelected = a.id == current;
+                  return GestureDetector(
+                    onTap: isExcluded ? null : () => Navigator.pop(ctx, a.id),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 160),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? teal.withValues(alpha: 0.12)
+                            : isExcluded
+                                ? theme.colorScheme.surfaceContainerHighest
+                                    .withValues(alpha: 0.4)
+                                : theme.colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: isSelected ? teal : Colors.transparent,
+                          width: 2,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.account_balance_wallet_outlined,
+                              color: isExcluded
+                                  ? theme.colorScheme.onSurfaceVariant
+                                      .withValues(alpha: 0.35)
+                                  : isSelected
+                                      ? teal
+                                      : theme.colorScheme.onSurfaceVariant,
+                              size: 16),
+                          const SizedBox(width: 8),
+                          Text(
+                            a.name,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: isExcluded
+                                  ? theme.colorScheme.onSurface
+                                      .withValues(alpha: 0.35)
+                                  : isSelected
+                                      ? teal
+                                      : theme.colorScheme.onSurface,
+                            ),
+                          ),
+                          if (isSelected) ...[
+                            const SizedBox(width: 6),
+                            const Icon(Icons.check_circle_rounded,
+                                size: 15, color: teal),
+                          ],
+                          if (isExcluded) ...[
+                            const SizedBox(width: 6),
+                            Icon(Icons.block_rounded,
+                                size: 13,
+                                color: theme.colorScheme.onSurfaceVariant
+                                    .withValues(alpha: 0.35)),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     const teal = Color(0xFF0D9488);
 
-    return Padding(
+    final fromAcc = widget.accounts
+        .cast<Account?>()
+        .firstWhere((a) => a?.id == _fromId, orElse: () => null);
+    final toAcc = widget.accounts
+        .cast<Account?>()
+        .firstWhere((a) => a?.id == _toId, orElse: () => null);
+
+    // Helper: builds a teal-accented picker button for From/To
+    Widget accountPickerButton({
+      required String label,
+      required Account? selected,
+      required VoidCallback onTap,
+    }) {
+      final isSet = selected != null;
+      return GestureDetector(
+        onTap: onTap,
+        child: InputDecorator(
+          decoration: InputDecoration(
+            labelText: label,
+            border: const OutlineInputBorder(),
+            enabledBorder: OutlineInputBorder(
+              borderSide: BorderSide(color: theme.colorScheme.outline),
+            ),
+            prefixIcon: Icon(
+              isSet ? Icons.account_balance_wallet : Icons.touch_app_outlined,
+              color: isSet ? teal : theme.colorScheme.onSurfaceVariant,
+              size: 18,
+            ),
+            suffixIcon: Icon(Icons.expand_more_rounded,
+                size: 20, color: theme.colorScheme.onSurfaceVariant),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+          ),
+          isEmpty: !isSet,
+          child: isSet
+              ? Text(
+                  selected.name,
+                  style: theme.textTheme.bodyLarge
+                      ?.copyWith(color: theme.colorScheme.onSurface),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                )
+              : const SizedBox.shrink(),
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(
         20,
         16,
@@ -521,75 +881,65 @@ class _TransferFormState extends State<_TransferForm> {
           ),
           const SizedBox(height: 20),
 
-          // From account
-          DropdownButtonFormField<int>(
-            value: _fromId,
-            decoration: const InputDecoration(
-              labelText: 'From Account',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.account_balance_wallet_outlined),
-            ),
-            items: widget.accounts
-                .map((a) => DropdownMenuItem(value: a.id, child: Text(a.name)))
-                .toList(),
-            onChanged: (v) => setState(() {
-              _fromId = v;
-              // Avoid same-account transfer
-              if (_toId == _fromId) {
-                _toId = widget.accounts
-                    .firstWhere((a) => a.id != _fromId,
-                        orElse: () => widget.accounts.first)
-                    .id;
-              }
-            }),
-          ),
-          const SizedBox(height: 12),
-
-          // Swap icon row
-          Center(
-            child: GestureDetector(
-              onTap: () => setState(() {
-                final tmp = _fromId;
-                _fromId = _toId;
-                _toId = tmp;
-              }),
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: teal.withValues(alpha: 0.10),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: teal.withValues(alpha: 0.35)),
+          // ── From / swap / To — same row ───────────────────────────────────
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: accountPickerButton(
+                  label: 'From',
+                  selected: fromAcc,
+                  onTap: () async {
+                    final picked = await _pickTransferAccount(
+                      context,
+                      label: 'From Account',
+                      current: _fromId,
+                      excludeId: _toId,
+                    );
+                    if (picked != null) setState(() => _fromId = picked);
+                  },
                 ),
-                child: const Icon(Icons.swap_vert, color: teal, size: 20),
               ),
-            ),
+              // Swap button between From and To
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: GestureDetector(
+                  onTap: () => setState(() {
+                    final tmp = _fromId;
+                    _fromId = _toId;
+                    _toId = tmp;
+                  }),
+                  child: Container(
+                    padding: const EdgeInsets.all(7),
+                    decoration: BoxDecoration(
+                      color: teal.withValues(alpha: 0.10),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: teal.withValues(alpha: 0.35)),
+                    ),
+                    child: const Icon(Icons.swap_horiz, color: teal, size: 18),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: accountPickerButton(
+                  label: 'To',
+                  selected: toAcc,
+                  onTap: () async {
+                    final picked = await _pickTransferAccount(
+                      context,
+                      label: 'To Account',
+                      current: _toId,
+                      excludeId: _fromId,
+                    );
+                    if (picked != null) setState(() => _toId = picked);
+                  },
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
 
-          // To account
-          DropdownButtonFormField<int>(
-            value: _toId,
-            decoration: const InputDecoration(
-              labelText: 'To Account',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.account_balance_wallet),
-            ),
-            items: widget.accounts
-                .map((a) => DropdownMenuItem(value: a.id, child: Text(a.name)))
-                .toList(),
-            onChanged: (v) => setState(() {
-              _toId = v;
-              if (_fromId == _toId) {
-                _fromId = widget.accounts
-                    .firstWhere((a) => a.id != _toId,
-                        orElse: () => widget.accounts.first)
-                    .id;
-              }
-            }),
-          ),
-          const SizedBox(height: 12),
-
-          // Amount
+          // ── Amount ────────────────────────────────────────────────────────
           TextField(
             controller: _amountCtrl,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -601,14 +951,20 @@ class _TransferFormState extends State<_TransferForm> {
           ),
           const SizedBox(height: 12),
 
-          // Note
+          // ── Note — taller box ─────────────────────────────────────────────
           TextField(
             controller: _noteCtrl,
             textCapitalization: TextCapitalization.sentences,
+            maxLines: 3,
+            minLines: 3,
             decoration: const InputDecoration(
               labelText: 'Note (optional)',
               border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.note_outlined),
+              prefixIcon: Padding(
+                padding: EdgeInsets.only(bottom: 40),
+                child: Icon(Icons.note_outlined),
+              ),
+              alignLabelWithHint: true,
             ),
           ),
           const SizedBox(height: 8),
