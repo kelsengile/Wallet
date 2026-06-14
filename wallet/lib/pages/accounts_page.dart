@@ -1976,6 +1976,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
   List<Account> _allAccounts = [];
   List<WalletTransaction> _allTransferTxs = [];
   List<WalletCategory> _txCategories = [];
+  List<WalletCategory> _accountTypes = [];
   bool _loading = true;
 
   // ── Current-month transactions ────────────────────────────────────────────
@@ -2024,6 +2025,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
             .where((t) => t.type == 'transfer_out' || t.type == 'transfer_in')
             .toList();
         _txCategories = registry.selectableTransactionCategories;
+        _accountTypes = registry.accountTypes;
         _loading = false;
       });
     }
@@ -2038,6 +2040,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
       context,
       accounts: _allAccounts,
       categories: _txCategories,
+      accountTypes: _accountTypes,
       existing: existing,
       type: existing.type,
     );
