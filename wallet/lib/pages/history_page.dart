@@ -282,6 +282,10 @@ class HistoryPageState extends State<HistoryPage> {
       txCategories: _txCategories,
       accountTypes: _accountTypes,
       accountCategories: _accountCategories,
+      transferTitle:
+          existing.type == 'transfer_out' || existing.type == 'transfer_in'
+              ? 'Transfer'
+              : null,
       onEdited: (updated) async {
         await _db.updateTransaction(existing, updated);
         _load();

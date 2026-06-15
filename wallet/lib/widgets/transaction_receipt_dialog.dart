@@ -44,6 +44,7 @@ Future<WalletTransaction?> showTransactionReceipt(
   required List<WalletCategory> accountTypes,
   required List<WalletCategory> accountCategories,
   List<String>? typeOrder,
+  String? transferTitle,
   Future<WalletTransaction?> Function(WalletTransaction)? onEdited,
 }) {
   return showDialog<WalletTransaction>(
@@ -56,6 +57,7 @@ Future<WalletTransaction?> showTransactionReceipt(
       accountTypes: accountTypes,
       accountCategories: accountCategories,
       typeOrder: typeOrder,
+      transferTitle: transferTitle,
       onEdited: onEdited,
     ),
   );
@@ -70,6 +72,7 @@ class _TransactionReceiptDialog extends StatefulWidget {
   final List<WalletCategory> accountTypes;
   final List<WalletCategory> accountCategories;
   final List<String>? typeOrder;
+  final String? transferTitle;
   final Future<WalletTransaction?> Function(WalletTransaction)? onEdited;
 
   const _TransactionReceiptDialog({
@@ -79,6 +82,7 @@ class _TransactionReceiptDialog extends StatefulWidget {
     required this.accountTypes,
     required this.accountCategories,
     this.typeOrder,
+    this.transferTitle,
     this.onEdited,
   });
 
@@ -227,6 +231,7 @@ class _TransactionReceiptDialogState extends State<_TransactionReceiptDialog> {
                     pairedLeg: _pairedLeg,
                     loadingPaired: _loadingPaired,
                     txCategories: widget.txCategories,
+                    transferTitle: widget.transferTitle,
                   ),
 
                   // ── Serrated divider ───────────────────────────────────
@@ -315,6 +320,7 @@ class _ReceiptHeader extends StatelessWidget {
   final WalletTransaction? pairedLeg;
   final bool loadingPaired;
   final List<WalletCategory> txCategories;
+  final String? transferTitle;
 
   const _ReceiptHeader({
     required this.tx,
@@ -326,6 +332,7 @@ class _ReceiptHeader extends StatelessWidget {
     required this.pairedLeg,
     required this.loadingPaired,
     required this.txCategories,
+    this.transferTitle,
   });
 
   Account _resolve(int? id) => accounts.firstWhere(
@@ -346,7 +353,7 @@ class _ReceiptHeader extends StatelessWidget {
     if (isTransfer) {
       final isOut = tx.type == 'transfer_out';
       icon = isOut ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded;
-      title = isOut ? 'Transfer Out' : 'Transfer In';
+      title = transferTitle ?? (isOut ? 'Transfer Out' : 'Transfer In');
 
       if (loadingPaired) {
         subtitle = 'Resolving…';

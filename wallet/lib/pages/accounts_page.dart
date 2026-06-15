@@ -2083,7 +2083,8 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
     }
   }
 
-  Future<void> _editTransaction(WalletTransaction existing) async {
+  Future<void> _editTransaction(WalletTransaction existing,
+      {String? transferTitle}) async {
     await showTransactionReceipt(
       context,
       tx: existing,
@@ -2091,6 +2092,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
       txCategories: _txCategories,
       accountTypes: _accountTypes,
       accountCategories: _accountCategories,
+      transferTitle: transferTitle,
       onEdited: (updated) async {
         await DatabaseHelper.instance.updateTransaction(existing, updated);
         await _load();
@@ -2101,7 +2103,8 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
   }
 
   // Transfer info is now handled by showTransactionReceipt inside _editTransaction.
-  void _showTransferInfo(WalletTransaction tx) => _editTransaction(tx);
+  void _showTransferInfo(WalletTransaction tx, {String? transferTitle}) =>
+      _editTransaction(tx, transferTitle: transferTitle);
 
   @override
   Widget build(BuildContext context) {
@@ -2476,7 +2479,8 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                       dense: true,
                       contentPadding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 2),
-                      onTap: () => _showTransferInfo(outTx),
+                      onTap: () => _showTransferInfo(outTx,
+                          transferTitle: transferLabel),
                       leading: CircleAvatar(
                         radius: 22,
                         backgroundColor: transferBgColor,
