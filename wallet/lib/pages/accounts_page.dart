@@ -5,6 +5,7 @@ import '../database/database_helper.dart';
 import '../models/account_model.dart';
 import '../models/transaction_model.dart';
 import '../models/category_model.dart';
+import '../widgets/transaction_receipt_dialog.dart';
 
 // ── Number formatter ───────────────────────────────────────────────────────────
 
@@ -2083,150 +2084,24 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
   }
 
   Future<void> _editTransaction(WalletTransaction existing) async {
-    if (existing.type == 'transfer_out' || existing.type == 'transfer_in') {
-      _showTransferInfo(existing);
-      return;
-    }
-    final updated = await WalletTransaction.showDialog(
+    await showTransactionReceipt(
       context,
+      tx: existing,
       accounts: _allAccounts,
-      categories: _txCategories,
+      txCategories: _txCategories,
       accountTypes: _accountTypes,
       accountCategories: _accountCategories,
-      existing: existing,
-      type: existing.type,
-    );
-    if (updated == null) return;
-    await DatabaseHelper.instance.updateTransaction(existing, updated);
-    await _load();
-    widget.onTransactionChanged?.call();
-  }
-
-  void _showTransferInfo(WalletTransaction tx) {
-    const transferColor = Color(0xFF2563EB);
-    const transferBgColor = Color(0xFFDBEAFE);
-    final isOut = tx.type == 'transfer_out';
-    final rawNote = tx.note ?? '';
-    final userNote = rawNote.replaceAll(RegExp(r'\s*__ref:[^_]+__'), '').trim();
-
-    // Resolve the paired account name
-    String pairedAccountName = isOut ? 'Transfer Out' : 'Transfer In';
-    final ref = _extractRef(rawNote);
-    if (ref != null) {
-      final pairedTx = _allTransferTxs
-          .where(
-              (t) => t.id != tx.id && (t.note?.contains('__ref:$ref') ?? false))
-          .firstOrNull;
-      if (pairedTx != null) {
-        pairedAccountName = _allAccounts
-            .firstWhere(
-              (a) => a.id == pairedTx.accountId,
-              orElse: () => Account(
-                  name: 'Unknown',
-                  balance: 0,
-                  type: '',
-                  colorHex: '',
-                  icon: ''),
-            )
-            .name;
-      }
-    }
-
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) {
-        final theme = Theme.of(ctx);
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.outlineVariant,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: transferBgColor,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      Icons.swap_horiz_rounded,
-                      color: transferColor,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          isOut ? 'Transfer Out' : 'Transfer In',
-                          style: theme.textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.bold),
-                        ),
-                        Text(
-                          isOut
-                              ? 'to $pairedAccountName'
-                              : 'from $pairedAccountName',
-                          style: TextStyle(
-                              color: theme.colorScheme.outline, fontSize: 13),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Text(
-                    '${isOut ? '−' : '+'}₱${_fmt(tx.amount)}',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: isOut ? Colors.red : transferColor,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              if (userNote.isNotEmpty)
-                ListTile(
-                  leading: const Icon(Icons.note_outlined),
-                  title: const Text('Note'),
-                  subtitle: Text(userNote),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ListTile(
-                leading: const Icon(Icons.calendar_today_outlined),
-                title: const Text('Date'),
-                subtitle: Text(
-                    tx.date.length >= 10 ? tx.date.substring(0, 10) : tx.date),
-                contentPadding: EdgeInsets.zero,
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Close'),
-                ),
-              ),
-            ],
-          ),
-        );
+      onEdited: (updated) async {
+        await DatabaseHelper.instance.updateTransaction(existing, updated);
+        await _load();
+        widget.onTransactionChanged?.call();
+        return updated;
       },
     );
   }
+
+  // Transfer info is now handled by showTransactionReceipt inside _editTransaction.
+  void _showTransferInfo(WalletTransaction tx) => _editTransaction(tx);
 
   @override
   Widget build(BuildContext context) {

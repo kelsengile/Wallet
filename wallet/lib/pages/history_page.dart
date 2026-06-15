@@ -4,6 +4,7 @@ import '../database/database_helper.dart';
 import '../models/transaction_model.dart';
 import '../models/account_model.dart';
 import '../models/category_model.dart';
+import '../widgets/transaction_receipt_dialog.dart';
 
 final _currencyFmt = NumberFormat('#,##0.00', 'en_PH');
 String _fmt(double v) => _currencyFmt.format(v);
@@ -274,132 +275,24 @@ class HistoryPageState extends State<HistoryPage> {
   }
 
   Future<void> _editTransaction(WalletTransaction existing) async {
-    // Transfers are not editable via the transaction form —
-    // show a read-only info sheet instead.
-    if (existing.type == 'transfer_out' || existing.type == 'transfer_in') {
-      _showTransferInfo(existing);
-      return;
-    }
-    final updated = await WalletTransaction.showDialog(
+    await showTransactionReceipt(
       context,
+      tx: existing,
       accounts: _accounts,
-      categories: _txCategories,
+      txCategories: _txCategories,
       accountTypes: _accountTypes,
       accountCategories: _accountCategories,
-      existing: existing,
-      type: existing.type,
-    );
-    if (updated == null) return;
-    await _db.updateTransaction(existing, updated);
-    _load();
-  }
-
-  void _showTransferInfo(WalletTransaction tx) {
-    final accountName = _accounts
-        .firstWhere(
-          (a) => a.id == tx.accountId,
-          orElse: () => Account(
-              name: 'Unknown', balance: 0, type: '', colorHex: '', icon: ''),
-        )
-        .name;
-    final isOut = tx.type == 'transfer_out';
-    final rawNote = tx.note ?? '';
-    final userNote = rawNote.replaceAll(RegExp(r'\s*__ref:[^_]+__'), '').trim();
-
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) {
-        final theme = Theme.of(ctx);
-        const teal = Color(0xFF0D9488);
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.outlineVariant,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: teal.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      isOut ? Icons.arrow_upward : Icons.arrow_downward,
-                      color: teal,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          isOut ? 'Transfer Out' : 'Transfer In',
-                          style: theme.textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.bold),
-                        ),
-                        Text(
-                          accountName,
-                          style: TextStyle(
-                              color: theme.colorScheme.outline, fontSize: 13),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Text(
-                    '${isOut ? '−' : '+'}₱${_fmt(tx.amount)}',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: isOut ? Colors.red : teal,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              if (userNote.isNotEmpty)
-                ListTile(
-                  leading: const Icon(Icons.note_outlined),
-                  title: const Text('Note'),
-                  subtitle: Text(userNote),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ListTile(
-                leading: const Icon(Icons.calendar_today_outlined),
-                title: const Text('Date'),
-                subtitle: Text(
-                    tx.date.length >= 10 ? tx.date.substring(0, 10) : tx.date),
-                contentPadding: EdgeInsets.zero,
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Close'),
-                ),
-              ),
-            ],
-          ),
-        );
+      onEdited: (updated) async {
+        await _db.updateTransaction(existing, updated);
+        _load();
+        return updated;
       },
     );
   }
+
+  // Transfer info is now handled by showTransactionReceipt inside _editTransaction.
+  // This stub is kept so existing onTap references continue to compile.
+  void _showTransferInfo(WalletTransaction tx) => _editTransaction(tx);
 
   Future<void> _deleteTransaction(WalletTransaction tx) async {
     await _db.deleteTransaction(tx);
