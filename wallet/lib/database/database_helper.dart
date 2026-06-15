@@ -6,10 +6,12 @@ import '../models/account_model.dart';
 import '../models/category_model.dart';
 
 /// Result returned by [DatabaseHelper.insertTransfer].
-class TransferResult {
+/// Named with a leading underscore to avoid colliding with the
+/// [TransferResult] form-result class in transaction_model.dart.
+class _DbTransferResult {
   final int debitId;
   final int creditId;
-  const TransferResult({required this.debitId, required this.creditId});
+  const _DbTransferResult({required this.debitId, required this.creditId});
 }
 
 // ── Trash-bin item wrappers ────────────────────────────────────────────────────
@@ -1410,7 +1412,7 @@ class DatabaseHelper {
 
   // ── Transfer ───────────────────────────────────────────────────────────────
 
-  Future<TransferResult> insertTransfer({
+  Future<_DbTransferResult> insertTransfer({
     required int fromAccountId,
     required int toAccountId,
     required double amount,
@@ -1457,7 +1459,84 @@ class DatabaseHelper {
       );
     });
 
-    return TransferResult(debitId: debitId, creditId: creditId);
+    return _DbTransferResult(debitId: debitId, creditId: creditId);
+  }
+
+  /// Updates both legs of an existing transfer atomically.
+  ///
+  /// Reverses the old balance effects on both accounts, then applies the new
+  /// ones. The `__ref:…__` tag and original date are preserved (passed in via
+  /// [refId] and [date]). If [fromAccountId] or [toAccountId] changed the
+  /// balance adjustment targets the correct accounts for both old and new.
+  Future<void> updateTransfer({
+    required int outLegId,
+    required int inLegId,
+    required int oldFromAccountId,
+    required int oldToAccountId,
+    required double oldAmount,
+    required int newFromAccountId,
+    required int newToAccountId,
+    required double newAmount,
+    required String date,
+    required String refId,
+    String note = '',
+  }) async {
+    final db = await database;
+    final noteWithRef =
+        note.isEmpty ? '__ref:${refId}__' : '$note __ref:${refId}__';
+
+    await db.transaction((txn) async {
+      // ── Reverse old balance effects ──────────────────────────────────────
+      await txn.rawUpdate(
+        'UPDATE accounts SET balance = balance + ? WHERE id = ?',
+        [oldAmount, oldFromAccountId],
+      );
+      await txn.rawUpdate(
+        'UPDATE accounts SET balance = balance - ? WHERE id = ?',
+        [oldAmount, oldToAccountId],
+      );
+
+      // ── Update both legs ─────────────────────────────────────────────────
+      await txn.update(
+        'transactions',
+        {
+          'title': 'Transfer Out',
+          'amount': newAmount,
+          'date': date,
+          'type': 'transfer_out',
+          'category': kTransferCategoryName,
+          'note': noteWithRef,
+          'account_id': newFromAccountId,
+        },
+        where: 'id = ?',
+        whereArgs: [outLegId],
+      );
+
+      await txn.update(
+        'transactions',
+        {
+          'title': 'Transfer In',
+          'amount': newAmount,
+          'date': date,
+          'type': 'transfer_in',
+          'category': kTransferCategoryName,
+          'note': noteWithRef,
+          'account_id': newToAccountId,
+        },
+        where: 'id = ?',
+        whereArgs: [inLegId],
+      );
+
+      // ── Apply new balance effects ─────────────────────────────────────────
+      await txn.rawUpdate(
+        'UPDATE accounts SET balance = balance - ? WHERE id = ?',
+        [newAmount, newFromAccountId],
+      );
+      await txn.rawUpdate(
+        'UPDATE accounts SET balance = balance + ? WHERE id = ?',
+        [newAmount, newToAccountId],
+      );
+    });
   }
 
   // ── Analytics ──────────────────────────────────────────────────────────────

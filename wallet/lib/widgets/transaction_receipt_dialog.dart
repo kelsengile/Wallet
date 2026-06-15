@@ -46,6 +46,9 @@ Future<WalletTransaction?> showTransactionReceipt(
   List<String>? typeOrder,
   String? transferTitle,
   Future<WalletTransaction?> Function(WalletTransaction)? onEdited,
+  Future<void> Function(TransferResult result, WalletTransaction outLeg,
+          WalletTransaction inLeg)?
+      onTransferEdited,
 }) {
   return showDialog<WalletTransaction>(
     context: context,
@@ -59,6 +62,7 @@ Future<WalletTransaction?> showTransactionReceipt(
       typeOrder: typeOrder,
       transferTitle: transferTitle,
       onEdited: onEdited,
+      onTransferEdited: onTransferEdited,
     ),
   );
 }
@@ -74,6 +78,8 @@ class _TransactionReceiptDialog extends StatefulWidget {
   final List<String>? typeOrder;
   final String? transferTitle;
   final Future<WalletTransaction?> Function(WalletTransaction)? onEdited;
+  final Future<void> Function(TransferResult result, WalletTransaction outLeg,
+      WalletTransaction inLeg)? onTransferEdited;
 
   const _TransactionReceiptDialog({
     required this.tx,
@@ -84,6 +90,7 @@ class _TransactionReceiptDialog extends StatefulWidget {
     this.typeOrder,
     this.transferTitle,
     this.onEdited,
+    this.onTransferEdited,
   });
 
   @override
@@ -160,7 +167,10 @@ class _TransactionReceiptDialogState extends State<_TransactionReceiptDialog> {
   // ── Open edit form ────────────────────────────────────────────────────────
 
   Future<void> _openEdit() async {
-    if (_isTransfer) return; // transfers are not editable via this form
+    if (_isTransfer) {
+      await _openTransferEdit();
+      return;
+    }
 
     final updated = await WalletTransaction.showDialog(
       context,
@@ -175,16 +185,53 @@ class _TransactionReceiptDialogState extends State<_TransactionReceiptDialog> {
 
     if (updated == null || !mounted) return;
 
-    // Let the caller persist it
     WalletTransaction? saved;
     if (widget.onEdited != null) {
       saved = await widget.onEdited!(updated);
     }
 
-    // Update local state so the receipt refreshes immediately
     setState(() => _tx = saved ?? updated);
+    if (mounted) Navigator.pop(context, _tx);
+  }
 
-    // Return the updated tx when the dialog closes
+  Future<void> _openTransferEdit() async {
+    // Determine which leg is out and which is in.
+    final outLeg = _tx.type == 'transfer_out' ? _tx : (_pairedLeg ?? _tx);
+    final inLeg = _tx.type == 'transfer_in' ? _tx : (_pairedLeg ?? _tx);
+
+    final result = await WalletTransactionTransfer.showTransferDialog(
+      context,
+      accounts: widget.accounts,
+      accountTypes: widget.accountTypes,
+      typeOrder: widget.typeOrder,
+      existing: outLeg,
+      existingPaired: inLeg,
+    );
+
+    if (result == null || !mounted) return;
+
+    if (widget.onTransferEdited != null) {
+      await widget.onTransferEdited!(result, outLeg, inLeg);
+    }
+
+    // Reload the paired leg so the receipt reflects the change.
+    await _loadPairedLeg();
+
+    // Update the displayed leg with the new amount/note.
+    final ref = result.existingRef ?? '';
+    final noteWithRef = result.note.isEmpty
+        ? '__ref:${ref}__'
+        : '${result.note} __ref:${ref}__';
+    setState(() {
+      _tx = _tx.copyWith(
+        amount: result.amount,
+        note: noteWithRef,
+        accountId: _tx.type == 'transfer_out'
+            ? result.fromAccountId
+            : result.toAccountId,
+      );
+    });
+
     if (mounted) Navigator.pop(context, _tx);
   }
 
@@ -277,7 +324,7 @@ class _TransactionReceiptDialogState extends State<_TransactionReceiptDialog> {
           ),
 
           // ── Pencil FAB (top-right, outside the card) ───────────────────
-          if (!_isTransfer && widget.onEdited != null)
+          if (widget.onEdited != null || widget.onTransferEdited != null)
             Positioned(
               top: -14,
               right: -14,

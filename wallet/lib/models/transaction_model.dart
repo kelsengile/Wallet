@@ -122,12 +122,18 @@ class TransferResult {
   final String note;
   final String date;
 
+  /// The `__ref:…__` value extracted from the original transfer note.
+  /// Non-null only when editing an existing transfer — used by [DatabaseHelper.updateTransfer]
+  /// to keep both legs linked by the same ref tag.
+  final String? existingRef;
+
   const TransferResult({
     required this.fromAccountId,
     required this.toAccountId,
     required this.amount,
     required this.note,
     required this.date,
+    this.existingRef,
   });
 }
 
@@ -142,6 +148,8 @@ extension WalletTransactionTransfer on WalletTransaction {
     required List<WalletCategory> accountTypes,
     int? preselectedFromId,
     List<String>? typeOrder,
+    WalletTransaction? existing,
+    WalletTransaction? existingPaired,
   }) {
     return showModalBottomSheet<TransferResult>(
       context: context,
@@ -155,6 +163,8 @@ extension WalletTransactionTransfer on WalletTransaction {
         accountTypes: accountTypes,
         preselectedFromId: preselectedFromId,
         typeOrder: typeOrder,
+        existing: existing,
+        existingPaired: existingPaired,
       ),
     );
   }
@@ -733,12 +743,16 @@ class _TransferForm extends StatefulWidget {
   final List<WalletCategory> accountTypes;
   final int? preselectedFromId;
   final List<String>? typeOrder;
+  final WalletTransaction? existing;
+  final WalletTransaction? existingPaired;
 
   const _TransferForm({
     required this.accounts,
     required this.accountTypes,
     this.preselectedFromId,
     this.typeOrder,
+    this.existing,
+    this.existingPaired,
   });
 
   @override
@@ -751,12 +765,34 @@ class _TransferFormState extends State<_TransferForm> {
   final _amountCtrl = TextEditingController();
   final _noteCtrl = TextEditingController();
 
+  /// Extracts the __ref:…__ value from a note string, or null if absent.
+  static String? _extractRef(String? note) {
+    if (note == null) return null;
+    final match = RegExp(r'__ref:([^_]+)__').firstMatch(note);
+    return match?.group(1);
+  }
+
+  /// Returns the user-visible note (everything except the __ref:…__ tag).
+  static String _cleanNote(String? note) =>
+      (note ?? '').replaceAll(RegExp(r'\s*__ref:[^_]+__'), '').trim();
+
   @override
   void initState() {
     super.initState();
-    // Start with empty pickers; user must explicitly choose
-    _fromId = widget.preselectedFromId;
-    _toId = null;
+    final e = widget.existing;
+    final ep = widget.existingPaired;
+    if (e != null) {
+      // Edit mode: resolve which leg is out and which is in.
+      final outLeg = e.type == 'transfer_out' ? e : ep;
+      final inLeg = e.type == 'transfer_in' ? e : ep;
+      _fromId = outLeg?.accountId;
+      _toId = inLeg?.accountId;
+      _amountCtrl.text = e.amount.toStringAsFixed(2);
+      _noteCtrl.text = _cleanNote(e.note);
+    } else {
+      _fromId = widget.preselectedFromId;
+      _toId = null;
+    }
   }
 
   @override
@@ -772,6 +808,10 @@ class _TransferFormState extends State<_TransferForm> {
     final amount = double.tryParse(_amountCtrl.text.trim());
     if (amount == null || amount <= 0) return;
 
+    // In edit mode: preserve the original ref tag and date.
+    final existingRef = _extractRef(widget.existing?.note);
+    final existingDate = widget.existing?.date;
+
     Navigator.pop(
       context,
       TransferResult(
@@ -779,7 +819,8 @@ class _TransferFormState extends State<_TransferForm> {
         toAccountId: _toId!,
         amount: amount,
         note: _noteCtrl.text.trim(),
-        date: DateTime.now().toIso8601String(),
+        date: existingDate ?? DateTime.now().toIso8601String(),
+        existingRef: existingRef,
       ),
     );
   }
@@ -1056,7 +1097,7 @@ class _TransferFormState extends State<_TransferForm> {
               ),
               const SizedBox(width: 10),
               Text(
-                'Transfer Funds',
+                widget.existing != null ? 'Edit Transfer' : 'Transfer Funds',
                 style: theme.textTheme.titleLarge
                     ?.copyWith(fontWeight: FontWeight.bold),
               ),
@@ -1168,8 +1209,11 @@ class _TransferFormState extends State<_TransferForm> {
             width: double.infinity,
             child: FilledButton.icon(
               onPressed: _submit,
-              icon: const Icon(Icons.swap_horiz),
-              label: const Text('Transfer'),
+              icon: Icon(widget.existing != null
+                  ? Icons.save_rounded
+                  : Icons.swap_horiz),
+              label:
+                  Text(widget.existing != null ? 'Save Changes' : 'Transfer'),
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 backgroundColor: teal,

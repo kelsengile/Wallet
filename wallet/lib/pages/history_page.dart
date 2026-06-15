@@ -291,6 +291,24 @@ class HistoryPageState extends State<HistoryPage> {
         _load();
         return updated;
       },
+      onTransferEdited: (result, outLeg, inLeg) async {
+        final ref =
+            result.existingRef ?? '${DateTime.now().millisecondsSinceEpoch}';
+        await _db.updateTransfer(
+          outLegId: outLeg.id!,
+          inLegId: inLeg.id!,
+          oldFromAccountId: outLeg.accountId!,
+          oldToAccountId: inLeg.accountId!,
+          oldAmount: outLeg.amount,
+          newFromAccountId: result.fromAccountId,
+          newToAccountId: result.toAccountId,
+          newAmount: result.amount,
+          date: result.date,
+          refId: ref,
+          note: result.note,
+        );
+        _load();
+      },
     );
   }
 
