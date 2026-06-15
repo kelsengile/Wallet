@@ -382,6 +382,7 @@ class _ReceiptHeader extends StatelessWidget {
     this.transferTitle,
   });
 
+  // ignore: unused_element
   Account _resolve(int? id) => accounts.firstWhere(
         (a) => a.id == id,
         orElse: () => Account(
@@ -394,45 +395,22 @@ class _ReceiptHeader extends StatelessWidget {
 
     // ── Icon
     IconData icon;
-    String title;
-    String subtitle;
 
+    String title;
+    Color titleColor;
     if (isTransfer) {
       final isOut = tx.type == 'transfer_out';
       icon = isOut ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded;
       title = transferTitle ?? (isOut ? 'Transfer Out' : 'Transfer In');
-
-      if (loadingPaired) {
-        subtitle = 'Resolving…';
-      } else {
-        final thisAcct = _resolve(tx.accountId).name;
-        final otherAcct =
-            pairedLeg != null ? _resolve(pairedLeg!.accountId).name : 'Unknown';
-        subtitle = isOut ? '$thisAcct → $otherAcct' : '$otherAcct → $thisAcct';
-      }
+      titleColor = typeColor;
     } else {
       final cat = txCategories.cast<WalletCategory?>().firstWhere(
             (c) => c?.name == tx.category,
             orElse: () => null,
           );
       icon = cat?.iconData ?? iconForKey(tx.category);
-      title = tx.title;
-      subtitle = tx.category;
-    }
-
-    // ── Amount sign + color
-    final String amountPrefix;
-    final Color amountColor;
-    if (isTransfer) {
-      final isOut = tx.type == 'transfer_out';
-      amountPrefix = isOut ? '−' : '+';
-      amountColor = isOut ? Colors.red.shade600 : typeColor;
-    } else if (isIncome) {
-      amountPrefix = '+';
-      amountColor = Colors.green.shade600;
-    } else {
-      amountPrefix = '−';
-      amountColor = Colors.red.shade600;
+      title = _typeLabel(tx.type);
+      titleColor = typeColor;
     }
 
     return Container(
@@ -455,59 +433,16 @@ class _ReceiptHeader extends StatelessWidget {
           ),
           const SizedBox(height: 14),
 
-          // Amount
-          Text(
-            '$amountPrefix₱${_fmt(tx.amount)}',
-            style: TextStyle(
-              fontSize: 30,
-              fontWeight: FontWeight.bold,
-              color: amountColor,
-              letterSpacing: -1,
-            ),
-          ),
-          const SizedBox(height: 6),
-
           // Title
           Text(
             title,
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.bold,
-              color: theme.colorScheme.onSurface,
+              color: titleColor,
             ),
             textAlign: TextAlign.center,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: 4),
-
-          // Subtitle (category or from→to)
-          Text(
-            subtitle,
-            style: TextStyle(
-              fontSize: 12,
-              color: theme.colorScheme.outline,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 8),
-
-          // Type badge
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            decoration: BoxDecoration(
-              color: typeColor.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: typeColor.withValues(alpha: 0.3)),
-            ),
-            child: Text(
-              _typeLabel(tx.type).toUpperCase(),
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1.2,
-                color: typeColor,
-              ),
-            ),
           ),
         ],
       ),
@@ -664,55 +599,42 @@ class _ReceiptBody extends StatelessWidget {
 
     rows.add(_ReceiptRow(label: 'Date', value: dateStr, theme: theme));
 
-    // Transaction ID
-    if (tx.id != null) {
-      rows.add(_ReceiptRow(
-        label: 'Txn ID',
-        value: '#${tx.id!.toString().padLeft(6, '0')}',
-        theme: theme,
-        valueStyle: TextStyle(
-          fontSize: 12,
-          color: theme.colorScheme.outline,
-          fontFamily: 'monospace',
-        ),
-      ));
-    }
-
     // Note
     if (userNote.isNotEmpty) {
       rows.add(const SizedBox(height: 4));
       rows.add(_DashedDivider());
       rows.add(const SizedBox(height: 8));
       rows.add(
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Note',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.outline,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.5,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest
-                    .withValues(alpha: 0.6),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                userNote,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurface,
-                  height: 1.4,
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 80,
+                child: Text(
+                  'Note',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.outline,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.3,
+                  ),
                 ),
               ),
-            ),
-          ],
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  userNote,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface,
+                    height: 1.4,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  textAlign: TextAlign.right,
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -768,6 +690,7 @@ class _ReceiptRow extends StatelessWidget {
     required this.theme,
     this.valueIcon,
     this.valueIconColor,
+    // ignore: unused_element_parameter
     this.valueStyle,
   });
 
@@ -792,7 +715,7 @@ class _ReceiptRow extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Row(
-              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 if (valueIcon != null) ...[
                   Icon(valueIcon, size: 12, color: valueIconColor),
