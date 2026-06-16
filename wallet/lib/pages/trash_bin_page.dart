@@ -86,9 +86,8 @@ class _TrashBinPageState extends State<TrashBinPage>
   Future<void> _permanentDeleteTransaction(
       TrashedTransaction item, int trashId) async {
     final confirm = await _confirmDialog(
-      title: 'Delete Permanently?',
-      body:
-          '"${item.transaction.title}" will be gone forever. This cannot be undone.',
+      title: 'Delete Forever?',
+      itemName: item.transaction.title,
     );
     if (!confirm) return;
     await DatabaseHelper.instance.permanentlyDeleteTransaction(trashId);
@@ -116,9 +115,8 @@ class _TrashBinPageState extends State<TrashBinPage>
 
   Future<void> _permanentDeleteAccount(TrashedAccount item, int trashId) async {
     final confirm = await _confirmDialog(
-      title: 'Delete Permanently?',
-      body:
-          '"${item.account.name}" will be gone forever. This cannot be undone.',
+      title: 'Delete Forever?',
+      itemName: item.account.name,
     );
     if (!confirm) return;
     await DatabaseHelper.instance.permanentlyDeleteAccount(trashId);
@@ -147,9 +145,8 @@ class _TrashBinPageState extends State<TrashBinPage>
   Future<void> _permanentDeleteCategory(
       TrashedCategory item, int trashId) async {
     final confirm = await _confirmDialog(
-      title: 'Delete Permanently?',
-      body:
-          '"${item.category.name}" will be gone forever. This cannot be undone.',
+      title: 'Delete Forever?',
+      itemName: item.category.name,
     );
     if (!confirm) return;
     await DatabaseHelper.instance.permanentlyDeleteCategory(trashId);
@@ -167,9 +164,9 @@ class _TrashBinPageState extends State<TrashBinPage>
     if (_totalCount == 0) return;
     final confirm = await _confirmDialog(
       title: 'Empty Trash?',
-      body:
-          'All $_totalCount item${_totalCount == 1 ? '' : 's'} will be permanently deleted. This cannot be undone.',
+      itemCount: _totalCount,
       confirmLabel: 'Empty Trash',
+      isEmptyAll: true,
     );
     if (!confirm) return;
     await DatabaseHelper.instance.emptyTrash();
@@ -185,25 +182,21 @@ class _TrashBinPageState extends State<TrashBinPage>
 
   Future<bool> _confirmDialog({
     required String title,
-    required String body,
-    String confirmLabel = 'Delete',
+    String? itemName,
+    int? itemCount,
+    String confirmLabel = 'Delete Forever',
+    bool isEmptyAll = false,
   }) async {
+    final cs = Theme.of(context).colorScheme;
     final result = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: Text(body),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(confirmLabel),
-          ),
-        ],
+      builder: (ctx) => _DangerDialog(
+        title: title,
+        itemName: itemName,
+        itemCount: itemCount,
+        confirmLabel: confirmLabel,
+        isEmptyAll: isEmptyAll,
+        accentColor: cs.error,
       ),
     );
     return result ?? false;
@@ -247,7 +240,7 @@ class _TrashBinPageState extends State<TrashBinPage>
               onPressed: _emptyTrash,
               icon: const Icon(Icons.delete_sweep_outlined, size: 18),
               label: const Text('Empty'),
-              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              style: TextButton.styleFrom(foregroundColor: cs.error),
             ),
           const SizedBox(width: 4),
         ],
@@ -1125,6 +1118,177 @@ class _DeletionTimerBanner extends StatelessWidget {
   }
 }
 
+// ── Danger confirmation dialog ────────────────────────────────────────────────
+//
+// Shared dialog for both "Delete Forever" (single item) and "Empty Trash"
+// (bulk) confirmations. Leads with an icon badge, a clear consequence
+// statement, and a "this can't be undone" notice — styled to read as a
+// genuine warning rather than a routine pop-up.
+
+class _DangerDialog extends StatelessWidget {
+  final String title;
+  final String? itemName;
+  final int? itemCount;
+  final String confirmLabel;
+  final bool isEmptyAll;
+  final Color accentColor;
+
+  const _DangerDialog({
+    required this.title,
+    required this.confirmLabel,
+    required this.isEmptyAll,
+    required this.accentColor,
+    this.itemName,
+    this.itemCount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    return Dialog(
+      backgroundColor: cs.surfaceContainerHigh,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Icon badge
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: accentColor.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                isEmptyAll
+                    ? Icons.delete_sweep_rounded
+                    : Icons.delete_forever_rounded,
+                color: accentColor,
+                size: 28,
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Title
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            // Body copy
+            Text.rich(
+              _buildBody(theme, cs),
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: cs.onSurfaceVariant,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // "Can't be undone" pill
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: accentColor.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.warning_amber_rounded,
+                      size: 16, color: accentColor),
+                  const SizedBox(width: 8),
+                  Text(
+                    'This action cannot be undone',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: accentColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // Actions
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: cs.onSurface,
+                      side: BorderSide(color: cs.outlineVariant),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Cancel'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: accentColor,
+                      foregroundColor: cs.onError,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    onPressed: () => Navigator.pop(context, true),
+                    child: Text(
+                      confirmLabel,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  TextSpan _buildBody(ThemeData theme, ColorScheme cs) {
+    final base = theme.textTheme.bodyMedium?.copyWith(
+      color: cs.onSurfaceVariant,
+      height: 1.4,
+    );
+    final strong = base?.copyWith(
+      color: cs.onSurface,
+      fontWeight: FontWeight.w700,
+    );
+
+    if (isEmptyAll) {
+      final count = itemCount ?? 0;
+      return TextSpan(style: base, children: [
+        const TextSpan(text: 'All '),
+        TextSpan(text: '$count item${count == 1 ? '' : 's'}', style: strong),
+        const TextSpan(text: ' in your trash will be permanently erased.'),
+      ]);
+    }
+
+    return TextSpan(style: base, children: [
+      const TextSpan(text: '"'),
+      TextSpan(text: itemName ?? 'This item', style: strong),
+      const TextSpan(text: '" will be permanently erased.'),
+    ]);
+  }
+}
+
 // ── Shared action pop-up menu ─────────────────────────────────────────────────
 
 class _ActionMenu extends StatelessWidget {
@@ -1204,30 +1368,45 @@ class _EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.delete_outline,
-            size: 72,
-            color: theme.colorScheme.outlineVariant,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            label,
-            style: theme.textTheme.bodyLarge?.copyWith(
-              color: theme.colorScheme.outline,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 96,
+              height: 96,
+              decoration: BoxDecoration(
+                color: cs.surfaceContainerHighest,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.delete_outline_rounded,
+                size: 44,
+                color: cs.outline,
+              ),
             ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Items you delete will appear here.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.outlineVariant,
+            const SizedBox(height: 20),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: cs.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 6),
+            Text(
+              'Items you delete will appear here.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: cs.outline,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
