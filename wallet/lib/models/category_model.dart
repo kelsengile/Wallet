@@ -18,7 +18,15 @@ const kCategoryGroupTransactionCategory = 'transaction_category';
 const kSubTypeIncome = 'income';
 const kSubTypeExpense = 'expense';
 
-/// The name of the built-in, non-deletable, non-editable transaction
+/// The name of the built-in system account type that cannot be edited,
+/// deleted, or renamed (mirrors the behaviour of [kMiscellaneousCategoryName]
+/// for transaction categories).
+const kCashAccountTypeName = 'Cash';
+
+/// The name of the built-in system account category that cannot be edited,
+/// deleted, or renamed.
+const kPersonalAccountCategoryName = 'Personal';
+
 /// category used for transfer-in/transfer-out legs. It is seeded once and
 /// is hidden from the regular "add transaction" category picker.
 const kTransferCategoryName = 'Transfer';
