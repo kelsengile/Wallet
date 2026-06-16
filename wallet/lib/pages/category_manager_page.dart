@@ -273,24 +273,11 @@ class _CategoryTabState extends State<_CategoryTab>
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Move to Trash'),
-        content: Text(
-          'Move "${cat.name}" to trash?\n\n'
-          'All accounts / transactions using this will be reassigned '
-          'to "$fallback". You can restore this category from the trash '
-          'bin later.',
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Move to Trash'),
-          ),
-        ],
+      builder: (ctx) => _DeleteCategoryDialog(
+        categoryName: cat.name,
+        fallbackName: fallback,
+        categoryIcon: cat.iconData,
+        categoryColor: cat.color,
       ),
     );
     if (confirmed != true) return;
@@ -343,6 +330,7 @@ class _CategoryTabState extends State<_CategoryTab>
         onDelete: _confirmDelete,
         onSetDefault: _setDefault,
         addLabel: 'Add Type',
+        allowSystemDefault: true,
         onAdd: () => _showAddDialog(kCategoryGroupAccountType),
       ),
       const SizedBox(height: 24),
@@ -362,6 +350,7 @@ class _CategoryTabState extends State<_CategoryTab>
         onDelete: _confirmDelete,
         onSetDefault: _setDefault,
         addLabel: 'Add Category',
+        allowSystemDefault: true,
         onAdd: () => _showAddDialog(kCategoryGroupAccountCategory),
       ),
     ];
@@ -385,6 +374,7 @@ class _CategoryTabState extends State<_CategoryTab>
         onDelete: _confirmDelete,
         onSetDefault: _setDefault,
         addLabel: 'Add Income Category',
+        allowSystemDefault: true,
         onAdd: () => _showAddDialog(
           kCategoryGroupTransactionCategory,
           subType: kSubTypeIncome,
@@ -401,6 +391,7 @@ class _CategoryTabState extends State<_CategoryTab>
         onDelete: _confirmDelete,
         onSetDefault: _setDefault,
         addLabel: 'Add Expense Category',
+        allowSystemDefault: true,
         onAdd: () => _showAddDialog(
           kCategoryGroupTransactionCategory,
           subType: kSubTypeExpense,
@@ -439,6 +430,10 @@ class _CategorySection extends StatelessWidget {
   final String? addLabel;
   final VoidCallback? onAdd;
 
+  /// When true, system categories that are not Transfer (i.e. Miscellaneous)
+  /// are allowed to be set as default via the gear icon.
+  final bool allowSystemDefault;
+
   const _CategorySection({
     required this.title,
     required this.items,
@@ -450,6 +445,7 @@ class _CategorySection extends StatelessWidget {
     required this.onSetDefault,
     this.addLabel,
     this.onAdd,
+    this.allowSystemDefault = false,
   });
 
   @override
@@ -494,18 +490,33 @@ class _CategorySection extends StatelessWidget {
             ),
             itemBuilder: (_, i) {
               final cat = items[i];
+              // "Cash" account type and "Personal" account category are
+              // built-in system entries even if their DB isSystem flag is not
+              // set (legacy rows). Mirror the Miscellaneous treatment.
+              final isEffectivelySystem = cat.isSystem ||
+                  (cat.name.toLowerCase() == 'cash' &&
+                      cat.groupType == kCategoryGroupAccountType) ||
+                  (cat.name.toLowerCase() == 'personal' &&
+                      cat.groupType == kCategoryGroupAccountCategory);
+              // System categories that are not Transfer may be re-defaulted
+              // when allowSystemDefault is true. This covers Miscellaneous
+              // (transaction), Cash (account type), and Personal (account
+              // category) — all built-in but legitimately re-defaultable.
+              final isTransfer = cat.name == kTransferCategoryName;
+              final canSetDefault = !cat.isDefault &&
+                  (!isEffectivelySystem || (allowSystemDefault && !isTransfer));
               return _CategoryTile(
                 key: ValueKey('cat_${cat.id}_${cat.name}'),
-                category: cat,
+                category: cat.isSystem != isEffectivelySystem
+                    ? cat.copyWith(isSystem: true)
+                    : cat,
                 showColor: showColor,
-                onEdit: cat.isSystem ? null : () => onEdit(cat),
-                onDelete: (cat.isSystem || cat.isDefault)
+                onEdit: isEffectivelySystem ? null : () => onEdit(cat),
+                onDelete: (isEffectivelySystem || cat.isDefault)
                     ? null
                     : () => onDelete(cat),
-                onSetDefault: (cat.isDefault || cat.isSystem)
-                    ? null
-                    : () => onSetDefault(cat),
-                onDismiss: (cat.isSystem || cat.isDefault)
+                onSetDefault: canSetDefault ? () => onSetDefault(cat) : null,
+                onDismiss: (isEffectivelySystem || cat.isDefault)
                     ? null
                     : () => onDelete(cat),
               );
@@ -578,7 +589,7 @@ class _CategoryTile extends StatelessWidget {
               _Badge(
                   label: 'Default',
                   color: theme.colorScheme.primary,
-                  icon: Icons.star),
+                  icon: Icons.settings),
             ],
             if (category.isSystem) ...[
               const SizedBox(width: 6),
@@ -612,7 +623,7 @@ class _CategoryTile extends StatelessWidget {
           children: [
             if (onSetDefault != null)
               IconButton(
-                icon: const Icon(Icons.star_border_outlined, size: 20),
+                icon: const Icon(Icons.settings_outlined, size: 20),
                 tooltip: 'Set as default',
                 onPressed: onSetDefault,
               ),
@@ -621,13 +632,6 @@ class _CategoryTile extends StatelessWidget {
                 icon: const Icon(Icons.edit_outlined, size: 20),
                 tooltip: 'Edit',
                 onPressed: onEdit,
-              ),
-            if (onDelete != null)
-              IconButton(
-                icon: Icon(Icons.delete_outline,
-                    size: 20, color: theme.colorScheme.error),
-                tooltip: 'Delete',
-                onPressed: onDelete,
               ),
             const Padding(
               padding: EdgeInsets.only(left: 2),
@@ -707,6 +711,175 @@ class _Badge extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// _DeleteCategoryDialog — styled confirmation dialog for category deletion
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _DeleteCategoryDialog extends StatelessWidget {
+  final String categoryName;
+  final String fallbackName;
+  final IconData categoryIcon;
+  final Color categoryColor;
+
+  const _DeleteCategoryDialog({
+    required this.categoryName,
+    required this.fallbackName,
+    required this.categoryIcon,
+    required this.categoryColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final errorColor = theme.colorScheme.error;
+    final errorContainer = theme.colorScheme.errorContainer;
+
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ── icon badge ───────────────────────────────────────────────
+            Stack(
+              alignment: Alignment.bottomRight,
+              children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: categoryColor.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(categoryIcon, size: 32, color: categoryColor),
+                ),
+                Container(
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: errorColor,
+                    shape: BoxShape.circle,
+                    border:
+                        Border.all(color: theme.colorScheme.surface, width: 2),
+                  ),
+                  child: const Icon(Icons.delete_outline,
+                      size: 12, color: Colors.white),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // ── title ────────────────────────────────────────────────────
+            Text(
+              'Move to Trash?',
+              style: theme.textTheme.titleLarge
+                  ?.copyWith(fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              capitalizeWords(categoryName),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.outline,
+                fontWeight: FontWeight.w500,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+
+            // ── reassignment notice ──────────────────────────────────────
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: errorContainer.withValues(alpha: 0.45),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: errorColor.withValues(alpha: 0.25)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.swap_horiz_rounded, size: 18, color: errorColor),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: RichText(
+                      text: TextSpan(
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: theme.colorScheme.onSurface),
+                        children: [
+                          const TextSpan(
+                              text:
+                                  'All accounts & transactions using this category will be reassigned to '),
+                          TextSpan(
+                            text: capitalizeWords(fallbackName),
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          const TextSpan(text: '.'),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+
+            // ── restore hint ─────────────────────────────────────────────
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.restore_from_trash_outlined,
+                    size: 14, color: theme.colorScheme.outline),
+                const SizedBox(width: 5),
+                Text(
+                  'You can restore it from the trash bin later.',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.outline),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+
+            // ── actions ──────────────────────────────────────────────────
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('Cancel'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () => Navigator.pop(context, true),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: errorColor,
+                      foregroundColor: theme.colorScheme.onError,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                    icon: const Icon(Icons.delete_outline, size: 18),
+                    label: const Text('Move to Trash'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // _CategoryFormDialog — Add / Edit dialog
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -750,6 +923,19 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
     super.dispose();
   }
 
+  String _addTitle() {
+    if (widget.groupType == kCategoryGroupAccountType) {
+      return 'Add Account Type';
+    }
+    if (widget.groupType == kCategoryGroupAccountCategory) {
+      return 'Add Account Category';
+    }
+    // transaction categories
+    if (widget.subType == kSubTypeIncome) return 'Add Income Category';
+    if (widget.subType == kSubTypeExpense) return 'Add Expense Category';
+    return 'Add Category';
+  }
+
   void _submit() {
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) return;
@@ -779,7 +965,7 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
     final isEdit = widget.existing != null;
 
     return AlertDialog(
-      title: Text(isEdit ? 'Edit Category' : 'New Category'),
+      title: Text(isEdit ? 'Edit Category' : _addTitle()),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
