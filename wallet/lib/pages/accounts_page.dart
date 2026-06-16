@@ -2291,6 +2291,13 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
     widget.onTransactionChanged?.call();
   }
 
+  Future<void> _deleteTransfer(
+      WalletTransaction outTx, WalletTransaction inTx) async {
+    await DatabaseHelper.instance.deleteTransfer(outTx, inTx);
+    await _load();
+    widget.onTransactionChanged?.call();
+  }
+
   Widget _buildGroupedList(
       List<WalletTransaction> txs, ThemeData theme, ScrollController ctrl) {
     // ── Group by calendar date "yyyy-MM-dd", sorted DESC ───────────────────
@@ -2491,8 +2498,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                       );
                     },
                     onDismissed: (_) async {
-                      await _deleteTransaction(outTx);
-                      await _deleteTransaction(inTx);
+                      await _deleteTransfer(outTx, inTx);
                     },
                     child: ListTile(
                       dense: true,

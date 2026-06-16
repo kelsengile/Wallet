@@ -321,6 +321,12 @@ class HistoryPageState extends State<HistoryPage> {
     _load();
   }
 
+  Future<void> _deleteTransfer(
+      WalletTransaction outTx, WalletTransaction inTx) async {
+    await _db.deleteTransfer(outTx, inTx);
+    _load();
+  }
+
   // ── Date group label ──────────────────────────────────────────────────────
 
   /// Returns the header string for a group of transactions sharing the same
@@ -529,8 +535,7 @@ class HistoryPageState extends State<HistoryPage> {
                     ),
                     confirmDismiss: (_) async => true,
                     onDismissed: (_) async {
-                      await _deleteTransaction(outTx);
-                      await _deleteTransaction(inTx);
+                      await _deleteTransfer(outTx, inTx);
                     },
                     child: ListTile(
                       dense: true,
