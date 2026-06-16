@@ -272,7 +272,10 @@ class _TransactionFormState extends State<_TransactionForm> {
   Future<void> _pickDate(BuildContext context) async {
     final picked = await showDialog<DateTime>(
       context: context,
-      builder: (ctx) => _CalendarDatePickerDialog(initialDate: _selectedDate),
+      builder: (ctx) => _CalendarDatePickerDialog(
+        initialDate: _selectedDate,
+        accentColor: _accentColor,
+      ),
     );
     if (picked != null) {
       setState(() {
@@ -892,7 +895,10 @@ class _TransferFormState extends State<_TransferForm> {
   Future<void> _pickDate(BuildContext context) async {
     final picked = await showDialog<DateTime>(
       context: context,
-      builder: (ctx) => _CalendarDatePickerDialog(initialDate: _selectedDate),
+      builder: (ctx) => _CalendarDatePickerDialog(
+        initialDate: _selectedDate,
+        accentColor: const Color(0xFF0D9488),
+      ),
     );
     if (picked != null) {
       setState(() {
@@ -1353,8 +1359,12 @@ class _TransferFormState extends State<_TransferForm> {
 /// on the selected day, today's date accented, and future days disabled.
 class _CalendarDatePickerDialog extends StatefulWidget {
   final DateTime initialDate;
+  final Color accentColor;
 
-  const _CalendarDatePickerDialog({required this.initialDate});
+  const _CalendarDatePickerDialog({
+    required this.initialDate,
+    required this.accentColor,
+  });
 
   @override
   State<_CalendarDatePickerDialog> createState() =>
@@ -1394,7 +1404,7 @@ class _CalendarDatePickerDialogState extends State<_CalendarDatePickerDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final primary = theme.colorScheme.primary;
+    final primary = widget.accentColor;
     final now = DateTime.now();
 
     final onForward = (_calendarMonth.year > now.year ||
@@ -1559,6 +1569,10 @@ class _CalendarDatePickerDialogState extends State<_CalendarDatePickerDialog> {
               children: [
                 Expanded(
                   child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: primary,
+                      side: BorderSide(color: primary.withValues(alpha: 0.5)),
+                    ),
                     onPressed: () => Navigator.pop(context),
                     child: const Text('Cancel'),
                   ),
@@ -1566,6 +1580,10 @@ class _CalendarDatePickerDialogState extends State<_CalendarDatePickerDialog> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: primary,
+                      foregroundColor: Colors.white,
+                    ),
                     onPressed: () => Navigator.pop(context, _selected),
                     child: const Text('Apply'),
                   ),
