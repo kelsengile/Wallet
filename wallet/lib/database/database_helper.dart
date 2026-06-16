@@ -1410,6 +1410,75 @@ class DatabaseHelper {
     return await db.delete('transactions', where: 'id = ?', whereArgs: [tx.id]);
   }
 
+  /// Soft-deletes BOTH legs of a transfer together, so they land in the trash
+  /// bin as a matched pair (sharing the same `__ref:…__` tag) and can be
+  /// restored or purged as a single unit.
+  ///
+  /// Use this instead of calling [deleteTransaction] separately on each leg —
+  /// doing that leaves the other leg live in the `transactions` table and
+  /// breaks pairing in the trash bin (the deleted leg shows up as an orphaned
+  /// single card instead of a unified transfer card).
+  Future<void> deleteTransfer(
+      WalletTransaction outLeg, WalletTransaction inLeg) async {
+    final db = await database;
+    final now = DateTime.now().toIso8601String();
+
+    Future<String> resolveAccountName(int? accountId) async {
+      if (accountId == null) return '';
+      final rows = await db.query(
+        'accounts',
+        columns: ['name'],
+        where: 'id = ?',
+        whereArgs: [accountId],
+        limit: 1,
+      );
+      return rows.isNotEmpty ? (rows.first['name'] as String? ?? '') : '';
+    }
+
+    final outAccountName = await resolveAccountName(outLeg.accountId);
+    final inAccountName = await resolveAccountName(inLeg.accountId);
+
+    await db.transaction((txn) async {
+      await txn.insert('trash_transactions', {
+        'orig_id': outLeg.id,
+        'title': outLeg.title,
+        'amount': outLeg.amount,
+        'date': outLeg.date,
+        'type': outLeg.type,
+        'category': outLeg.category,
+        'note': outLeg.note ?? '',
+        'account_id': outLeg.accountId,
+        'account_name': outAccountName,
+        'deleted_at': now,
+      });
+      await txn.insert('trash_transactions', {
+        'orig_id': inLeg.id,
+        'title': inLeg.title,
+        'amount': inLeg.amount,
+        'date': inLeg.date,
+        'type': inLeg.type,
+        'category': inLeg.category,
+        'note': inLeg.note ?? '',
+        'account_id': inLeg.accountId,
+        'account_name': inAccountName,
+        'deleted_at': now,
+      });
+
+      // Reverse balance effects for both legs.
+      await txn.rawUpdate(
+        'UPDATE accounts SET balance = balance + ? WHERE id = ?',
+        [outLeg.amount, outLeg.accountId ?? 1],
+      );
+      await txn.rawUpdate(
+        'UPDATE accounts SET balance = balance - ? WHERE id = ?',
+        [inLeg.amount, inLeg.accountId ?? 1],
+      );
+
+      await txn.delete('transactions', where: 'id = ?', whereArgs: [outLeg.id]);
+      await txn.delete('transactions', where: 'id = ?', whereArgs: [inLeg.id]);
+    });
+  }
+
   // ── Transfer ───────────────────────────────────────────────────────────────
 
   Future<_DbTransferResult> insertTransfer({
