@@ -33,6 +33,7 @@ class _TrashBinPageState extends State<TrashBinPage>
   List<TrashedTransaction> _transactions = [];
   List<TrashedAccount> _accounts = [];
   List<TrashedCategory> _categories = [];
+  CategoryRegistry _registry = CategoryRegistry.empty();
   bool _loading = true;
 
   @override
@@ -54,11 +55,13 @@ class _TrashBinPageState extends State<TrashBinPage>
     final txs = await DatabaseHelper.instance.getTrashedTransactions();
     final accts = await DatabaseHelper.instance.getTrashedAccounts();
     final cats = await DatabaseHelper.instance.getTrashedCategories();
+    final registry = await DatabaseHelper.instance.getCategoryRegistry();
     if (!mounted) return;
     setState(() {
       _transactions = txs;
       _accounts = accts;
       _categories = cats;
+      _registry = registry;
       _loading = false;
     });
   }
@@ -298,24 +301,33 @@ class _TrashBinPageState extends State<TrashBinPage>
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : TabBarView(
-              controller: _tabCtrl,
+          : Column(
               children: [
-                _TransactionsTab(
-                  items: _transactions,
-                  onRestore: _restoreTransaction,
-                  onDelete: _permanentDeleteTransaction,
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabCtrl,
+                    children: [
+                      _TransactionsTab(
+                        items: _transactions,
+                        registry: _registry,
+                        onRestore: _restoreTransaction,
+                        onDelete: _permanentDeleteTransaction,
+                      ),
+                      _AccountsTab(
+                        items: _accounts,
+                        registry: _registry,
+                        onRestore: _restoreAccount,
+                        onDelete: _permanentDeleteAccount,
+                      ),
+                      _CategoriesTab(
+                        items: _categories,
+                        onRestore: _restoreCategory,
+                        onDelete: _permanentDeleteCategory,
+                      ),
+                    ],
+                  ),
                 ),
-                _AccountsTab(
-                  items: _accounts,
-                  onRestore: _restoreAccount,
-                  onDelete: _permanentDeleteAccount,
-                ),
-                _CategoriesTab(
-                  items: _categories,
-                  onRestore: _restoreCategory,
-                  onDelete: _permanentDeleteCategory,
-                ),
+                const _DeletionTimerBanner(),
               ],
             ),
     );
@@ -349,41 +361,132 @@ class _CountChip extends StatelessWidget {
 
 // ── Transactions tab ──────────────────────────────────────────────────────────
 
+/// Represents either a single non-transfer transaction or a paired
+/// transfer_out + transfer_in displayed as one card.
+class _TxRow {
+  /// The "primary" trashed transaction (for non-transfers, the only one;
+  /// for transfers, the transfer_out leg).
+  final TrashedTransaction primary;
+
+  /// For transfers only: the matching transfer_in leg.
+  final TrashedTransaction? transferIn;
+
+  const _TxRow(this.primary, {this.transferIn});
+
+  bool get isTransfer =>
+      transferIn != null ||
+      primary.transaction.type == 'transfer_out' ||
+      primary.transaction.type == 'transfer_in';
+}
+
 class _TransactionsTab extends StatelessWidget {
   final List<TrashedTransaction> items;
+  final CategoryRegistry registry;
   final void Function(TrashedTransaction item, int trashId) onRestore;
   final void Function(TrashedTransaction item, int trashId) onDelete;
 
   const _TransactionsTab({
     required this.items,
+    required this.registry,
     required this.onRestore,
     required this.onDelete,
   });
+
+  /// Extracts the __ref:VALUE__ tag from a note string — the shared key
+  /// that links a transfer_out and transfer_in leg.
+  static String? _extractRef(String? note) {
+    if (note == null) return null;
+    final m = RegExp(r'__ref:([^_]+)__').firstMatch(note);
+    return m?.group(1);
+  }
+
+  /// Pairs transfer_out + transfer_in rows into single [_TxRow] entries
+  /// using the shared __ref:...__  tag in their notes.
+  List<_TxRow> _buildRows(List<TrashedTransaction> flat) {
+    final rows = <_TxRow>[];
+    final usedIds = <int>{};
+
+    for (final item in flat) {
+      if (usedIds.contains(item.trashId)) continue;
+      final tx = item.transaction;
+
+      if (tx.type == 'transfer_out') {
+        final ref = _extractRef(tx.note);
+        TrashedTransaction? match;
+        if (ref != null) {
+          try {
+            match = flat.firstWhere(
+              (other) =>
+                  !usedIds.contains(other.trashId) &&
+                  other.transaction.type == 'transfer_in' &&
+                  _extractRef(other.transaction.note) == ref,
+            );
+          } catch (_) {
+            match = null;
+          }
+        }
+        usedIds.add(item.trashId);
+        if (match != null) {
+          usedIds.add(match.trashId);
+          rows.add(_TxRow(item, transferIn: match));
+        } else {
+          rows.add(_TxRow(item));
+        }
+      } else if (tx.type == 'transfer_in') {
+        // Only reaches here if its out-leg was already consumed or missing.
+        usedIds.add(item.trashId);
+        rows.add(_TxRow(item));
+      } else {
+        usedIds.add(item.trashId);
+        rows.add(_TxRow(item));
+      }
+    }
+    return rows;
+  }
 
   @override
   Widget build(BuildContext context) {
     if (items.isEmpty)
       return const _EmptyState(label: 'No deleted transactions');
 
-    final grouped = _groupByDate<TrashedTransaction>(
-      items,
-      (i) => i.deletedAt,
+    final rows = _buildRows(items);
+
+    final grouped = _groupByDate<_TxRow>(
+      rows,
+      (r) => r.primary.deletedAt,
     );
 
     return ListView.builder(
       padding: const EdgeInsets.only(bottom: 24),
       itemCount: grouped.length,
-      itemBuilder: (ctx, sectionIdx) {
-        final entry = grouped[sectionIdx];
+      itemBuilder: (ctx, idx) {
+        final entry = grouped[idx];
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _DateHeader(label: _formatSectionDate(entry.key)),
-            ...entry.value.map((item) => _TransactionTile(
-                  item: item,
-                  onRestore: () => onRestore(item, item.trashId),
-                  onDelete: () => onDelete(item, item.trashId),
-                )),
+            ...entry.value.map((row) {
+              if (row.transferIn != null) {
+                return _TransferTile(
+                  outItem: row.primary,
+                  inItem: row.transferIn!,
+                  onRestore: () {
+                    onRestore(row.primary, row.primary.trashId);
+                    onRestore(row.transferIn!, row.transferIn!.trashId);
+                  },
+                  onDelete: () {
+                    onDelete(row.primary, row.primary.trashId);
+                    onDelete(row.transferIn!, row.transferIn!.trashId);
+                  },
+                );
+              }
+              return _TransactionTile(
+                item: row.primary,
+                registry: registry,
+                onRestore: () => onRestore(row.primary, row.primary.trashId),
+                onDelete: () => onDelete(row.primary, row.primary.trashId),
+              );
+            }),
           ],
         );
       },
@@ -395,11 +498,13 @@ class _TransactionsTab extends StatelessWidget {
 
 class _AccountsTab extends StatelessWidget {
   final List<TrashedAccount> items;
+  final CategoryRegistry registry;
   final void Function(TrashedAccount item, int trashId) onRestore;
   final void Function(TrashedAccount item, int trashId) onDelete;
 
   const _AccountsTab({
     required this.items,
+    required this.registry,
     required this.onRestore,
     required this.onDelete,
   });
@@ -416,14 +521,15 @@ class _AccountsTab extends StatelessWidget {
     return ListView.builder(
       padding: const EdgeInsets.only(bottom: 24),
       itemCount: grouped.length,
-      itemBuilder: (ctx, sectionIdx) {
-        final entry = grouped[sectionIdx];
+      itemBuilder: (ctx, idx) {
+        final entry = grouped[idx];
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _DateHeader(label: _formatSectionDate(entry.key)),
             ...entry.value.map((item) => _AccountTile(
                   item: item,
+                  registry: registry,
                   onRestore: () => onRestore(item, item.trashId),
                   onDelete: () => onDelete(item, item.trashId),
                 )),
@@ -502,8 +608,8 @@ class _CategoriesTab extends StatelessWidget {
     return ListView.builder(
       padding: const EdgeInsets.only(bottom: 24),
       itemCount: sections.length,
-      itemBuilder: (ctx, sectionIdx) {
-        final (label, slice) = sections[sectionIdx];
+      itemBuilder: (ctx, idx) {
+        final (label, slice) = sections[idx];
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -539,6 +645,7 @@ class _TrashedCategoryTile extends StatelessWidget {
     final cs = theme.colorScheme;
     final cat = item.category;
 
+    // ignore: unused_local_variable
     Color catColor;
     try {
       final hex = cat.colorHex.replaceAll('#', '');
@@ -558,15 +665,15 @@ class _TrashedCategoryTile extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
         child: Row(
           children: [
-            // Category icon
+            // Category icon — grayed out to indicate deleted state
             Container(
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: catColor.withValues(alpha: 0.15),
+                color: cs.outlineVariant.withValues(alpha: 0.25),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(icon, color: catColor, size: 20),
+              child: Icon(icon, color: cs.outline, size: 20),
             ),
             const SizedBox(width: 12),
 
@@ -623,11 +730,13 @@ class _TrashedCategoryTile extends StatelessWidget {
 
 class _TransactionTile extends StatelessWidget {
   final TrashedTransaction item;
+  final CategoryRegistry registry;
   final VoidCallback onRestore;
   final VoidCallback onDelete;
 
   const _TransactionTile({
     required this.item,
+    required this.registry,
     required this.onRestore,
     required this.onDelete,
   });
@@ -652,7 +761,9 @@ class _TransactionTile extends StatelessWidget {
             ? '+'
             : '-';
 
-    final icon = kCategoryIcons[tx.category] ?? Icons.category;
+    // Resolve icon via the live category registry (name → WalletCategory → iconData),
+    // falling back to Icons.category for unknown/custom categories.
+    final icon = registry.transactionCategoryIcon(tx.category);
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -745,15 +856,17 @@ class _TransactionTile extends StatelessWidget {
   }
 }
 
-// ── Account tile ──────────────────────────────────────────────────────────────
+// ── Transfer tile (paired out + in shown as one card) ─────────────────────────
 
-class _AccountTile extends StatelessWidget {
-  final TrashedAccount item;
+class _TransferTile extends StatelessWidget {
+  final TrashedTransaction outItem;
+  final TrashedTransaction inItem;
   final VoidCallback onRestore;
   final VoidCallback onDelete;
 
-  const _AccountTile({
-    required this.item,
+  const _TransferTile({
+    required this.outItem,
+    required this.inItem,
     required this.onRestore,
     required this.onDelete,
   });
@@ -762,16 +875,13 @@ class _AccountTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final acct = item.account;
 
-    // Parse stored hex colour — fall back to primary
-    Color acctColor;
-    try {
-      final hex = acct.colorHex.replaceAll('#', '');
-      acctColor = Color(int.parse('FF$hex', radix: 16));
-    } catch (_) {
-      acctColor = cs.primary;
-    }
+    const blue = Color(0xFF2563EB);
+    const blueBg = Color(0xFFDBEAFE);
+
+    final fromAcc = outItem.accountName ?? '—';
+    final toAcc = inItem.accountName ?? '—';
+    final amount = outItem.transaction.amount;
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -782,7 +892,115 @@ class _AccountTile extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
         child: Row(
           children: [
-            // Account icon
+            // Transfer icon — matches the rounded-square style of _TransactionTile
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: blueBg,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child:
+                  const Icon(Icons.swap_horiz_rounded, color: blue, size: 20),
+            ),
+            const SizedBox(width: 12),
+
+            // Title + accounts
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Transfer',
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(fontWeight: FontWeight.w600),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '$fromAcc → $toAcc',
+                    style:
+                        theme.textTheme.labelSmall?.copyWith(color: cs.outline),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Deleted ${_timeAgo(outItem.deletedAt)}',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: cs.outlineVariant,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Amount
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text(
+                '± ₱${amount.toStringAsFixed(2)}',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: blue,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+
+            _ActionMenu(onRestore: onRestore, onDelete: onDelete),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Account tile ──────────────────────────────────────────────────────────────
+
+class _AccountTile extends StatelessWidget {
+  final TrashedAccount item;
+  final CategoryRegistry registry;
+  final VoidCallback onRestore;
+  final VoidCallback onDelete;
+
+  const _AccountTile({
+    required this.item,
+    required this.registry,
+    required this.onRestore,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final acct = item.account;
+
+    // Use the account type's colour and icon from the registry snapshot.
+    // Falls back gracefully if the type no longer exists.
+    Color acctColor;
+    try {
+      final hex = acct.colorHex.replaceAll('#', '');
+      acctColor = Color(int.parse('FF$hex', radix: 16));
+    } catch (_) {
+      acctColor = cs.primary;
+    }
+
+    // Resolve the icon via the account *type* name (same as accounts_page does).
+    final typeIcon = registry.typeIcon(acct.type);
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: cs.surfaceContainerLow,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+        child: Row(
+          children: [
+            // Account type icon
             Container(
               width: 40,
               height: 40,
@@ -791,7 +1009,7 @@ class _AccountTile extends StatelessWidget {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(
-                _accountIcon(acct.icon),
+                typeIcon,
                 color: acctColor,
                 size: 20,
               ),
@@ -858,22 +1076,52 @@ class _AccountTile extends StatelessWidget {
       ),
     );
   }
+}
 
-  IconData _accountIcon(String iconName) {
-    switch (iconName) {
-      case 'wallet':
-        return Icons.account_balance_wallet;
-      case 'bank':
-        return Icons.account_balance;
-      case 'credit_card':
-        return Icons.credit_card;
-      case 'savings':
-        return Icons.savings;
-      case 'phone':
-        return Icons.phone_android;
-      default:
-        return Icons.account_balance_wallet;
-    }
+// ── Deletion timer banner ─────────────────────────────────────────────────────
+//
+// Shows a notice explaining that items are auto-deleted after 30 days,
+// with a countdown to the nearest upcoming deletion.
+
+class _DeletionTimerBanner extends StatelessWidget {
+  const _DeletionTimerBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    // ignore: unused_local_variable
+    final cs = theme.colorScheme;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.orange.withValues(alpha: 0.30),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.timer_outlined,
+            size: 18,
+            color: Colors.orange.shade700,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Items in trash are permanently deleted after 30 days.',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: Colors.orange.shade800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
