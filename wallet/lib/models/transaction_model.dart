@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'account_model.dart';
 import 'category_model.dart';
 
@@ -202,6 +203,7 @@ class _TransactionFormState extends State<_TransactionForm> {
   late final String _type;
   String? _category;
   int? _accountId;
+  late DateTime _selectedDate;
 
   @override
   void initState() {
@@ -213,6 +215,9 @@ class _TransactionFormState extends State<_TransactionForm> {
     );
     _noteCtrl = TextEditingController(text: e?.note ?? '');
     _type = widget.type;
+    _selectedDate = e != null
+        ? (DateTime.tryParse(e.date) ?? DateTime.now())
+        : DateTime.now();
 
     if (e != null) {
       // Editing: restore saved values
@@ -246,7 +251,7 @@ class _TransactionFormState extends State<_TransactionForm> {
       id: widget.existing?.id,
       title: _titleCtrl.text.trim(),
       amount: amount,
-      date: widget.existing?.date ?? DateTime.now().toIso8601String(),
+      date: _selectedDate.toIso8601String(),
       type: _type,
       category: _category!,
       note: _noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim(),
@@ -262,6 +267,26 @@ class _TransactionFormState extends State<_TransactionForm> {
 
   Color get _accentColor =>
       _type == 'income' ? Colors.green : Colors.red.shade600;
+
+  /// Opens a date picker for the transaction date.
+  Future<void> _pickDate(BuildContext context) async {
+    final picked = await showDialog<DateTime>(
+      context: context,
+      builder: (ctx) => _CalendarDatePickerDialog(initialDate: _selectedDate),
+    );
+    if (picked != null) {
+      setState(() {
+        _selectedDate = DateTime(
+          picked.year,
+          picked.month,
+          picked.day,
+          _selectedDate.hour,
+          _selectedDate.minute,
+          _selectedDate.second,
+        );
+      });
+    }
+  }
 
   /// Opens the category picker modal (mirrors _TypePickerSheet from accounts_page).
   Future<void> _pickCategory(BuildContext context) async {
@@ -589,18 +614,54 @@ class _TransactionFormState extends State<_TransactionForm> {
           ),
           const SizedBox(height: 12),
 
-          // ── Amount ───────────────────────────────────────────────────────
-          RepaintBoundary(
-            child: TextField(
-              controller: _amountCtrl,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              decoration: InputDecoration(
-                labelText: 'Amount (₱)',
-                border: const OutlineInputBorder(),
-                prefixIcon: Icon(Icons.payments_outlined, color: accent),
+          // ── Amount & Date ────────────────────────────────────────────────
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 3,
+                child: RepaintBoundary(
+                  child: TextField(
+                    controller: _amountCtrl,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: InputDecoration(
+                      labelText: 'Amount (₱)',
+                      border: const OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.payments_outlined, color: accent),
+                    ),
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(width: 10),
+              Expanded(
+                flex: 2,
+                child: GestureDetector(
+                  onTap: () => _pickDate(context),
+                  child: InputDecorator(
+                    decoration: InputDecoration(
+                      labelText: 'Date',
+                      border: const OutlineInputBorder(),
+                      enabledBorder: OutlineInputBorder(
+                        borderSide:
+                            BorderSide(color: theme.colorScheme.outline),
+                      ),
+                      prefixIcon: Icon(Icons.calendar_today_outlined,
+                          color: accent, size: 18),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 16),
+                    ),
+                    child: Text(
+                      '${_selectedDate.month}/${_selectedDate.day}/${_selectedDate.year}',
+                      style: theme.textTheme.bodyLarge
+                          ?.copyWith(color: theme.colorScheme.onSurface),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
 
@@ -764,6 +825,7 @@ class _TransferFormState extends State<_TransferForm> {
   late int? _toId;
   final _amountCtrl = TextEditingController();
   final _noteCtrl = TextEditingController();
+  late DateTime _selectedDate;
 
   /// Extracts the __ref:…__ value from a note string, or null if absent.
   static String? _extractRef(String? note) {
@@ -789,9 +851,11 @@ class _TransferFormState extends State<_TransferForm> {
       _toId = inLeg?.accountId;
       _amountCtrl.text = e.amount.toStringAsFixed(2);
       _noteCtrl.text = _cleanNote(e.note);
+      _selectedDate = DateTime.tryParse(e.date) ?? DateTime.now();
     } else {
       _fromId = widget.preselectedFromId;
       _toId = null;
+      _selectedDate = DateTime.now();
     }
   }
 
@@ -808,9 +872,8 @@ class _TransferFormState extends State<_TransferForm> {
     final amount = double.tryParse(_amountCtrl.text.trim());
     if (amount == null || amount <= 0) return;
 
-    // In edit mode: preserve the original ref tag and date.
+    // In edit mode: preserve the original ref tag.
     final existingRef = _extractRef(widget.existing?.note);
-    final existingDate = widget.existing?.date;
 
     Navigator.pop(
       context,
@@ -819,10 +882,30 @@ class _TransferFormState extends State<_TransferForm> {
         toAccountId: _toId!,
         amount: amount,
         note: _noteCtrl.text.trim(),
-        date: existingDate ?? DateTime.now().toIso8601String(),
+        date: _selectedDate.toIso8601String(),
         existingRef: existingRef,
       ),
     );
+  }
+
+  /// Opens a date picker for the transfer date.
+  Future<void> _pickDate(BuildContext context) async {
+    final picked = await showDialog<DateTime>(
+      context: context,
+      builder: (ctx) => _CalendarDatePickerDialog(initialDate: _selectedDate),
+    );
+    if (picked != null) {
+      setState(() {
+        _selectedDate = DateTime(
+          picked.year,
+          picked.month,
+          picked.day,
+          _selectedDate.hour,
+          _selectedDate.minute,
+          _selectedDate.second,
+        );
+      });
+    }
   }
 
   /// Opens a modal sheet to pick an account (grouped by type), excluding [excludeId].
@@ -1163,15 +1246,52 @@ class _TransferFormState extends State<_TransferForm> {
           ),
           const SizedBox(height: 12),
 
-          // ── Amount ────────────────────────────────────────────────────────
-          TextField(
-            controller: _amountCtrl,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Amount (₱)',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.payments_outlined),
-            ),
+          // ── Amount & Date ─────────────────────────────────────────────────
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 3,
+                child: TextField(
+                  controller: _amountCtrl,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Amount (₱)',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.payments_outlined),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                flex: 2,
+                child: GestureDetector(
+                  onTap: () => _pickDate(context),
+                  child: InputDecorator(
+                    decoration: InputDecoration(
+                      labelText: 'Date',
+                      border: const OutlineInputBorder(),
+                      enabledBorder: OutlineInputBorder(
+                        borderSide:
+                            BorderSide(color: theme.colorScheme.outline),
+                      ),
+                      prefixIcon: const Icon(Icons.calendar_today_outlined,
+                          color: teal, size: 18),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 16),
+                    ),
+                    child: Text(
+                      '${_selectedDate.month}/${_selectedDate.day}/${_selectedDate.year}',
+                      style: theme.textTheme.bodyLarge
+                          ?.copyWith(color: theme.colorScheme.onSurface),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
 
@@ -1221,6 +1341,239 @@ class _TransferFormState extends State<_TransferForm> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ── Calendar-style date picker (mirrors the History page period picker) ──────
+
+/// A single-day calendar picker dialog matching the History page's calendar
+/// design: month nav header, weekday row, day grid with circular highlight
+/// on the selected day, today's date accented, and future days disabled.
+class _CalendarDatePickerDialog extends StatefulWidget {
+  final DateTime initialDate;
+
+  const _CalendarDatePickerDialog({required this.initialDate});
+
+  @override
+  State<_CalendarDatePickerDialog> createState() =>
+      _CalendarDatePickerDialogState();
+}
+
+class _CalendarDatePickerDialogState extends State<_CalendarDatePickerDialog> {
+  late DateTime _selected;
+  late DateTime _calendarMonth; // which month the grid is showing
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = widget.initialDate;
+    _calendarMonth = DateTime(_selected.year, _selected.month);
+  }
+
+  bool _isSameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  String _calendarMonthLabel() =>
+      DateFormat('MMMM yyyy').format(_calendarMonth);
+
+  // Days to display: leading blanks + days of the month
+  List<DateTime?> _calendarDays() {
+    final firstDay = DateTime(_calendarMonth.year, _calendarMonth.month, 1);
+    final daysInMonth =
+        DateTime(_calendarMonth.year, _calendarMonth.month + 1, 0).day;
+    final leadingBlanks = firstDay.weekday - 1; // Monday = 1
+    return [
+      ...List<DateTime?>.filled(leadingBlanks, null),
+      ...List.generate(daysInMonth,
+          (i) => DateTime(_calendarMonth.year, _calendarMonth.month, i + 1)),
+    ];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final primary = theme.colorScheme.primary;
+    final now = DateTime.now();
+
+    final onForward = (_calendarMonth.year > now.year ||
+            (_calendarMonth.year == now.year &&
+                _calendarMonth.month >= now.month))
+        ? null
+        : () => setState(() => _calendarMonth =
+            DateTime(_calendarMonth.year, _calendarMonth.month + 1));
+
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ── Month nav row ──────────────────────────────────────────────
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                IconButton(
+                  iconSize: 18,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  icon: const Icon(Icons.chevron_left),
+                  onPressed: () => setState(() => _calendarMonth =
+                      DateTime(_calendarMonth.year, _calendarMonth.month - 1)),
+                ),
+                Text(
+                  _calendarMonthLabel(),
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+                IconButton(
+                  iconSize: 18,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  icon: Icon(
+                    Icons.chevron_right,
+                    color: onForward == null
+                        ? theme.colorScheme.onSurface.withValues(alpha: 0.25)
+                        : null,
+                  ),
+                  onPressed: onForward,
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // ── Weekday header ─────────────────────────────────────────────
+            Row(
+              children: ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d) {
+                return Expanded(
+                  child: Center(
+                    child: Text(
+                      d,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color:
+                            theme.colorScheme.onSurface.withValues(alpha: 0.4),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 4),
+
+            // ── Day grid ───────────────────────────────────────────────────
+            Builder(builder: (_) {
+              final days = _calendarDays();
+              while (days.length % 7 != 0) days.add(null);
+              final rows = days.length ~/ 7;
+
+              return Column(
+                children: List.generate(rows, (row) {
+                  return Row(
+                    children: List.generate(7, (col) {
+                      final d = days[row * 7 + col];
+                      if (d == null) {
+                        return const Expanded(child: SizedBox(height: 36));
+                      }
+
+                      final isFuture = d.isAfter(now);
+                      final isSelected = _isSameDay(d, _selected);
+                      final isToday = _isSameDay(d, now);
+
+                      Color? bgColor;
+                      Color textColor = theme.colorScheme.onSurface;
+
+                      if (isSelected) {
+                        bgColor = primary.withValues(alpha: 0.15);
+                        textColor = primary;
+                      } else if (isToday) {
+                        textColor = primary;
+                      }
+
+                      if (isFuture) {
+                        textColor =
+                            theme.colorScheme.onSurface.withValues(alpha: 0.25);
+                      }
+
+                      return Expanded(
+                        child: GestureDetector(
+                          onTap: isFuture
+                              ? null
+                              : () => setState(() => _selected = d),
+                          child: Container(
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: bgColor,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Center(
+                              child: Text(
+                                '${d.day}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: isSelected || isToday
+                                      ? FontWeight.w700
+                                      : FontWeight.w400,
+                                  color: textColor,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                  );
+                }),
+              );
+            }),
+            const SizedBox(height: 12),
+
+            // ── Selected date label ───────────────────────────────────────
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: primary.withValues(alpha: 0.07),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                DateFormat('EEE, MMM d, yyyy').format(_selected),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: primary,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // ── Actions ────────────────────────────────────────────────────
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancel'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: () => Navigator.pop(context, _selected),
+                    child: const Text('Apply'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
