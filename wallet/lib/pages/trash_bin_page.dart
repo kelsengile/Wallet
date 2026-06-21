@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:wallet/database/database_helper.dart';
 import 'package:wallet/models/category_model.dart';
+import 'package:wallet/currency.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Trash Bin Page
@@ -832,7 +833,7 @@ class _TransactionTile extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Text(
-                '$prefix₱${tx.amount.toStringAsFixed(2)}',
+                '$prefix${currencySymbolNotifier.value}${tx.amount.toStringAsFixed(2)}',
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: amountColor,
                   fontWeight: FontWeight.bold,
@@ -934,7 +935,7 @@ class _TransferTile extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Text(
-                '± ₱${amount.toStringAsFixed(2)}',
+                '± ${currencySymbolNotifier.value}${amount.toStringAsFixed(2)}',
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: blue,
                   fontWeight: FontWeight.bold,
@@ -1055,7 +1056,7 @@ class _AccountTile extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Text(
-                '₱${acct.balance.toStringAsFixed(2)}',
+                '${currencySymbolNotifier.value}${acct.balance.toStringAsFixed(2)}',
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: cs.outline,
                   fontWeight: FontWeight.bold,

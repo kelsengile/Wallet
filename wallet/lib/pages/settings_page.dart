@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../main.dart' show themeModeNotifier, setDarkMode;
+import '../currency.dart';
 
 /// Settings page — appearance, currency, notifications, etc.
 /// Extend this file to add real preferences backed by the `settings` table
@@ -13,9 +14,13 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   bool _notificationsEnabled = true;
-  String _currency = 'PHP (₱)';
 
-  static const _currencies = ['PHP (₱)', 'USD (\$)', 'EUR (€)', 'JPY (¥)'];
+  static const _currencyLabels = {
+    'PHP': 'PHP (₱)',
+    'USD': 'USD (\$)',
+    'EUR': 'EUR (€)',
+    'JPY': 'JPY (¥)',
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -49,19 +54,27 @@ class _SettingsPageState extends State<SettingsPage> {
           // ── Localisation ──────────────────────────────────────────────────
           _Section(label: 'Localisation'),
           Card(
-            child: ListTile(
-              leading: const Icon(Icons.attach_money_outlined),
-              title: const Text('Currency'),
-              trailing: DropdownButton<String>(
-                value: _currency,
-                underline: const SizedBox.shrink(),
-                items: _currencies
-                    .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                    .toList(),
-                onChanged: (v) {
-                  if (v != null) setState(() => _currency = v);
-                },
-              ),
+            child: ValueListenableBuilder<String>(
+              valueListenable: currencyCodeNotifier,
+              builder: (context, code, _) {
+                return ListTile(
+                  leading: const Icon(Icons.attach_money_outlined),
+                  title: const Text('Currency'),
+                  trailing: DropdownButton<String>(
+                    value: code,
+                    underline: const SizedBox.shrink(),
+                    items: _currencyLabels.entries
+                        .map((e) => DropdownMenuItem(
+                              value: e.key,
+                              child: Text(e.value),
+                            ))
+                        .toList(),
+                    onChanged: (v) {
+                      if (v != null) setCurrency(v);
+                    },
+                  ),
+                );
+              },
             ),
           ),
 

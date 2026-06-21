@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../currency.dart';
 import 'account_model.dart';
 import 'category_model.dart';
 
@@ -629,7 +630,7 @@ class _TransactionFormState extends State<_TransactionForm> {
                     keyboardType:
                         const TextInputType.numberWithOptions(decimal: true),
                     decoration: InputDecoration(
-                      labelText: 'Amount (₱)',
+                      labelText: 'Amount (${currencySymbolNotifier.value})',
                       border: const OutlineInputBorder(),
                       prefixIcon: Icon(Icons.payments_outlined, color: accent),
                     ),
@@ -1262,10 +1263,10 @@ class _TransferFormState extends State<_TransferForm> {
                   controller: _amountCtrl,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
-                    labelText: 'Amount (₱)',
-                    border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.payments_outlined),
+                  decoration: InputDecoration(
+                    labelText: 'Amount (${currencySymbolNotifier.value})',
+                    border: const OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.payments_outlined),
                   ),
                 ),
               ),

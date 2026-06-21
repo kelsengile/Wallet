@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:wallet/database/database_helper.dart';
+import 'package:wallet/currency.dart';
 import 'package:wallet/pages/accounts_page.dart';
 import 'package:wallet/pages/history_page.dart';
 import 'package:wallet/pages/analytics_page.dart';
@@ -35,6 +36,7 @@ Future<void> setDarkMode(bool enabled) async {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await _loadSavedThemeMode();
+  await loadSavedCurrency();
   runApp(const MyApp());
 }
 
@@ -61,7 +63,16 @@ class MyApp extends StatelessWidget {
             ),
             useMaterial3: true,
           ),
-          home: const WalletHomePage(),
+          // Rebuilds the whole home subtree (without losing State, since
+          // WalletHomePage is non-const below) whenever the currency
+          // changes, so every already-mounted page re-reads
+          // currencySymbolNotifier.value and shows the new symbol
+          // immediately — no per-widget listeners needed.
+          home: ValueListenableBuilder<String>(
+            valueListenable: currencySymbolNotifier,
+            // ignore: prefer_const_constructors
+            builder: (context, symbol, _) => WalletHomePage(),
+          ),
         );
       },
     );

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import '../currency.dart';
 import '../database/database_helper.dart';
 import '../models/account_model.dart';
 import '../models/transaction_model.dart';
@@ -1008,7 +1009,7 @@ class _TotalBalanceHero extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                '₱ ${_fmt(totalBalance)}',
+                '${currencySymbolNotifier.value} ${_fmt(totalBalance)}',
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 38,
@@ -1072,7 +1073,7 @@ class _IncomeExpenseCompact extends StatelessWidget {
         Icon(icon, color: color, size: 10),
         const SizedBox(width: 3),
         Text(
-          '₱ ${_fmt(amount)}',
+          '${currencySymbolNotifier.value} ${_fmt(amount)}',
           style: TextStyle(
             color: color,
             fontSize: 10,
@@ -1174,7 +1175,7 @@ class _AccountCardInert extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '₱ ${_fmt(account.balance)}',
+                  '${currencySymbolNotifier.value} ${_fmt(account.balance)}',
                   style: TextStyle(
                     color: account.balance >= 0
                         ? Colors.white
@@ -1342,7 +1343,7 @@ class _AccountCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '₱ ${_fmt(account.balance)}',
+                  '${currencySymbolNotifier.value} ${_fmt(account.balance)}',
                   style: TextStyle(
                     color: account.balance >= 0
                         ? Colors.white
@@ -1521,10 +1522,10 @@ class _AccountFormSheetState extends State<_AccountFormSheet> {
               inputFormatters: [
                 FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))
               ],
-              decoration: const InputDecoration(
-                labelText: 'Initial Balance (₱)',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.payments_outlined),
+              decoration: InputDecoration(
+                labelText: 'Initial Balance (${currencySymbolNotifier.value})',
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.payments_outlined),
               ),
             ),
             const SizedBox(height: 12),
@@ -2212,7 +2213,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      '₱ ${_fmt(widget.account.balance)}',
+                      '${currencySymbolNotifier.value} ${_fmt(widget.account.balance)}',
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -2525,7 +2526,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                         style: const TextStyle(fontSize: 11),
                       ),
                       trailing: Text(
-                        '$transferAmountPrefix ₱${_fmt(outTx.amount)}',
+                        '$transferAmountPrefix ${currencySymbolNotifier.value}${_fmt(outTx.amount)}',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 12,
@@ -2609,7 +2610,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                       style: const TextStyle(fontSize: 11),
                     ),
                     trailing: Text(
-                      '$amountPrefix ₱${_fmt(tx.amount)}',
+                      '$amountPrefix ${currencySymbolNotifier.value}${_fmt(tx.amount)}',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 12,
@@ -2829,7 +2830,7 @@ class _AccountStatChip extends StatelessWidget {
         Icon(icon, color: color, size: 10),
         const SizedBox(width: 3),
         Text(
-          '₱ ${_fmt(amount)}',
+          '${currencySymbolNotifier.value} ${_fmt(amount)}',
           style: TextStyle(
             color: color,
             fontSize: 10,

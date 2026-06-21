@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../database/database_helper.dart';
+import '../currency.dart';
 
 final _currencyFmt = NumberFormat('#,##0.00', 'en_PH');
 String _fmt(double v) => _currencyFmt.format(v);
@@ -276,7 +277,7 @@ class _SummaryCard extends StatelessWidget {
                 ),
               ),
               Text(
-                '₱ ${_fmt(amount)}',
+                '${currencySymbolNotifier.value} ${_fmt(amount)}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -316,7 +317,7 @@ class _NetBalanceCard extends StatelessWidget {
                   style: TextStyle(fontWeight: FontWeight.w600),
                 ),
                 Text(
-                  '${net >= 0 ? '+' : '-'}₱ ${_fmt(net.abs())}',
+                  '${net >= 0 ? '+' : '-'}${currencySymbolNotifier.value} ${_fmt(net.abs())}',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 18,
@@ -558,7 +559,7 @@ class _CategoryRow extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      '₱ ${_fmt(total)}',
+                      '${currencySymbolNotifier.value} ${_fmt(total)}',
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 14,

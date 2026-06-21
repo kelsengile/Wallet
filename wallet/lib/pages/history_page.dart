@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../database/database_helper.dart';
+import '../currency.dart';
 import '../models/transaction_model.dart';
 import '../models/account_model.dart';
 import '../models/category_model.dart';
@@ -561,7 +562,7 @@ class HistoryPageState extends State<HistoryPage> {
                         style: const TextStyle(fontSize: 11),
                       ),
                       trailing: Text(
-                        '± ₱${_fmt(outTx.amount)}',
+                        '± ${currencySymbolNotifier.value}${_fmt(outTx.amount)}',
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 12,
@@ -657,7 +658,7 @@ class HistoryPageState extends State<HistoryPage> {
                       style: const TextStyle(fontSize: 11),
                     ),
                     trailing: Text(
-                      '$amountPrefix ₱${_fmt(tx.amount)}',
+                      '$amountPrefix ${currencySymbolNotifier.value}${_fmt(tx.amount)}',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 12,
@@ -985,7 +986,7 @@ class _AnalyticsTile extends StatelessWidget {
         FittedBox(
           fit: BoxFit.scaleDown,
           child: Text(
-            '₱${_fmt(amount.abs())}',
+            '${currencySymbolNotifier.value}${_fmt(amount.abs())}',
             style: theme.textTheme.bodySmall?.copyWith(
               fontSize: 11,
               fontWeight: FontWeight.w500,

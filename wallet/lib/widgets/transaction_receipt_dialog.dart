@@ -4,6 +4,7 @@ import '../models/transaction_model.dart';
 import '../models/account_model.dart';
 import '../models/category_model.dart';
 import '../database/database_helper.dart';
+import '../currency.dart';
 
 // ── Formatter ──────────────────────────────────────────────────────────────────
 
@@ -656,7 +657,7 @@ class _ReceiptBody extends StatelessWidget {
           ),
         ),
         Text(
-          '₱${_fmt(tx.amount)}',
+          '${currencySymbolNotifier.value}${_fmt(tx.amount)}',
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.bold,
