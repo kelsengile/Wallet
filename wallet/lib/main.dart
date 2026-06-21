@@ -12,7 +12,29 @@ import 'package:wallet/pages/feedback_page.dart';
 import 'package:wallet/pages/trash_bin_page.dart';
 import 'package:wallet/models/transaction_model.dart';
 
-void main() {
+/// Global dark-mode toggle, readable/writable from anywhere (currently just
+/// the Settings page). Persisted to the `settings` table so the choice
+/// survives app restarts.
+final ValueNotifier<ThemeMode> themeModeNotifier =
+    ValueNotifier(ThemeMode.light);
+
+const _kDarkModeSettingKey = 'dark_mode';
+
+Future<void> _loadSavedThemeMode() async {
+  final saved = await DatabaseHelper.instance.getSetting(_kDarkModeSettingKey);
+  themeModeNotifier.value = saved == 'true' ? ThemeMode.dark : ThemeMode.light;
+}
+
+/// Call this from Settings whenever the user flips the Dark Mode switch.
+Future<void> setDarkMode(bool enabled) async {
+  themeModeNotifier.value = enabled ? ThemeMode.dark : ThemeMode.light;
+  await DatabaseHelper.instance
+      .saveSetting(_kDarkModeSettingKey, enabled.toString());
+}
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await _loadSavedThemeMode();
   runApp(const MyApp());
 }
 
@@ -21,14 +43,27 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Wallet',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
-        useMaterial3: true,
-      ),
-      home: const WalletHomePage(),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: themeModeNotifier,
+      builder: (context, mode, _) {
+        return MaterialApp(
+          title: 'Wallet',
+          debugShowCheckedModeBanner: false,
+          themeMode: mode,
+          theme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
+            useMaterial3: true,
+          ),
+          darkTheme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: Colors.indigo,
+              brightness: Brightness.dark,
+            ),
+            useMaterial3: true,
+          ),
+          home: const WalletHomePage(),
+        );
+      },
     );
   }
 }

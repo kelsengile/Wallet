@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../main.dart' show themeModeNotifier, setDarkMode;
 
 /// Settings page — appearance, currency, notifications, etc.
 /// Extend this file to add real preferences backed by the `settings` table
@@ -11,7 +12,6 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
-  bool _darkMode = false;
   bool _notificationsEnabled = true;
   String _currency = 'PHP (₱)';
 
@@ -30,16 +30,17 @@ class _SettingsPageState extends State<SettingsPage> {
           // ── Appearance ────────────────────────────────────────────────────
           _Section(label: 'Appearance'),
           Card(
-            child: Column(
-              children: [
-                SwitchListTile(
+            child: ValueListenableBuilder<ThemeMode>(
+              valueListenable: themeModeNotifier,
+              builder: (context, mode, _) {
+                return SwitchListTile(
                   secondary: const Icon(Icons.dark_mode_outlined),
                   title: const Text('Dark Mode'),
                   subtitle: const Text('Switch to a darker theme'),
-                  value: _darkMode,
-                  onChanged: (v) => setState(() => _darkMode = v),
-                ),
-              ],
+                  value: mode == ThemeMode.dark,
+                  onChanged: (v) => setDarkMode(v),
+                );
+              },
             ),
           ),
 
