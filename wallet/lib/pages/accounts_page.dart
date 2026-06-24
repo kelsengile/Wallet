@@ -1085,6 +1085,81 @@ class _IncomeExpenseCompact extends StatelessWidget {
   }
 }
 
+// ── Polygon card clippers ─────────────────────────────────────────────────────
+//
+// Used when an account type has a polygon corner style (octagon / dodecagon).
+// Applied via ClipPath wrapping the card Container.
+
+class _OctagonClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    const cut = 22.0;
+    return Path()
+      ..moveTo(cut, 0)
+      ..lineTo(size.width - cut, 0)
+      ..lineTo(size.width, cut)
+      ..lineTo(size.width, size.height - cut)
+      ..lineTo(size.width - cut, size.height)
+      ..lineTo(cut, size.height)
+      ..lineTo(0, size.height - cut)
+      ..lineTo(0, cut)
+      ..close();
+  }
+
+  @override
+  bool shouldReclip(_OctagonClipper old) => false;
+}
+
+class _DodecagonClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    final w = size.width;
+    final h = size.height;
+    // Double-chamfer: two stair-step cuts per corner.
+    // a = outer cut (first notch), b = inner cut (second notch, half the size).
+    const a = 18.0;
+    const b = 9.0;
+    return Path()
+      // Top edge: left corner double-chamfer → right corner double-chamfer
+      ..moveTo(a, 0)
+      ..lineTo(w - a, 0)
+      // Top-right corner: step in, then step down
+      ..lineTo(w - b, b)
+      ..lineTo(w, b)
+      // Right edge
+      ..lineTo(w, h - b)
+      // Bottom-right corner
+      ..lineTo(w - b, h - b)
+      ..lineTo(w - a, h)
+      // Bottom edge
+      ..lineTo(a, h)
+      // Bottom-left corner
+      ..lineTo(b, h - b)
+      ..lineTo(0, h - b)
+      // Left edge
+      ..lineTo(0, b)
+      // Top-left corner
+      ..lineTo(b, b)
+      ..close();
+  }
+
+  @override
+  bool shouldReclip(_DodecagonClipper old) => false;
+}
+
+/// Wraps [child] with the correct clip for [cornerStyle] if it is a polygon
+/// style, otherwise returns [child] unchanged.
+Widget _applyCornerClip(String cornerStyle, Widget child) {
+  switch (cornerStyle) {
+    case kCornerStyleOctagon:
+      return ClipPath(clipper: _OctagonClipper(), child: child);
+    case kCornerStyleDodecagon:
+      return ClipPath(clipper: _DodecagonClipper(), child: child);
+    default:
+      return child;
+  }
+}
+
 // ── Account card (inert) ───────────────────────────────────────────────────────
 //
 // Pure visual card with zero gesture handling. Used in reorder mode as the
@@ -1095,26 +1170,15 @@ class _AccountCardInert extends StatelessWidget {
   final Account account;
   const _AccountCardInert({required this.account});
 
-  BorderRadius _borderRadius() {
-    switch (account.type) {
-      case 'cash':
-        return BorderRadius.zero;
-      case 'e-wallet':
-        return BorderRadius.circular(24);
-      default:
-        return BorderRadius.circular(18);
-    }
-  }
-
-  bool get _isEwallet => account.type == 'e-wallet';
-
   @override
   Widget build(BuildContext context) {
     final accountColor = account.colorHex.isNotEmpty
         ? colorFromHex(account.colorHex)
         : const Color(0xFF6366F1);
     final gradients = gradientForColor(accountColor);
-    final br = _borderRadius();
+    final registry = _registryNotifier.value;
+    final cornerStyle = registry.typeCornerStyle(account.type);
+    final br = registry.cardBorderRadius(account.type);
 
     Widget card = Container(
       width: 255,
@@ -1125,7 +1189,7 @@ class _AccountCardInert extends StatelessWidget {
           end: Alignment.bottomRight,
           colors: gradients,
         ),
-        borderRadius: _isEwallet ? null : br,
+        borderRadius: isClipperCornerStyle(cornerStyle) ? null : br,
       ),
       child: Stack(
         children: [
@@ -1210,8 +1274,11 @@ class _AccountCardInert extends StatelessWidget {
       ),
     );
 
-    if (_isEwallet) {
-      card = ClipPath(clipper: _OctagonClipper(), child: card);
+    // Apply clipping: polygon styles use CustomClipper, others use ClipRRect.
+    if (isClipperCornerStyle(cornerStyle)) {
+      card = _applyCornerClip(cornerStyle, card);
+    } else {
+      card = ClipRRect(borderRadius: br, child: card);
     }
     return card;
   }
@@ -1238,26 +1305,15 @@ class _AccountCard extends StatelessWidget {
     required this.onDelete,
   });
 
-  BorderRadius _borderRadius() {
-    switch (account.type) {
-      case 'cash':
-        return BorderRadius.zero;
-      case 'e-wallet':
-        return BorderRadius.circular(24);
-      default:
-        return BorderRadius.circular(18);
-    }
-  }
-
-  bool get _isEwallet => account.type == 'e-wallet';
-
   @override
   Widget build(BuildContext context) {
     final accountColor = account.colorHex.isNotEmpty
         ? colorFromHex(account.colorHex)
         : const Color(0xFF6366F1);
     final gradients = gradientForColor(accountColor);
-    final br = _borderRadius();
+    final registry = _registryNotifier.value;
+    final cornerStyle = registry.typeCornerStyle(account.type);
+    final br = registry.cardBorderRadius(account.type);
 
     Widget card = Container(
       width: 255,
@@ -1268,7 +1324,7 @@ class _AccountCard extends StatelessWidget {
           end: Alignment.bottomRight,
           colors: gradients,
         ),
-        borderRadius: _isEwallet ? null : br,
+        borderRadius: isClipperCornerStyle(cornerStyle) ? null : br,
       ),
       child: Stack(
         children: [
@@ -1378,8 +1434,11 @@ class _AccountCard extends StatelessWidget {
       ),
     );
 
-    if (_isEwallet) {
-      card = ClipPath(clipper: _OctagonClipper(), child: card);
+    // Apply clipping: polygon styles use CustomClipper, others use ClipRRect.
+    if (isClipperCornerStyle(cornerStyle)) {
+      card = _applyCornerClip(cornerStyle, card);
+    } else {
+      card = ClipRRect(borderRadius: br, child: card);
     }
 
     return GestureDetector(onTap: onTap, child: card);
@@ -1982,27 +2041,6 @@ class _CategoryPickerSheet extends StatelessWidget {
       ),
     );
   }
-}
-
-// ── Octagon clipper ────────────────────────────────────────────────────────────
-class _OctagonClipper extends CustomClipper<Path> {
-  @override
-  Path getClip(Size size) {
-    const cut = 22.0;
-    return Path()
-      ..moveTo(cut, 0)
-      ..lineTo(size.width - cut, 0)
-      ..lineTo(size.width, cut)
-      ..lineTo(size.width, size.height - cut)
-      ..lineTo(size.width - cut, size.height)
-      ..lineTo(cut, size.height)
-      ..lineTo(0, size.height - cut)
-      ..lineTo(0, cut)
-      ..close();
-  }
-
-  @override
-  bool shouldReclip(_OctagonClipper old) => false;
 }
 
 // ── Account detail bottom sheet ────────────────────────────────────────────────
