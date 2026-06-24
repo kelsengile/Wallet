@@ -2477,27 +2477,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                       ),
                       child: const Icon(Icons.delete, color: Colors.white),
                     ),
-                    confirmDismiss: (_) async {
-                      return await showDialog<bool>(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          title: const Text('Delete Transfer'),
-                          content: const Text(
-                              'This will delete both legs of the transfer.'),
-                          actions: [
-                            TextButton(
-                                onPressed: () => Navigator.pop(ctx, false),
-                                child: const Text('Cancel')),
-                            FilledButton(
-                              style: FilledButton.styleFrom(
-                                  backgroundColor: Colors.red),
-                              onPressed: () => Navigator.pop(ctx, true),
-                              child: const Text('Delete'),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
+                    confirmDismiss: (_) async => true,
                     onDismissed: (_) async {
                       await _deleteTransfer(outTx, inTx);
                     },
