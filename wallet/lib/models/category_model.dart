@@ -37,6 +37,120 @@ const kTransferCategoryName = 'Transfer';
 /// edited, deleted, or renamed.
 const kMiscellaneousCategoryName = 'Miscellaneous';
 
+// ── Account-card corner style ─────────────────────────────────────────────────
+//
+// Per-account-type setting that controls the shape of the card corners on the
+// Accounts page. Stored as a string key in the `categories` table so it
+// survives rename/reorder without a separate table.
+//
+// Values intentionally kept as plain string constants (not an enum) so they
+// map 1-to-1 with DB strings and need no codec layer.
+//
+// Styles that use a custom CustomClipper (octagon, dodecagon) return null from
+// [borderRadiusForCornerStyle]; the card widget checks [isClipperCornerStyle]
+// and applies the appropriate ClipPath instead.
+
+/// Standard rounded card — radius 18. The default for most types.
+const kCornerStyleRounded = 'rounded';
+
+/// Completely sharp right-angle corners — radius 0.
+/// This is the default for the built-in "cash" account type.
+const kCornerStyleSharp = 'sharp';
+
+/// Slightly rounded card — radius 8, more square than [kCornerStyleRounded].
+const kCornerStyleSquircle = 'squircle';
+
+/// Asymmetric: top corners rounded (24), bottom corners sharp (0).
+const kCornerStyleTopRounded = 'top_rounded';
+
+/// Asymmetric: bottom corners rounded (24), top corners sharp (0).
+const kCornerStyleBottomRounded = 'bottom_rounded';
+
+/// Asymmetric: only the top-left and bottom-right corners are rounded (20).
+const kCornerStyleDiagonal = 'diagonal';
+
+/// 8-sided octagon shape via CustomClipper.
+const kCornerStyleOctagon = 'octagon';
+
+/// 12-sided dodecagon shape via CustomClipper.
+const kCornerStyleDodecagon = 'dodecagon';
+
+/// All corner style options in display order for the picker.
+const List<String> kCardCornerStyles = [
+  kCornerStyleRounded,
+  kCornerStyleSquircle,
+  kCornerStyleSharp,
+  kCornerStyleTopRounded,
+  kCornerStyleBottomRounded,
+  kCornerStyleDiagonal,
+  kCornerStyleOctagon,
+  kCornerStyleDodecagon,
+];
+
+/// Returns true for styles that require a [CustomClipper] rather than a
+/// [BorderRadius]. The card widget uses this to decide which clip to apply.
+bool isClipperCornerStyle(String key) =>
+    key == kCornerStyleOctagon || key == kCornerStyleDodecagon;
+
+/// Human-readable label for each corner style key.
+String cornerStyleLabel(String key) {
+  switch (key) {
+    case kCornerStyleRounded:
+      return 'Rounded';
+    case kCornerStyleSquircle:
+      return 'Squircle';
+    case kCornerStyleSharp:
+      return 'Sharp';
+    case kCornerStyleTopRounded:
+      return 'Top Round';
+    case kCornerStyleBottomRounded:
+      return 'Bot. Round';
+    case kCornerStyleDiagonal:
+      return 'Diagonal';
+    case kCornerStyleOctagon:
+      return 'Octagon';
+    case kCornerStyleDodecagon:
+      return 'Dodecagon';
+    default:
+      return 'Rounded';
+  }
+}
+
+/// Converts a corner-style key into the [BorderRadius] used on account cards.
+/// Returns `null` for polygon styles that use a [CustomClipper] instead —
+/// check [isClipperCornerStyle] first.
+BorderRadius? borderRadiusForCornerStyle(String key) {
+  switch (key) {
+    case kCornerStyleSquircle:
+      return BorderRadius.circular(8);
+    case kCornerStyleSharp:
+      return BorderRadius.zero;
+    case kCornerStyleTopRounded:
+      return const BorderRadius.vertical(
+        top: Radius.circular(24),
+        bottom: Radius.zero,
+      );
+    case kCornerStyleBottomRounded:
+      return const BorderRadius.vertical(
+        top: Radius.zero,
+        bottom: Radius.circular(24),
+      );
+    case kCornerStyleDiagonal:
+      return const BorderRadius.only(
+        topLeft: Radius.circular(20),
+        topRight: Radius.zero,
+        bottomLeft: Radius.zero,
+        bottomRight: Radius.circular(20),
+      );
+    case kCornerStyleOctagon:
+    case kCornerStyleDodecagon:
+      return null; // handled by CustomClipper
+    case kCornerStyleRounded:
+    default:
+      return BorderRadius.circular(18);
+  }
+}
+
 // ── Icon registry ────────────────────────────────────────────────────────────
 //
 // Maps a stable string key (stored in the DB) to a Material icon. The
@@ -143,6 +257,11 @@ class WalletCategory {
   /// for categories in the other two groups.
   final String subType;
 
+  /// For [kCategoryGroupAccountType] only: one of the [kCardCornerStyles]
+  /// constants that controls the shape of account cards on the Accounts page.
+  /// Defaults to [kCornerStyleRounded] for all other groups and new types.
+  final String cornerStyle;
+
   const WalletCategory({
     this.id,
     required this.name,
@@ -153,6 +272,7 @@ class WalletCategory {
     this.isDefault = false,
     this.isSystem = false,
     this.subType = '',
+    this.cornerStyle = kCornerStyleRounded,
   });
 
   IconData get iconData => iconForKey(icon);
@@ -168,6 +288,7 @@ class WalletCategory {
     bool? isDefault,
     bool? isSystem,
     String? subType,
+    String? cornerStyle,
   }) {
     return WalletCategory(
       id: id ?? this.id,
@@ -179,6 +300,7 @@ class WalletCategory {
       isDefault: isDefault ?? this.isDefault,
       isSystem: isSystem ?? this.isSystem,
       subType: subType ?? this.subType,
+      cornerStyle: cornerStyle ?? this.cornerStyle,
     );
   }
 
@@ -193,6 +315,7 @@ class WalletCategory {
       'is_default': isDefault ? 1 : 0,
       'is_system': isSystem ? 1 : 0,
       'sub_type': subType,
+      'corner_style': cornerStyle,
     };
   }
 
@@ -207,6 +330,7 @@ class WalletCategory {
       isDefault: (map['is_default'] as int? ?? 0) == 1,
       isSystem: (map['is_system'] as int? ?? 0) == 1,
       subType: map['sub_type'] as String? ?? '',
+      cornerStyle: map['corner_style'] as String? ?? kCornerStyleRounded,
     );
   }
 }
@@ -267,6 +391,23 @@ class CategoryRegistry {
 
   String typeColorHex(String name) =>
       findAccountType(name)?.colorHex ?? '#6366F1';
+
+  /// Returns the corner style key for the account type with [name].
+  /// Cash defaults to [kCornerStyleSharp]; all others default to
+  /// [kCornerStyleRounded] if the type is not found in the registry.
+  String typeCornerStyle(String name) {
+    final found = findAccountType(name)?.cornerStyle;
+    if (found != null) return found;
+    return name.toLowerCase() == 'cash'
+        ? kCornerStyleSharp
+        : kCornerStyleRounded;
+  }
+
+  /// Returns the [BorderRadius] for the account card of type [name].
+  /// For polygon/clipper styles this returns [BorderRadius.zero] — the card
+  /// widget should check [isClipperCornerStyle] and apply a [ClipPath] instead.
+  BorderRadius cardBorderRadius(String name) =>
+      borderRadiusForCornerStyle(typeCornerStyle(name)) ?? BorderRadius.zero;
 
   List<String> get accountTypeNames => accountTypes.map((c) => c.name).toList();
 

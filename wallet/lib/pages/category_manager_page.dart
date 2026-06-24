@@ -907,6 +907,7 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
   late final TextEditingController _nameCtrl;
   late String _selectedIcon;
   late String _selectedColor;
+  late String _selectedCornerStyle;
 
   @override
   void initState() {
@@ -915,6 +916,7 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
     _nameCtrl = TextEditingController(text: e?.name ?? '');
     _selectedIcon = e?.icon ?? 'label';
     _selectedColor = e?.colorHex ?? kCategoryColorPalette.first;
+    _selectedCornerStyle = e?.cornerStyle ?? kCornerStyleRounded;
   }
 
   @override
@@ -955,6 +957,7 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
         name: name,
         icon: _selectedIcon,
         colorHex: _selectedColor,
+        cornerStyle: _selectedCornerStyle,
       ),
     );
   }
@@ -1000,6 +1003,14 @@ class _CategoryFormDialogState extends State<_CategoryFormDialog> {
               _ColorPicker(
                 selected: _selectedColor,
                 onChanged: (h) => setState(() => _selectedColor = h),
+              ),
+              const SizedBox(height: 16),
+              Text('Card Corners', style: theme.textTheme.labelLarge),
+              const SizedBox(height: 8),
+              _CornerStylePicker(
+                selected: _selectedCornerStyle,
+                color: colorFromHex(_selectedColor),
+                onChanged: (s) => setState(() => _selectedCornerStyle = s),
               ),
             ],
           ],
@@ -1112,4 +1123,163 @@ class _ColorPicker extends StatelessWidget {
       }).toList(),
     );
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _CornerStylePicker
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _CornerStylePicker extends StatelessWidget {
+  final String selected;
+  final Color color;
+  final ValueChanged<String> onChanged;
+
+  const _CornerStylePicker({
+    required this.selected,
+    required this.color,
+    required this.onChanged,
+  });
+
+  // Mini gradient card used inside every picker tile.
+  Widget _miniCard(String style, Color baseColor) {
+    final activeColor = baseColor;
+    final lighterColor = Color.lerp(baseColor, Colors.white, 0.35)!;
+    final gradient = LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [activeColor, lighterColor],
+    );
+
+    Widget card = Container(
+      width: 48,
+      height: 30,
+      decoration: BoxDecoration(
+        gradient: gradient,
+        borderRadius: isClipperCornerStyle(style)
+            ? BorderRadius.zero
+            : (borderRadiusForCornerStyle(style) ?? BorderRadius.circular(18)),
+      ),
+    );
+
+    if (style == kCornerStyleOctagon) {
+      card = ClipPath(
+        clipper: _MiniOctagonClipper(),
+        child: Container(
+          width: 48,
+          height: 30,
+          decoration: BoxDecoration(gradient: gradient),
+        ),
+      );
+    } else if (style == kCornerStyleDodecagon) {
+      card = ClipPath(
+        clipper: _MiniDodecagonClipper(),
+        child: Container(
+          width: 48,
+          height: 30,
+          decoration: BoxDecoration(gradient: gradient),
+        ),
+      );
+    }
+
+    return card;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: kCardCornerStyles.map((style) {
+        final isSelected = style == selected;
+        final previewColor = isSelected ? color : color.withValues(alpha: 0.55);
+        return GestureDetector(
+          onTap: () => onChanged(style),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? theme.colorScheme.primaryContainer
+                  : theme.colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color:
+                    isSelected ? theme.colorScheme.primary : Colors.transparent,
+                width: 2,
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _miniCard(style, previewColor),
+                const SizedBox(height: 4),
+                Text(
+                  cornerStyleLabel(style),
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight:
+                        isSelected ? FontWeight.bold : FontWeight.normal,
+                    color: isSelected
+                        ? theme.colorScheme.onPrimaryContainer
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+// Mini clippers used only inside the _CornerStylePicker tile previews.
+
+class _MiniOctagonClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    const cut = 8.0;
+    return Path()
+      ..moveTo(cut, 0)
+      ..lineTo(size.width - cut, 0)
+      ..lineTo(size.width, cut)
+      ..lineTo(size.width, size.height - cut)
+      ..lineTo(size.width - cut, size.height)
+      ..lineTo(cut, size.height)
+      ..lineTo(0, size.height - cut)
+      ..lineTo(0, cut)
+      ..close();
+  }
+
+  @override
+  bool shouldReclip(_MiniOctagonClipper old) => false;
+}
+
+class _MiniDodecagonClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    final w = size.width;
+    final h = size.height;
+    // Double-chamfer scaled to the mini preview tile.
+    final a = w * 0.22;
+    final b = a * 0.5;
+    return Path()
+      ..moveTo(a, 0)
+      ..lineTo(w - a, 0)
+      ..lineTo(w - b, b)
+      ..lineTo(w, b)
+      ..lineTo(w, h - b)
+      ..lineTo(w - b, h - b)
+      ..lineTo(w - a, h)
+      ..lineTo(a, h)
+      ..lineTo(b, h - b)
+      ..lineTo(0, h - b)
+      ..lineTo(0, b)
+      ..lineTo(b, b)
+      ..close();
+  }
+
+  @override
+  bool shouldReclip(_MiniDodecagonClipper old) => false;
 }
