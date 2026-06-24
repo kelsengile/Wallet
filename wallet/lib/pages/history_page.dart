@@ -11,7 +11,7 @@ final _currencyFmt = NumberFormat('#,##0.00', 'en_PH');
 String _fmt(double v) => _currencyFmt.format(v);
 
 // ── Filter modes ───────────────────────────────────────────────────────────────
-enum _FilterMode { daily, weekly, monthly, yearly }
+enum _FilterMode { daily, weekly, monthly, yearly, allTime, custom }
 
 class HistoryPage extends StatefulWidget {
   const HistoryPage({super.key});
@@ -34,6 +34,10 @@ class HistoryPageState extends State<HistoryPage> {
   // The "anchor" date — we navigate around this.
   DateTime _anchor = DateTime(DateTime.now().year, DateTime.now().month);
 
+  // Custom date range (only used when _filterMode == _FilterMode.custom)
+  DateTime? _customStart;
+  DateTime? _customEnd;
+
   // ── Period helpers ────────────────────────────────────────────────────────
 
   /// Inclusive start of the current period.
@@ -49,6 +53,10 @@ class HistoryPageState extends State<HistoryPage> {
         return DateTime(now.year, now.month);
       case _FilterMode.yearly:
         return DateTime(now.year);
+      case _FilterMode.allTime:
+        return DateTime(2000); // effectively epoch
+      case _FilterMode.custom:
+        return _customStart ?? DateTime(2000);
     }
   }
 
@@ -64,32 +72,54 @@ class HistoryPageState extends State<HistoryPage> {
         return DateTime(s.year, s.month + 1);
       case _FilterMode.yearly:
         return DateTime(_periodStart.year + 1);
+      case _FilterMode.allTime:
+        return DateTime(2100);
+      case _FilterMode.custom:
+        final end = _customEnd ?? DateTime.now();
+        return DateTime(end.year, end.month, end.day + 1);
     }
   }
 
   String get _periodLabel {
-    final s = _periodStart;
     switch (_filterMode) {
-      case _FilterMode.daily:
-        return DateFormat('EEE, MMM d, yyyy').format(s);
-      case _FilterMode.weekly:
-        final e = _periodEnd.subtract(const Duration(days: 1));
-        final sStr = DateFormat('MMM d').format(s);
-        final eStr = DateFormat('MMM d, yyyy').format(e);
-        return '$sStr – $eStr';
-      case _FilterMode.monthly:
-        return DateFormat('MMMM yyyy').format(s);
-      case _FilterMode.yearly:
-        return s.year.toString();
+      case _FilterMode.allTime:
+        return 'All Time';
+      case _FilterMode.custom:
+        if (_customStart == null && _customEnd == null) return 'Custom Range';
+        final fmt = DateFormat('MMM d, yyyy');
+        final s = _customStart != null ? fmt.format(_customStart!) : '…';
+        final e = _customEnd != null ? fmt.format(_customEnd!) : '…';
+        return '$s – $e';
+      default:
+        final s = _periodStart;
+        switch (_filterMode) {
+          case _FilterMode.daily:
+            return DateFormat('EEE, MMM d, yyyy').format(s);
+          case _FilterMode.weekly:
+            final e = _periodEnd.subtract(const Duration(days: 1));
+            final sStr = DateFormat('MMM d').format(s);
+            final eStr = DateFormat('MMM d, yyyy').format(e);
+            return '$sStr – $eStr';
+          case _FilterMode.monthly:
+            return DateFormat('MMMM yyyy').format(s);
+          case _FilterMode.yearly:
+            return s.year.toString();
+          default:
+            return '';
+        }
     }
   }
 
   bool get _canGoForward {
+    if (_filterMode == _FilterMode.allTime || _filterMode == _FilterMode.custom)
+      return false;
     final now = DateTime.now();
     return _periodEnd.isBefore(DateTime(now.year, now.month, now.day + 1));
   }
 
   void _goBack() {
+    if (_filterMode == _FilterMode.allTime || _filterMode == _FilterMode.custom)
+      return;
     setState(() {
       switch (_filterMode) {
         case _FilterMode.daily:
@@ -103,6 +133,8 @@ class HistoryPageState extends State<HistoryPage> {
           break;
         case _FilterMode.yearly:
           _anchor = DateTime(_anchor.year - 1);
+          break;
+        default:
           break;
       }
     });
@@ -124,6 +156,8 @@ class HistoryPageState extends State<HistoryPage> {
           break;
         case _FilterMode.yearly:
           _anchor = DateTime(_anchor.year + 1);
+          break;
+        default:
           break;
       }
     });
@@ -168,12 +202,16 @@ class HistoryPageState extends State<HistoryPage> {
       _db.getCategoryRegistry(),
       _db.getSetting('history_filter_mode'),
       _db.getSetting('history_filter_anchor'),
+      _db.getSetting('history_filter_custom_start'),
+      _db.getSetting('history_filter_custom_end'),
     ]);
     final txs = results[0] as List<WalletTransaction>;
     final accounts = results[1] as List<Account>;
     final registry = results[2] as CategoryRegistry;
     final savedFilter = results[3] as String?;
     final savedAnchor = results[4] as String?;
+    final savedCustomStart = results[5] as String?;
+    final savedCustomEnd = results[6] as String?;
 
     _FilterMode restoredMode = _filterMode;
     DateTime restoredAnchor = _anchor;
@@ -197,6 +235,12 @@ class HistoryPageState extends State<HistoryPage> {
       _accountCategories = registry.accountCategories;
       _filterMode = restoredMode;
       _anchor = restoredAnchor;
+      if (savedCustomStart != null) {
+        _customStart = DateTime.tryParse(savedCustomStart);
+      }
+      if (savedCustomEnd != null) {
+        _customEnd = DateTime.tryParse(savedCustomEnd);
+      }
       _loading = false;
     });
   }
@@ -204,6 +248,14 @@ class HistoryPageState extends State<HistoryPage> {
   Future<void> _saveFilter() async {
     await _db.saveSetting('history_filter_mode', _filterMode.name);
     await _db.saveSetting('history_filter_anchor', _anchor.toIso8601String());
+    if (_customStart != null) {
+      await _db.saveSetting(
+          'history_filter_custom_start', _customStart!.toIso8601String());
+    }
+    if (_customEnd != null) {
+      await _db.saveSetting(
+          'history_filter_custom_end', _customEnd!.toIso8601String());
+    }
   }
 
   // ── Filter bottom-sheet ───────────────────────────────────────────────────
@@ -217,8 +269,38 @@ class HistoryPageState extends State<HistoryPage> {
       builder: (ctx) => _FilterSheet(current: _filterMode),
     );
     if (selected == null || !mounted) return;
+
+    if (selected == _FilterMode.custom) {
+      // Open the period picker dialog directly into custom mode
+      final result = await showDialog<
+          ({
+            _FilterMode mode,
+            DateTime anchor,
+            DateTime? customStart,
+            DateTime? customEnd
+          })>(
+        context: context,
+        builder: (ctx) => _PeriodPickerDialog(
+          currentMode: _FilterMode.custom,
+          currentAnchor: _anchor,
+          customStart: _customStart,
+          customEnd: _customEnd,
+        ),
+      );
+      if (result == null || !mounted) return;
+      setState(() {
+        _filterMode = result.mode;
+        _anchor = result.anchor;
+        _customStart = result.customStart;
+        _customEnd = result.customEnd;
+      });
+      _saveFilter();
+      return;
+    }
+
     setState(() {
       _filterMode = selected;
+      if (selected == _FilterMode.allTime) return;
       // Reset anchor to today's period when switching modes
       final now = DateTime.now();
       switch (_filterMode) {
@@ -234,6 +316,8 @@ class HistoryPageState extends State<HistoryPage> {
         case _FilterMode.yearly:
           _anchor = DateTime(now.year);
           break;
+        default:
+          break;
       }
     });
     _saveFilter();
@@ -242,17 +326,27 @@ class HistoryPageState extends State<HistoryPage> {
   // ── Period picker (tapping the label) ───────────────────────────────────
 
   Future<void> _pickPeriod() async {
-    final result = await showDialog<({_FilterMode mode, DateTime anchor})>(
+    final result = await showDialog<
+        ({
+          _FilterMode mode,
+          DateTime anchor,
+          DateTime? customStart,
+          DateTime? customEnd
+        })>(
       context: context,
       builder: (ctx) => _PeriodPickerDialog(
         currentMode: _filterMode,
         currentAnchor: _anchor,
+        customStart: _customStart,
+        customEnd: _customEnd,
       ),
     );
     if (result == null || !mounted) return;
     setState(() {
       _filterMode = result.mode;
       _anchor = result.anchor;
+      _customStart = result.customStart;
+      _customEnd = result.customEnd;
     });
     _saveFilter();
   }
@@ -343,6 +437,10 @@ class HistoryPageState extends State<HistoryPage> {
       case _FilterMode.yearly:
         // e.g. "Jun 9 • Monday"
         return DateFormat('MMM d • EEEE').format(d);
+      case _FilterMode.allTime:
+      case _FilterMode.custom:
+        // Show full date including year
+        return DateFormat('MMM d, EEEE • yyyy').format(d);
     }
   }
 
@@ -375,8 +473,11 @@ class HistoryPageState extends State<HistoryPage> {
     for (final key in keys) {
       final d = DateTime.tryParse(key);
 
-      // ── Yearly mode: inject a month header whenever the month changes ──────
-      if (_filterMode == _FilterMode.yearly && d != null) {
+      // ── Yearly / allTime / custom mode: inject a month header whenever the month changes ──────
+      if ((_filterMode == _FilterMode.yearly ||
+              _filterMode == _FilterMode.allTime ||
+              _filterMode == _FilterMode.custom) &&
+          d != null) {
         final monthKey = '${d.year}-${d.month.toString().padLeft(2, '0')}';
         if (monthKey != _lastMonthKey) {
           _lastMonthKey = monthKey;
@@ -473,7 +574,9 @@ class HistoryPageState extends State<HistoryPage> {
             child: _DateHeader(
               label: item.label!,
               theme: theme,
-              indented: _filterMode == _FilterMode.yearly,
+              indented: _filterMode == _FilterMode.yearly ||
+                  _filterMode == _FilterMode.allTime ||
+                  _filterMode == _FilterMode.custom,
             ),
           );
         }
@@ -750,10 +853,16 @@ class HistoryPageState extends State<HistoryPage> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.chevron_left,
-                        color: Color.fromARGB(255, 219, 219, 219)),
-                    onPressed: _goBack,
+                  Opacity(
+                    opacity: _filterMode == _FilterMode.allTime ? 0.0 : 1.0,
+                    child: IgnorePointer(
+                      ignoring: _filterMode == _FilterMode.allTime,
+                      child: IconButton(
+                        icon: const Icon(Icons.chevron_left,
+                            color: Color.fromARGB(255, 219, 219, 219)),
+                        onPressed: _goBack,
+                      ),
+                    ),
                   ),
                   Expanded(
                     child: GestureDetector(
@@ -769,15 +878,21 @@ class HistoryPageState extends State<HistoryPage> {
                       ),
                     ),
                   ),
-                  IconButton(
-                    icon: Icon(
-                      Icons.chevron_right,
-                      color: _canGoForward
-                          ? const Color.fromARGB(255, 219, 219, 219)
-                          : const Color.fromARGB(255, 219, 219, 219)
-                              .withValues(alpha: 0.3),
+                  Opacity(
+                    opacity: _filterMode == _FilterMode.allTime ? 0.0 : 1.0,
+                    child: IgnorePointer(
+                      ignoring: _filterMode == _FilterMode.allTime,
+                      child: IconButton(
+                        icon: Icon(
+                          Icons.chevron_right,
+                          color: _canGoForward
+                              ? const Color.fromARGB(255, 219, 219, 219)
+                              : const Color.fromARGB(255, 219, 219, 219)
+                                  .withValues(alpha: 0.3),
+                        ),
+                        onPressed: _canGoForward ? _goForward : null,
+                      ),
                     ),
-                    onPressed: _canGoForward ? _goForward : null,
                   ),
                 ],
               ),
@@ -1071,6 +1186,8 @@ class _FilterSheetState extends State<_FilterSheet> {
     (_FilterMode.weekly, 'Weekly', Icons.view_week_outlined),
     (_FilterMode.monthly, 'Monthly', Icons.calendar_month_outlined),
     (_FilterMode.yearly, 'Yearly', Icons.calendar_today_outlined),
+    (_FilterMode.allTime, 'All Time', Icons.all_inclusive_outlined),
+    (_FilterMode.custom, 'Custom Range', Icons.date_range_outlined),
   ];
 
   @override
@@ -1147,10 +1264,14 @@ class _FilterSheetState extends State<_FilterSheet> {
 class _PeriodPickerDialog extends StatefulWidget {
   final _FilterMode currentMode;
   final DateTime currentAnchor;
+  final DateTime? customStart;
+  final DateTime? customEnd;
 
   const _PeriodPickerDialog({
     required this.currentMode,
     required this.currentAnchor,
+    this.customStart,
+    this.customEnd,
   });
 
   @override
@@ -1164,11 +1285,17 @@ class _PeriodPickerDialogState extends State<_PeriodPickerDialog> {
   // For the inline calendar grid
   late DateTime _calendarMonth; // which month the mini-calendar is showing
 
+  // Custom date range
+  DateTime? _customStart;
+  DateTime? _customEnd;
+
   static const _modes = [
     (_FilterMode.daily, 'Day'),
     (_FilterMode.weekly, 'Week'),
     (_FilterMode.monthly, 'Month'),
     (_FilterMode.yearly, 'Year'),
+    (_FilterMode.allTime, 'All'),
+    (_FilterMode.custom, 'Custom'),
   ];
 
   @override
@@ -1177,6 +1304,8 @@ class _PeriodPickerDialogState extends State<_PeriodPickerDialog> {
     _mode = widget.currentMode;
     _anchor = widget.currentAnchor;
     _calendarMonth = DateTime(_anchor.year, _anchor.month);
+    _customStart = widget.customStart;
+    _customEnd = widget.customEnd;
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -1203,6 +1332,26 @@ class _PeriodPickerDialogState extends State<_PeriodPickerDialog> {
         return d.year == _anchor.year && d.month == _anchor.month;
       case _FilterMode.yearly:
         return d.year == _anchor.year;
+      case _FilterMode.allTime:
+        return false;
+      case _FilterMode.custom:
+        if (_customStart == null && _customEnd == null) return false;
+        final day = DateTime(d.year, d.month, d.day);
+        final start = _customStart != null
+            ? DateTime(
+                _customStart!.year, _customStart!.month, _customStart!.day)
+            : null;
+        final end = _customEnd != null
+            ? DateTime(_customEnd!.year, _customEnd!.month, _customEnd!.day)
+            : null;
+        if (start != null && end != null) {
+          return !day.isBefore(start) && !day.isAfter(end);
+        } else if (start != null) {
+          return _isSameDay(day, start);
+        } else if (end != null) {
+          return _isSameDay(day, end);
+        }
+        return false;
     }
   }
 
@@ -1221,6 +1370,23 @@ class _PeriodPickerDialogState extends State<_PeriodPickerDialog> {
           break;
         case _FilterMode.yearly:
           _anchor = DateTime(d.year);
+          break;
+        case _FilterMode.allTime:
+          break;
+        case _FilterMode.custom:
+          // First tap sets start, second tap sets end (if after start), third resets
+          final day = DateTime(d.year, d.month, d.day);
+          if (_customStart == null ||
+              (_customEnd != null) ||
+              day.isBefore(_customStart!)) {
+            _customStart = day;
+            _customEnd = null;
+          } else if (_isSameDay(day, _customStart!)) {
+            _customStart = null;
+            _customEnd = null;
+          } else {
+            _customEnd = day;
+          }
           break;
       }
     });
@@ -1256,6 +1422,17 @@ class _PeriodPickerDialogState extends State<_PeriodPickerDialog> {
         return DateFormat('MMMM yyyy').format(_anchor);
       case _FilterMode.yearly:
         return _anchor.year.toString();
+      case _FilterMode.allTime:
+        return 'All Time';
+      case _FilterMode.custom:
+        if (_customStart == null && _customEnd == null) {
+          return 'Tap to select start date';
+        } else if (_customStart != null && _customEnd == null) {
+          return 'From ${DateFormat('MMM d, yyyy').format(_customStart!)} — tap end date';
+        } else if (_customStart != null && _customEnd != null) {
+          return '${DateFormat('MMM d, yyyy').format(_customStart!)} – ${DateFormat('MMM d, yyyy').format(_customEnd!)}';
+        }
+        return 'Custom Range';
     }
   }
 
@@ -1332,82 +1509,84 @@ class _PeriodPickerDialogState extends State<_PeriodPickerDialog> {
             ),
             const SizedBox(height: 16),
 
-            // ── Unified nav row (shared across all modes) ──────────────────
-            Builder(builder: (_) {
-              // Compute label, back handler, and forward-disabled state
-              // once, based on the active mode.
-              final decadeStart = (_calendarMonth.year - 1) ~/ 10 * 10 + 1;
+            // ── Unified nav row (hidden for allTime) ───────────────────────
+            if (_mode != _FilterMode.allTime)
+              Builder(builder: (_) {
+                // Compute label, back handler, and forward-disabled state
+                // once, based on the active mode.
+                final decadeStart = (_calendarMonth.year - 1) ~/ 10 * 10 + 1;
 
-              final String navLabel;
-              final VoidCallback onBack;
-              final VoidCallback? onForward;
-              final double labelFontSize;
+                final String navLabel;
+                final VoidCallback onBack;
+                final VoidCallback? onForward;
+                final double labelFontSize;
 
-              switch (_mode) {
-                case _FilterMode.monthly:
-                  navLabel = '${_calendarMonth.year}';
-                  labelFontSize = 15;
-                  onBack = () => setState(() => _calendarMonth =
-                      DateTime(_calendarMonth.year - 1, _calendarMonth.month));
-                  onForward = _calendarMonth.year >= now.year
-                      ? null
-                      : () => setState(() => _calendarMonth = DateTime(
-                          _calendarMonth.year + 1, _calendarMonth.month));
-                case _FilterMode.yearly:
-                  navLabel = '$decadeStart – ${decadeStart + 9}';
-                  labelFontSize = 15;
-                  onBack = () => setState(() =>
-                      _calendarMonth = DateTime(_calendarMonth.year - 10, 1));
-                  onForward = decadeStart + 9 >= now.year
-                      ? null
-                      : () => setState(() => _calendarMonth =
-                          DateTime(_calendarMonth.year + 10, 1));
-                default:
-                  // Daily / Weekly — navigate by month
-                  navLabel = _calendarMonthLabel();
-                  labelFontSize = 13;
-                  onBack = () => setState(() => _calendarMonth =
-                      DateTime(_calendarMonth.year, _calendarMonth.month - 1));
-                  onForward = (_calendarMonth.year > now.year ||
-                          (_calendarMonth.year == now.year &&
-                              _calendarMonth.month >= now.month))
-                      ? null
-                      : () => setState(() => _calendarMonth = DateTime(
-                          _calendarMonth.year, _calendarMonth.month + 1));
-              }
+                switch (_mode) {
+                  case _FilterMode.monthly:
+                    navLabel = '${_calendarMonth.year}';
+                    labelFontSize = 15;
+                    onBack = () => setState(() => _calendarMonth = DateTime(
+                        _calendarMonth.year - 1, _calendarMonth.month));
+                    onForward = _calendarMonth.year >= now.year
+                        ? null
+                        : () => setState(() => _calendarMonth = DateTime(
+                            _calendarMonth.year + 1, _calendarMonth.month));
+                  case _FilterMode.yearly:
+                    navLabel = '$decadeStart – ${decadeStart + 9}';
+                    labelFontSize = 15;
+                    onBack = () => setState(() =>
+                        _calendarMonth = DateTime(_calendarMonth.year - 10, 1));
+                    onForward = decadeStart + 9 >= now.year
+                        ? null
+                        : () => setState(() => _calendarMonth =
+                            DateTime(_calendarMonth.year + 10, 1));
+                  default:
+                    // Daily / Weekly / Custom — navigate by month
+                    navLabel = _calendarMonthLabel();
+                    labelFontSize = 13;
+                    onBack = () => setState(() => _calendarMonth = DateTime(
+                        _calendarMonth.year, _calendarMonth.month - 1));
+                    onForward = (_calendarMonth.year > now.year ||
+                            (_calendarMonth.year == now.year &&
+                                _calendarMonth.month >= now.month))
+                        ? null
+                        : () => setState(() => _calendarMonth = DateTime(
+                            _calendarMonth.year, _calendarMonth.month + 1));
+                }
 
-              return Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  IconButton(
-                    iconSize: 18,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    icon: const Icon(Icons.chevron_left),
-                    onPressed: onBack,
-                  ),
-                  Text(
-                    navLabel,
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      fontSize: labelFontSize,
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    IconButton(
+                      iconSize: 18,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      icon: const Icon(Icons.chevron_left),
+                      onPressed: onBack,
                     ),
-                  ),
-                  IconButton(
-                    iconSize: 18,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    icon: Icon(
-                      Icons.chevron_right,
-                      color: onForward == null
-                          ? theme.colorScheme.onSurface.withValues(alpha: 0.25)
-                          : null,
+                    Text(
+                      navLabel,
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        fontSize: labelFontSize,
+                      ),
                     ),
-                    onPressed: onForward,
-                  ),
-                ],
-              );
-            }),
+                    IconButton(
+                      iconSize: 18,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      icon: Icon(
+                        Icons.chevron_right,
+                        color: onForward == null
+                            ? theme.colorScheme.onSurface
+                                .withValues(alpha: 0.25)
+                            : null,
+                      ),
+                      onPressed: onForward,
+                    ),
+                  ],
+                );
+              }),
             const SizedBox(height: 8),
 
             // ── Mode-specific picker body (fixed height = tallest mode) ────
@@ -1416,7 +1595,122 @@ class _PeriodPickerDialogState extends State<_PeriodPickerDialog> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  if (_mode == _FilterMode.monthly) ...[
+                  if (_mode == _FilterMode.allTime) ...[
+                    // All Time: no date selection needed
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.all_inclusive,
+                          size: 48,
+                          color: primary.withValues(alpha: 0.35),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Showing all transactions',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurface
+                                .withValues(alpha: 0.55),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ] else if (_mode == _FilterMode.custom) ...[
+                    // Custom range: weekday header + tappable day grid
+                    Row(
+                      children: ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d) {
+                        return Expanded(
+                          child: Center(
+                            child: Text(
+                              d,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: theme.colorScheme.onSurface
+                                    .withValues(alpha: 0.4),
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 4),
+                    Builder(builder: (_) {
+                      final days = _calendarDays();
+                      while (days.length % 7 != 0) days.add(null);
+                      final rows = days.length ~/ 7;
+
+                      return Column(
+                        children: List.generate(rows, (row) {
+                          return Row(
+                            children: List.generate(7, (col) {
+                              final d = days[row * 7 + col];
+                              if (d == null) {
+                                return const Expanded(
+                                    child: SizedBox(height: 36));
+                              }
+
+                              final isFuture = d.isAfter(now);
+                              final highlighted =
+                                  !isFuture && _isHighlighted(d);
+                              final isStart = _customStart != null &&
+                                  _isSameDay(d, _customStart!);
+                              final isEnd = _customEnd != null &&
+                                  _isSameDay(d, _customEnd!);
+                              final isToday = _isSameDay(d, now);
+
+                              Color? bgColor;
+                              Color textColor = theme.colorScheme.onSurface;
+
+                              if (isStart || isEnd) {
+                                bgColor = primary.withValues(alpha: 0.85);
+                                textColor = theme.colorScheme.onPrimary;
+                              } else if (highlighted) {
+                                bgColor = primary.withValues(alpha: 0.12);
+                                textColor = primary;
+                              } else if (isToday) {
+                                textColor = primary;
+                              }
+
+                              if (isFuture) {
+                                textColor = theme.colorScheme.onSurface
+                                    .withValues(alpha: 0.25);
+                              }
+
+                              return Expanded(
+                                child: GestureDetector(
+                                  onTap:
+                                      isFuture ? null : () => _onDayTapped(d),
+                                  child: Container(
+                                    height: 36,
+                                    decoration: BoxDecoration(
+                                      color: bgColor,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        '${d.day}',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: highlighted ||
+                                                  isToday ||
+                                                  isStart ||
+                                                  isEnd
+                                              ? FontWeight.w700
+                                              : FontWeight.w400,
+                                          color: textColor,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }),
+                          );
+                        }),
+                      );
+                    }),
+                  ] else if (_mode == _FilterMode.monthly) ...[
                     // Monthly: 3×4 month grid
                     Builder(builder: (_) {
                       const monthNames = [
@@ -1693,8 +1987,12 @@ class _PeriodPickerDialogState extends State<_PeriodPickerDialog> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: FilledButton(
-                    onPressed: () =>
-                        Navigator.pop(context, (mode: _mode, anchor: _anchor)),
+                    onPressed: () => Navigator.pop(context, (
+                      mode: _mode,
+                      anchor: _anchor,
+                      customStart: _customStart,
+                      customEnd: _customEnd,
+                    )),
                     child: const Text('Apply'),
                   ),
                 ),
