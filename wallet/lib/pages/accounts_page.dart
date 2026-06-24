@@ -390,7 +390,6 @@ class AccountsPageState extends State<AccountsPage> {
                         setState(() => _draggingSectionType = null),
                     onCardMoveToType: _moveCardToType,
                     onCardTap: _showAccountDetail,
-                    onCardLongPress: (_) {},
                     onCardDelete: _deleteAccount,
                   ),
                 ),
@@ -419,7 +418,6 @@ class _DraggableSectionList extends StatefulWidget {
   final VoidCallback onSectionDragEnd;
   final void Function(Account account, String newType) onCardMoveToType;
   final void Function(Account) onCardTap;
-  final void Function(Account) onCardLongPress;
   final void Function(Account) onCardDelete;
 
   const _DraggableSectionList({
@@ -432,7 +430,6 @@ class _DraggableSectionList extends StatefulWidget {
     required this.onSectionDragEnd,
     required this.onCardMoveToType,
     required this.onCardTap,
-    required this.onCardLongPress,
     required this.onCardDelete,
   });
 
@@ -443,9 +440,6 @@ class _DraggableSectionList extends StatefulWidget {
 class _DraggableSectionListState extends State<_DraggableSectionList> {
   // Which section index is being hovered for drop target highlight
   int? _hoverSectionIndex;
-  // Whether a card drag is in progress (to highlight drop zones)
-  bool _cardDragActive = false;
-  Account? _draggingCard;
 
   @override
   Widget build(BuildContext context) {
@@ -501,25 +495,10 @@ class _DraggableSectionListState extends State<_DraggableSectionList> {
           accounts: accounts,
           isBeingDragged: isBeingDragged,
           reorderMode: widget.reorderMode,
-          cardDragActive: _cardDragActive,
-          draggingCard: _draggingCard,
           onSectionDragStart: () => widget.onSectionDragStart(type),
           onSectionDragEnd: widget.onSectionDragEnd,
-          onCardDragStart: (card) {
-            setState(() {
-              _cardDragActive = true;
-              _draggingCard = card;
-            });
-          },
-          onCardDragEnd: () {
-            setState(() {
-              _cardDragActive = false;
-              _draggingCard = null;
-            });
-          },
           onCardDropped: (card) => widget.onCardMoveToType(card, type),
           onCardTap: widget.onCardTap,
-          onCardLongPress: widget.onCardLongPress,
           onCardDelete: widget.onCardDelete,
         ),
       ],
@@ -610,15 +589,10 @@ class _DraggableSectionTile extends StatefulWidget {
   final List<Account> accounts;
   final bool isBeingDragged;
   final bool reorderMode;
-  final bool cardDragActive;
-  final Account? draggingCard;
   final VoidCallback onSectionDragStart;
   final VoidCallback onSectionDragEnd;
-  final void Function(Account) onCardDragStart;
-  final VoidCallback onCardDragEnd;
   final void Function(Account) onCardDropped;
   final void Function(Account) onCardTap;
-  final void Function(Account) onCardLongPress;
   final void Function(Account) onCardDelete;
 
   const _DraggableSectionTile({
@@ -626,15 +600,10 @@ class _DraggableSectionTile extends StatefulWidget {
     required this.accounts,
     required this.isBeingDragged,
     required this.reorderMode,
-    required this.cardDragActive,
-    required this.draggingCard,
     required this.onSectionDragStart,
     required this.onSectionDragEnd,
-    required this.onCardDragStart,
-    required this.onCardDragEnd,
     required this.onCardDropped,
     required this.onCardTap,
-    required this.onCardLongPress,
     required this.onCardDelete,
   });
 
@@ -711,10 +680,7 @@ class _DraggableSectionTileState extends State<_DraggableSectionTile> {
             type: widget.type,
             accounts: widget.accounts,
             reorderMode: widget.reorderMode,
-            onCardDragStart: widget.onCardDragStart,
-            onCardDragEnd: widget.onCardDragEnd,
             onCardTap: widget.onCardTap,
-            onCardLongPress: widget.onCardLongPress,
             onCardDelete: widget.onCardDelete,
           ),
         ],
@@ -738,10 +704,6 @@ class _DraggableSectionTileState extends State<_DraggableSectionTile> {
       builder: (context, _, __) {
         final typeColor = _resolveTypeColor(context);
 
-        final isCardDropTarget = widget.cardDragActive &&
-            widget.draggingCard != null &&
-            widget.draggingCard!.type != widget.type;
-
         // Inner content with drop-target highlight
         Widget sectionBody = AnimatedContainer(
           duration: const Duration(milliseconds: 200),
@@ -756,22 +718,6 @@ class _DraggableSectionTileState extends State<_DraggableSectionTile> {
           ),
           child: _buildSectionContent(),
         );
-
-        // Card drop target wrapper
-        if (isCardDropTarget) {
-          sectionBody = DragTarget<Account>(
-            onWillAcceptWithDetails: (d) => d.data.type != widget.type,
-            onAcceptWithDetails: (d) {
-              widget.onCardDropped(d.data);
-              setState(() => _isDropTarget = false);
-            },
-            onMove: (_) {
-              if (!_isDropTarget) setState(() => _isDropTarget = true);
-            },
-            onLeave: (_) => setState(() => _isDropTarget = false),
-            builder: (_, candidateData, __) => sectionBody,
-          );
-        }
 
         // Section reorder: only active in reorderMode; short 400 ms delay
         if (widget.reorderMode) {
@@ -835,20 +781,14 @@ class _DraggableCardCarousel extends StatefulWidget {
   final String type;
   final List<Account> accounts;
   final bool reorderMode;
-  final void Function(Account) onCardDragStart;
-  final VoidCallback onCardDragEnd;
   final void Function(Account) onCardTap;
-  final void Function(Account) onCardLongPress;
   final void Function(Account) onCardDelete;
 
   const _DraggableCardCarousel({
     required this.type,
     required this.accounts,
     required this.reorderMode,
-    required this.onCardDragStart,
-    required this.onCardDragEnd,
     required this.onCardTap,
-    required this.onCardLongPress,
     required this.onCardDelete,
   });
 
@@ -859,6 +799,7 @@ class _DraggableCardCarousel extends StatefulWidget {
 class _DraggableCardCarouselState extends State<_DraggableCardCarousel> {
   @override
   Widget build(BuildContext context) {
+    // ignore: unused_local_variable
     final typeColor = widget.accounts.isNotEmpty
         ? colorFromHex(widget.accounts.first.colorHex)
         : _registryNotifier.value.typeColor(widget.type);
@@ -874,49 +815,11 @@ class _DraggableCardCarouselState extends State<_DraggableCardCarousel> {
         itemBuilder: (_, i) {
           final a = widget.accounts[i];
 
-          // ── REORDER MODE: draggable for cross-section drops ────────────
+          // ── REORDER MODE: inert card, no gesture handling ─────────────
           if (widget.reorderMode) {
             return Padding(
               padding: const EdgeInsets.only(right: 14),
-              child: LongPressDraggable<Account>(
-                key: ValueKey('card_drag_\${a.id}'),
-                data: a,
-                delay: const Duration(milliseconds: 400),
-                onDragStarted: () {
-                  widget.onCardDragStart(a);
-                  HapticFeedback.mediumImpact();
-                },
-                onDragEnd: (_) => widget.onCardDragEnd(),
-                onDraggableCanceled: (_, __) => widget.onCardDragEnd(),
-                feedback: Material(
-                  color: Colors.transparent,
-                  child: Opacity(
-                    opacity: 0.95,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(18),
-                        boxShadow: [
-                          BoxShadow(
-                            color: typeColor.withValues(alpha: 0.45),
-                            blurRadius: 28,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
-                        border: Border.all(color: typeColor, width: 2),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child: _AccountCardInert(account: a),
-                      ),
-                    ),
-                  ),
-                ),
-                childWhenDragging: Opacity(
-                  opacity: 0.0,
-                  child: _AccountCardInert(account: a),
-                ),
-                child: _AccountCardInert(account: a),
-              ),
+              child: _AccountCardInert(account: a),
             );
           }
 
