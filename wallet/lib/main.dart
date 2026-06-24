@@ -171,18 +171,32 @@ class _WalletHomePageState extends State<WalletHomePage> {
     return ValueListenableBuilder<double>(
       valueListenable: _pageTNotifier,
       builder: (context, pageT, child) {
+        // The NavigationBar uses surfaceContainer as its background in M3.
+        // Mirror that colour on the phone's system navigation bar so the
+        // gesture/button strip blends seamlessly with the app's bottom bar.
+        final navBarColor = theme.colorScheme.surfaceContainer;
+        final navBarIconBrightness = theme.brightness == Brightness.dark
+            ? Brightness.light
+            : Brightness.dark;
+
         // Status bar icons: light (white) on Accounts + History, dark on Analytics+.
         // Switches at the midpoint of the History→Analytics swipe (pageT crosses 1.5).
         final overlayStyle = pageT < 1.5
-            ? const SystemUiOverlayStyle(
+            ? SystemUiOverlayStyle(
                 statusBarColor: Colors.transparent,
                 statusBarIconBrightness: Brightness.light,
                 statusBarBrightness: Brightness.dark,
+                systemNavigationBarColor: navBarColor,
+                systemNavigationBarIconBrightness: navBarIconBrightness,
+                systemNavigationBarContrastEnforced: false,
               )
-            : const SystemUiOverlayStyle(
+            : SystemUiOverlayStyle(
                 statusBarColor: Colors.transparent,
                 statusBarIconBrightness: Brightness.dark,
                 statusBarBrightness: Brightness.light,
+                systemNavigationBarColor: navBarColor,
+                systemNavigationBarIconBrightness: navBarIconBrightness,
+                systemNavigationBarContrastEnforced: false,
               );
         return AnnotatedRegion<SystemUiOverlayStyle>(
           value: overlayStyle,
