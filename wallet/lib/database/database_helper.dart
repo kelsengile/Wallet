@@ -80,7 +80,8 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 10, // bumped from 9 → 10 to seed expanded built-in categories
+      version:
+          13, // bumped to 13 to re-apply cash corner_style = sharp (idempotent)
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -182,15 +183,16 @@ class DatabaseHelper {
     // (currently only the "Transfer" transaction category).
     await db.execute('''
       CREATE TABLE categories (
-        id          INTEGER PRIMARY KEY AUTOINCREMENT,
-        name        TEXT    NOT NULL,
-        group_type  TEXT    NOT NULL,
-        icon        TEXT    NOT NULL DEFAULT 'label',
-        color_hex   TEXT    NOT NULL DEFAULT '#6366F1',
-        sort_order  INTEGER NOT NULL DEFAULT 0,
-        is_default  INTEGER NOT NULL DEFAULT 0,
-        is_system   INTEGER NOT NULL DEFAULT 0,
-        sub_type    TEXT    NOT NULL DEFAULT '',
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        name         TEXT    NOT NULL,
+        group_type   TEXT    NOT NULL,
+        icon         TEXT    NOT NULL DEFAULT 'label',
+        color_hex    TEXT    NOT NULL DEFAULT '#6366F1',
+        sort_order   INTEGER NOT NULL DEFAULT 0,
+        is_default   INTEGER NOT NULL DEFAULT 0,
+        is_system    INTEGER NOT NULL DEFAULT 0,
+        sub_type     TEXT    NOT NULL DEFAULT '',
+        corner_style TEXT    NOT NULL DEFAULT 'rounded',
         UNIQUE(group_type, sub_type, name)
       )
     ''');
@@ -230,6 +232,7 @@ class DatabaseHelper {
             'is_default': item['is_default'] == true ? 1 : 0,
             'is_system': item['is_system'] == true ? 1 : 0,
             'sub_type': item['sub_type'] ?? '',
+            'corner_style': item['corner_style'] ?? kCornerStyleRounded,
           },
           conflictAlgorithm: ConflictAlgorithm.ignore,
         );
@@ -243,6 +246,7 @@ class DatabaseHelper {
         'icon': 'cash',
         'color_hex': '#22C55E',
         'is_default': true,
+        'corner_style': kCornerStyleSharp,
       },
       {
         'name': 'bank',
@@ -855,6 +859,24 @@ class DatabaseHelper {
           conflictAlgorithm: ConflictAlgorithm.ignore,
         );
       }
+    }
+
+    if (oldVersion < 11) {
+      // Add corner_style column to categories. Default 'rounded' keeps
+      // existing account types looking exactly as before; the user can
+      // customise each type in the Category Manager.
+      await db.execute(
+        "ALTER TABLE categories ADD COLUMN corner_style TEXT NOT NULL DEFAULT 'rounded'",
+      );
+    }
+
+    if (oldVersion < 13) {
+      // Set the cash account type to use sharp corners by default, matching
+      // the intended card design for cash accounts.
+      await db.execute(
+        "UPDATE categories SET corner_style = 'sharp' "
+        "WHERE group_type = '$kCategoryGroupAccountType' AND name = 'cash'",
+      );
     }
   }
 
