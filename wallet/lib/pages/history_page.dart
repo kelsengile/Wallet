@@ -1351,84 +1351,89 @@ class _PeriodPickerDialogState extends State<_PeriodPickerDialog> {
             ),
             const SizedBox(height: 16),
 
-            // ── Unified nav row (hidden for allTime) ───────────────────────
-            if (_mode != _FilterMode.allTime)
-              Builder(builder: (_) {
-                // Compute label, back handler, and forward-disabled state
-                // once, based on the active mode.
-                final decadeStart = (_calendarMonth.year - 1) ~/ 10 * 10 + 1;
+            // ── Unified nav row (always present for stable dialog height) ─
+            Opacity(
+              opacity: _mode == _FilterMode.allTime ? 0.0 : 1.0,
+              child: IgnorePointer(
+                ignoring: _mode == _FilterMode.allTime,
+                child: Builder(builder: (_) {
+                  // Compute label, back handler, and forward-disabled state
+                  // once, based on the active mode.
+                  final decadeStart = (_calendarMonth.year - 1) ~/ 10 * 10 + 1;
 
-                final String navLabel;
-                final VoidCallback onBack;
-                final VoidCallback? onForward;
-                final double labelFontSize;
+                  final String navLabel;
+                  final VoidCallback onBack;
+                  final VoidCallback? onForward;
+                  final double labelFontSize;
 
-                switch (_mode) {
-                  case _FilterMode.monthly:
-                    navLabel = '${_calendarMonth.year}';
-                    labelFontSize = 15;
-                    onBack = () => setState(() => _calendarMonth = DateTime(
-                        _calendarMonth.year - 1, _calendarMonth.month));
-                    onForward = _calendarMonth.year >= now.year
-                        ? null
-                        : () => setState(() => _calendarMonth = DateTime(
-                            _calendarMonth.year + 1, _calendarMonth.month));
-                  case _FilterMode.yearly:
-                    navLabel = '$decadeStart – ${decadeStart + 9}';
-                    labelFontSize = 15;
-                    onBack = () => setState(() =>
-                        _calendarMonth = DateTime(_calendarMonth.year - 10, 1));
-                    onForward = decadeStart + 9 >= now.year
-                        ? null
-                        : () => setState(() => _calendarMonth =
-                            DateTime(_calendarMonth.year + 10, 1));
-                  default:
-                    // Daily / Weekly / Custom — navigate by month
-                    navLabel = _calendarMonthLabel();
-                    labelFontSize = 13;
-                    onBack = () => setState(() => _calendarMonth = DateTime(
-                        _calendarMonth.year, _calendarMonth.month - 1));
-                    onForward = (_calendarMonth.year > now.year ||
-                            (_calendarMonth.year == now.year &&
-                                _calendarMonth.month >= now.month))
-                        ? null
-                        : () => setState(() => _calendarMonth = DateTime(
-                            _calendarMonth.year, _calendarMonth.month + 1));
-                }
+                  switch (_mode) {
+                    case _FilterMode.monthly:
+                      navLabel = '${_calendarMonth.year}';
+                      labelFontSize = 15;
+                      onBack = () => setState(() => _calendarMonth = DateTime(
+                          _calendarMonth.year - 1, _calendarMonth.month));
+                      onForward = _calendarMonth.year >= now.year
+                          ? null
+                          : () => setState(() => _calendarMonth = DateTime(
+                              _calendarMonth.year + 1, _calendarMonth.month));
+                    case _FilterMode.yearly:
+                      navLabel = '$decadeStart – ${decadeStart + 9}';
+                      labelFontSize = 15;
+                      onBack = () => setState(() => _calendarMonth =
+                          DateTime(_calendarMonth.year - 10, 1));
+                      onForward = decadeStart + 9 >= now.year
+                          ? null
+                          : () => setState(() => _calendarMonth =
+                              DateTime(_calendarMonth.year + 10, 1));
+                    default:
+                      // Daily / Weekly / Custom — navigate by month
+                      navLabel = _calendarMonthLabel();
+                      labelFontSize = 13;
+                      onBack = () => setState(() => _calendarMonth = DateTime(
+                          _calendarMonth.year, _calendarMonth.month - 1));
+                      onForward = (_calendarMonth.year > now.year ||
+                              (_calendarMonth.year == now.year &&
+                                  _calendarMonth.month >= now.month))
+                          ? null
+                          : () => setState(() => _calendarMonth = DateTime(
+                              _calendarMonth.year, _calendarMonth.month + 1));
+                  }
 
-                return Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    IconButton(
-                      iconSize: 18,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      icon: const Icon(Icons.chevron_left),
-                      onPressed: onBack,
-                    ),
-                    Text(
-                      navLabel,
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        fontSize: labelFontSize,
+                  return Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      IconButton(
+                        iconSize: 18,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        icon: const Icon(Icons.chevron_left),
+                        onPressed: onBack,
                       ),
-                    ),
-                    IconButton(
-                      iconSize: 18,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      icon: Icon(
-                        Icons.chevron_right,
-                        color: onForward == null
-                            ? theme.colorScheme.onSurface
-                                .withValues(alpha: 0.25)
-                            : null,
+                      Text(
+                        navLabel,
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          fontSize: labelFontSize,
+                        ),
                       ),
-                      onPressed: onForward,
-                    ),
-                  ],
-                );
-              }),
+                      IconButton(
+                        iconSize: 18,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        icon: Icon(
+                          Icons.chevron_right,
+                          color: onForward == null
+                              ? theme.colorScheme.onSurface
+                                  .withValues(alpha: 0.25)
+                              : null,
+                        ),
+                        onPressed: onForward,
+                      ),
+                    ],
+                  );
+                }),
+              ),
+            ),
             const SizedBox(height: 8),
 
             // ── Mode-specific picker body (fixed height = tallest mode) ────
