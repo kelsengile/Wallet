@@ -258,71 +258,6 @@ class HistoryPageState extends State<HistoryPage> {
     }
   }
 
-  // ── Filter bottom-sheet ───────────────────────────────────────────────────
-
-  Future<void> _showFilterSheet() async {
-    final selected = await showModalBottomSheet<_FilterMode>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) => _FilterSheet(current: _filterMode),
-    );
-    if (selected == null || !mounted) return;
-
-    if (selected == _FilterMode.custom) {
-      // Open the period picker dialog directly into custom mode
-      final result = await showDialog<
-          ({
-            _FilterMode mode,
-            DateTime anchor,
-            DateTime? customStart,
-            DateTime? customEnd
-          })>(
-        context: context,
-        builder: (ctx) => _PeriodPickerDialog(
-          currentMode: _FilterMode.custom,
-          currentAnchor: _anchor,
-          customStart: _customStart,
-          customEnd: _customEnd,
-        ),
-      );
-      if (result == null || !mounted) return;
-      setState(() {
-        _filterMode = result.mode;
-        _anchor = result.anchor;
-        _customStart = result.customStart;
-        _customEnd = result.customEnd;
-      });
-      _saveFilter();
-      return;
-    }
-
-    setState(() {
-      _filterMode = selected;
-      if (selected == _FilterMode.allTime) return;
-      // Reset anchor to today's period when switching modes
-      final now = DateTime.now();
-      switch (_filterMode) {
-        case _FilterMode.daily:
-          _anchor = DateTime(now.year, now.month, now.day);
-          break;
-        case _FilterMode.weekly:
-          _anchor = now.subtract(Duration(days: now.weekday - 1));
-          break;
-        case _FilterMode.monthly:
-          _anchor = DateTime(now.year, now.month);
-          break;
-        case _FilterMode.yearly:
-          _anchor = DateTime(now.year);
-          break;
-        default:
-          break;
-      }
-    });
-    _saveFilter();
-  }
-
   // ── Period picker (tapping the label) ───────────────────────────────────
 
   Future<void> _pickPeriod() async {
@@ -841,7 +776,7 @@ class HistoryPageState extends State<HistoryPage> {
                   ),
                   IconButton(
                     tooltip: 'Filter',
-                    onPressed: _showFilterSheet,
+                    onPressed: _pickPeriod,
                     icon: const _FunnelIcon(
                       color: Colors.white,
                     ),
@@ -1160,99 +1095,6 @@ class _FunnelPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_FunnelPainter old) => old.color != color;
-}
-
-// ── Filter bottom-sheet ────────────────────────────────────────────────────────
-
-class _FilterSheet extends StatefulWidget {
-  final _FilterMode current;
-  const _FilterSheet({required this.current});
-
-  @override
-  State<_FilterSheet> createState() => _FilterSheetState();
-}
-
-class _FilterSheetState extends State<_FilterSheet> {
-  late _FilterMode _selected;
-
-  @override
-  void initState() {
-    super.initState();
-    _selected = widget.current;
-  }
-
-  static const _options = [
-    (_FilterMode.daily, 'Daily', Icons.today_outlined),
-    (_FilterMode.weekly, 'Weekly', Icons.view_week_outlined),
-    (_FilterMode.monthly, 'Monthly', Icons.calendar_month_outlined),
-    (_FilterMode.yearly, 'Yearly', Icons.calendar_today_outlined),
-    (_FilterMode.allTime, 'All Time', Icons.all_inclusive_outlined),
-    (_FilterMode.custom, 'Custom Range', Icons.date_range_outlined),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Handle bar
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 20),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.outlineVariant,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          Text(
-            'Filter by Period',
-            style: theme.textTheme.titleLarge
-                ?.copyWith(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 16),
-          ..._options.map((opt) {
-            final (mode, label, icon) = opt;
-            final isSelected = _selected == mode;
-            return RadioListTile<_FilterMode>(
-              value: mode,
-              groupValue: _selected,
-              onChanged: (v) => setState(() => _selected = v!),
-              secondary: Icon(
-                icon,
-                color: isSelected ? theme.colorScheme.primary : null,
-              ),
-              title: Text(
-                label,
-                style: TextStyle(
-                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                  color: isSelected ? theme.colorScheme.primary : null,
-                ),
-              ),
-              contentPadding: EdgeInsets.zero,
-            );
-          }),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: () => Navigator.pop(context, _selected),
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-              ),
-              child: const Text('Apply'),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 // ── Period picker dialog ───────────────────────────────────────────────────────
