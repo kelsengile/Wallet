@@ -51,6 +51,8 @@ class AnalyticsPageState extends State<AnalyticsPage> {
   List<WalletTransaction> _transactions = [];
   List<WalletCategory> _txCategories = [];
   List<Account> _accounts = [];
+  CategoryRegistry _registry = CategoryRegistry.empty();
+  List<String> _typeOrder = [];
   bool _loading = true;
 
   // ── Filter state (same logic as history_page) ─────────────────────────────
@@ -226,11 +228,39 @@ class AnalyticsPageState extends State<AnalyticsPage> {
     final registry = results[1] as CategoryRegistry;
     final accounts = results[2] as List<Account>;
 
+    // Build grouped map to know which types are present
+    final grouped = <String, List<Account>>{};
+    for (final a in accounts) {
+      (grouped[a.type] ??= []).add(a);
+    }
+
+    // Derive type order matching accounts_page logic
+    final saved = await _db.getTypeOrder();
+    List<String> typeOrder;
+    if (saved != null) {
+      typeOrder = saved;
+    } else {
+      final registryTypes = registry.accountTypes
+          .map((c) => c.name)
+          .where((t) => grouped.containsKey(t))
+          .toList();
+      final extra =
+          grouped.keys.where((t) => !registryTypes.contains(t)).toList();
+      typeOrder = [...registryTypes, ...extra];
+    }
+    // Remove types no longer present, append any new ones
+    typeOrder = typeOrder.where((t) => grouped.containsKey(t)).toList();
+    for (final t in grouped.keys) {
+      if (!typeOrder.contains(t)) typeOrder.add(t);
+    }
+
     if (!mounted) return;
     setState(() {
       _transactions = txs;
       _txCategories = registry.selectableTransactionCategories;
       _accounts = accounts;
+      _registry = registry;
+      _typeOrder = typeOrder;
       _loading = false;
     });
   }
@@ -637,117 +667,186 @@ class AnalyticsPageState extends State<AnalyticsPage> {
                   ),
                 )
               else
-                ...accountData.asMap().entries.map((entry) {
-                  final i = entry.key;
-                  final d = entry.value;
-                  final net = d.net;
-                  final isLast = i == accountData.length - 1;
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      InkWell(
-                        borderRadius: BorderRadius.circular(10),
-                        onTap: () => _showAccountDetail(d.account),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: theme.colorScheme.primaryContainer,
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Icon(
-                                  Icons.account_balance_wallet_outlined,
-                                  color: theme.colorScheme.primary,
-                                  size: 20,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      d.account.name,
-                                      style:
-                                          theme.textTheme.bodyMedium?.copyWith(
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Row(
-                                      children: [
-                                        Text(
-                                          '↑ ${currencySymbolNotifier.value}${_fmt(d.income)}',
-                                          style: const TextStyle(
-                                            fontSize: 10,
-                                            color: Color(0xFF4ADE80),
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Text(
-                                          '↓ ${currencySymbolNotifier.value}${_fmt(d.expense)}',
-                                          style: const TextStyle(
-                                            fontSize: 10,
-                                            color: Color(0xFFF87171),
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    '${net >= 0 ? '+' : ''}${currencySymbolNotifier.value}${_fmt(net)}',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w700,
-                                      color: net >= 0
-                                          ? const Color(0xFF4ADE80)
-                                          : const Color(0xFFF87171),
-                                    ),
-                                  ),
-                                  Text(
-                                    'net',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: theme.colorScheme.outline,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(width: 4),
-                              Icon(
-                                Icons.chevron_right,
-                                size: 16,
-                                color: theme.colorScheme.outline,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      if (!isLast)
-                        Divider(
-                          height: 1,
-                          thickness: 0.5,
-                          color: theme.colorScheme.outlineVariant,
-                        ),
-                    ],
-                  );
-                }),
+                _buildAccountsByType(accountData, theme),
             ],
           ),
         ),
       ],
+    );
+  }
+
+  // ── Accounts grouped by type (for net view) ──────────────────────────────
+
+  Widget _buildAccountsByType(
+    List<({Account account, double income, double expense, double net})>
+        accountData,
+    ThemeData theme,
+  ) {
+    // Group accountData by type, preserving _typeOrder sequence
+    final grouped = <String,
+        List<({Account account, double income, double expense, double net})>>{};
+    for (final d in accountData) {
+      (grouped[d.account.type] ??= []).add(d);
+    }
+
+    // Sections in the same order as accounts_page
+    final orderedTypes =
+        _typeOrder.where((t) => grouped.containsKey(t)).toList();
+
+    final sections = <Widget>[];
+
+    for (int si = 0; si < orderedTypes.length; si++) {
+      final type = orderedTypes[si];
+      final entries = grouped[type]!;
+      final typeIcon = _registry.typeIcon(type);
+      final typeColor = _registry.typeColor(type);
+      final typeLabel = _registry.typeLabel(type);
+      final isLastSection = si == orderedTypes.length - 1;
+
+      // ── Section header ──────────────────────────────────────────────
+      sections.add(
+        Padding(
+          padding: EdgeInsets.only(top: si == 0 ? 0 : 16, bottom: 8),
+          child: Row(
+            children: [
+              Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  color: typeColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: Icon(typeIcon, color: typeColor, size: 13),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                typeLabel,
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: typeColor,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      // ── Account rows for this type ──────────────────────────────────
+      for (int i = 0; i < entries.length; i++) {
+        final d = entries[i];
+        final net = d.net;
+        final isLastRow = i == entries.length - 1;
+        final acctTypeColor =
+            _registry.typeColor(d.account.type) != const Color(0xFF6366F1)
+                ? _registry.typeColor(d.account.type)
+                : (d.account.colorHex.isNotEmpty
+                    ? colorFromHex(d.account.colorHex)
+                    : theme.colorScheme.primary);
+
+        sections.add(
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => _showAccountDetail(d.account),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: acctTypeColor.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(typeIcon, color: acctTypeColor, size: 20),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              d.account.name,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Row(
+                              children: [
+                                Text(
+                                  '↑ ${currencySymbolNotifier.value}${_fmt(d.income)}',
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    color: Color(0xFF4ADE80),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '↓ ${currencySymbolNotifier.value}${_fmt(d.expense)}',
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    color: Color(0xFFF87171),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '${net >= 0 ? '+' : ''}${currencySymbolNotifier.value}${_fmt(net)}',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: net >= 0
+                                  ? const Color(0xFF4ADE80)
+                                  : const Color(0xFFF87171),
+                            ),
+                          ),
+                          Text(
+                            'net',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: theme.colorScheme.outline,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.chevron_right,
+                        size: 16,
+                        color: theme.colorScheme.outline,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (!isLastRow || !isLastSection)
+                Divider(
+                  height: 1,
+                  thickness: 0.5,
+                  color: theme.colorScheme.outlineVariant,
+                ),
+            ],
+          ),
+        );
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: sections,
     );
   }
 
@@ -874,12 +973,12 @@ class AnalyticsPageState extends State<AnalyticsPage> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 8),
                         decoration: BoxDecoration(
-                          color: !_showExpenses
+                          color: !_showExpenses && !_showNet
                               ? const Color(0xFF4ADE80).withValues(alpha: 0.12)
                               : theme.colorScheme.surfaceContainer,
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color: !_showExpenses
+                            color: !_showExpenses && !_showNet
                                 ? const Color(0xFF4ADE80)
                                 : Colors.transparent,
                             width: 1.5,
@@ -935,12 +1034,12 @@ class AnalyticsPageState extends State<AnalyticsPage> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 8),
                         decoration: BoxDecoration(
-                          color: _showExpenses
+                          color: _showExpenses && !_showNet
                               ? const Color(0xFFF87171).withValues(alpha: 0.12)
                               : theme.colorScheme.surfaceContainer,
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color: _showExpenses
+                            color: _showExpenses && !_showNet
                                 ? const Color(0xFFF87171)
                                 : Colors.transparent,
                             width: 1.5,
@@ -999,15 +1098,33 @@ class AnalyticsPageState extends State<AnalyticsPage> {
                             horizontal: 8, vertical: 8),
                         decoration: BoxDecoration(
                           color: _showNet
-                              ? const Color(0xFF6366F1).withValues(alpha: 0.12)
+                              ? (net >= 0
+                                      ? const Color(0xFF4ADE80)
+                                      : const Color(0xFFF87171))
+                                  .withValues(alpha: 0.12)
                               : theme.colorScheme.surfaceContainer,
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
                             color: _showNet
-                                ? const Color(0xFF6366F1)
+                                ? (net >= 0
+                                    ? const Color(0xFF4ADE80)
+                                    : const Color(0xFFF87171))
                                 : Colors.transparent,
                             width: 1.5,
                           ),
+                          boxShadow: _showNet
+                              ? [
+                                  BoxShadow(
+                                    color: (net >= 0
+                                            ? const Color(0xFF4ADE80)
+                                            : const Color(0xFFF87171))
+                                        .withValues(alpha: 0.30),
+                                    blurRadius: 8,
+                                    spreadRadius: 0,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ]
+                              : null,
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2488,6 +2605,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
   List<Account> _allAccounts = [];
   List<WalletCategory> _accountTypes = [];
   List<WalletCategory> _accountCategories = [];
+  CategoryRegistry _registry = CategoryRegistry.empty();
   bool _loading = true;
 
   List<WalletTransaction> get _filtered => widget.allTransactions.where((tx) {
@@ -2521,6 +2639,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
       _allAccounts = accounts;
       _accountTypes = registry.accountTypes;
       _accountCategories = registry.accountCategories;
+      _registry = registry;
       _loading = false;
     });
   }
@@ -2690,6 +2809,13 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final filtered = _filtered;
+    final typeIcon = _registry.typeIcon(widget.account.type);
+    final typeColor =
+        _registry.typeColor(widget.account.type) != const Color(0xFF6366F1)
+            ? _registry.typeColor(widget.account.type)
+            : (widget.account.colorHex.isNotEmpty
+                ? colorFromHex(widget.account.colorHex)
+                : theme.colorScheme.primary);
 
     return DraggableScrollableSheet(
       expand: false,
@@ -2719,11 +2845,10 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                   width: 48,
                   height: 48,
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.primaryContainer,
+                    color: typeColor.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: Icon(Icons.account_balance_wallet_outlined,
-                      color: theme.colorScheme.primary),
+                  child: Icon(typeIcon, color: typeColor),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
