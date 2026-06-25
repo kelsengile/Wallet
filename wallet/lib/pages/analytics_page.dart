@@ -66,6 +66,10 @@ class AnalyticsPageState extends State<AnalyticsPage> {
   bool _showExpenses = true;
   bool _showNet = false;
 
+  // ── Persistence keys for display-mode memory ──────────────────────────────
+  static const _kShowExpensesKey = 'analytics_show_expenses';
+  static const _kShowNetKey = 'analytics_show_net';
+
   // ── Period helpers ────────────────────────────────────────────────────────
 
   DateTime get _periodStart {
@@ -213,7 +217,24 @@ class AnalyticsPageState extends State<AnalyticsPage> {
   @override
   void initState() {
     super.initState();
+    _loadDisplayMode();
     _load();
+  }
+
+  Future<void> _loadDisplayMode() async {
+    final showExpenses = await _db.getSetting(_kShowExpensesKey);
+    final showNet = await _db.getSetting(_kShowNetKey);
+    if (!mounted) return;
+    setState(() {
+      // Defaults: expenses=true, net=false — only override if a saved value exists.
+      if (showExpenses != null) _showExpenses = showExpenses == 'true';
+      if (showNet != null) _showNet = showNet == 'true';
+    });
+  }
+
+  Future<void> _saveDisplayMode() async {
+    await _db.saveSetting(_kShowExpensesKey, _showExpenses.toString());
+    await _db.saveSetting(_kShowNetKey, _showNet.toString());
   }
 
   Future<void> refresh() => _load();
@@ -964,10 +985,13 @@ class AnalyticsPageState extends State<AnalyticsPage> {
                 children: [
                   Expanded(
                     child: GestureDetector(
-                      onTap: () => setState(() {
-                        _showExpenses = false;
-                        _showNet = false;
-                      }),
+                      onTap: () {
+                        setState(() {
+                          _showExpenses = false;
+                          _showNet = false;
+                        });
+                        _saveDisplayMode();
+                      },
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 180),
                         padding: const EdgeInsets.symmetric(
@@ -1025,10 +1049,13 @@ class AnalyticsPageState extends State<AnalyticsPage> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: GestureDetector(
-                      onTap: () => setState(() {
-                        _showExpenses = true;
-                        _showNet = false;
-                      }),
+                      onTap: () {
+                        setState(() {
+                          _showExpenses = true;
+                          _showNet = false;
+                        });
+                        _saveDisplayMode();
+                      },
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 180),
                         padding: const EdgeInsets.symmetric(
@@ -1086,12 +1113,15 @@ class AnalyticsPageState extends State<AnalyticsPage> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: GestureDetector(
-                      onTap: () => setState(() {
-                        _showNet = !_showNet;
-                        if (_showNet) {
-                          // deselect income/expense highlight when viewing net
-                        }
-                      }),
+                      onTap: () {
+                        setState(() {
+                          _showNet = !_showNet;
+                          if (_showNet) {
+                            // deselect income/expense highlight when viewing net
+                          }
+                        });
+                        _saveDisplayMode();
+                      },
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 180),
                         padding: const EdgeInsets.symmetric(
