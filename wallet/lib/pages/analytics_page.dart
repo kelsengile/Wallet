@@ -6,6 +6,8 @@ import '../database/database_helper.dart';
 import '../currency.dart';
 import '../models/transaction_model.dart';
 import '../models/category_model.dart';
+import '../models/account_model.dart';
+import '../widgets/transaction_receipt_dialog.dart';
 
 final _currencyFmt = NumberFormat('#,##0.00', 'en_PH');
 String _fmt(double v) => _currencyFmt.format(v);
@@ -412,75 +414,124 @@ class AnalyticsPageState extends State<AnalyticsPage> {
   List<Widget> _buildCategoryLegend(
     List<({String category, double amount, Color color})> data,
     ThemeData theme,
+    String txType,
   ) {
     final total = data.fold(0.0, (sum, item) => sum + item.amount);
     return data.map((c) {
       final pct = total > 0 ? (c.amount / total * 100) : 0.0;
       return Padding(
         padding: const EdgeInsets.only(bottom: 10),
-        child: Row(
-          children: [
-            Container(
-              width: 12,
-              height: 12,
-              decoration: BoxDecoration(
-                color: c.color,
-                shape: BoxShape.circle,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        c.category,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      Text(
-                        '${pct.toStringAsFixed(1)}%',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.outline,
-                        ),
-                      ),
-                    ],
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => _showCategoryDetail(
+            categoryName: c.category,
+            categoryColor: c.color,
+            txType: txType,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Row(
+              children: [
+                Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: c.color,
+                    shape: BoxShape.circle,
                   ),
-                  const SizedBox(height: 4),
-                  Row(
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: LinearProgressIndicator(
-                            value: total > 0 ? c.amount / total : 0,
-                            backgroundColor: c.color.withValues(alpha: 0.15),
-                            valueColor: AlwaysStoppedAnimation(c.color),
-                            minHeight: 6,
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            c.category,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
-                        ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '${pct.toStringAsFixed(1)}%',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.outline,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Icon(
+                                Icons.chevron_right,
+                                size: 14,
+                                color: theme.colorScheme.outline,
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 10),
-                      Text(
-                        '${currencySymbolNotifier.value}${_fmt(c.amount)}',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 11,
-                        ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: LinearProgressIndicator(
+                                value: total > 0 ? c.amount / total : 0,
+                                backgroundColor:
+                                    c.color.withValues(alpha: 0.15),
+                                valueColor: AlwaysStoppedAnimation(c.color),
+                                minHeight: 6,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            '${currencySymbolNotifier.value}${_fmt(c.amount)}',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       );
     }).toList();
+  }
+
+  void _showCategoryDetail({
+    required String categoryName,
+    required Color categoryColor,
+    required String txType,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => _CategoryDetailSheet(
+        categoryName: categoryName,
+        categoryColor: categoryColor,
+        txType: txType,
+        allTransactions: _transactions,
+        txCategories: _txCategories,
+        periodStart: _periodStart,
+        periodEnd: _periodEnd,
+        periodLabel: _periodLabel,
+      ),
+    );
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────
@@ -866,7 +917,8 @@ class AnalyticsPageState extends State<AnalyticsPage> {
                               const SizedBox(height: 12),
                               _PieChart(data: categoryData),
                               const SizedBox(height: 12),
-                              ..._buildCategoryLegend(categoryData, theme),
+                              ..._buildCategoryLegend(categoryData, theme,
+                                  _showExpenses ? 'expense' : 'income'),
                             ],
                           );
                         }),
@@ -1975,6 +2027,405 @@ class _PeriodPickerDialogState extends State<_PeriodPickerDialog> {
                   ),
                 ),
               ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── _TxItem (local to analytics) ──────────────────────────────────────────────
+
+class _AnalyticsTxItem {
+  final bool isHeader;
+  final String? label;
+  final WalletTransaction? tx;
+
+  const _AnalyticsTxItem._({this.isHeader = false, this.label, this.tx});
+
+  factory _AnalyticsTxItem.header(String l) =>
+      _AnalyticsTxItem._(isHeader: true, label: l);
+  factory _AnalyticsTxItem.transaction(WalletTransaction t) =>
+      _AnalyticsTxItem._(tx: t);
+}
+
+// ── Category detail bottom sheet ───────────────────────────────────────────────
+
+class _CategoryDetailSheet extends StatefulWidget {
+  final String categoryName;
+  final Color categoryColor;
+  final String txType; // 'expense' or 'income'
+  final List<WalletTransaction> allTransactions;
+  final List<WalletCategory> txCategories;
+  final DateTime periodStart;
+  final DateTime periodEnd;
+  final String periodLabel;
+
+  const _CategoryDetailSheet({
+    required this.categoryName,
+    required this.categoryColor,
+    required this.txType,
+    required this.allTransactions,
+    required this.txCategories,
+    required this.periodStart,
+    required this.periodEnd,
+    required this.periodLabel,
+  });
+
+  @override
+  State<_CategoryDetailSheet> createState() => _CategoryDetailSheetState();
+}
+
+class _CategoryDetailSheetState extends State<_CategoryDetailSheet> {
+  List<Account> _allAccounts = [];
+  List<WalletCategory> _accountTypes = [];
+  List<WalletCategory> _accountCategories = [];
+  bool _loading = true;
+
+  List<WalletTransaction> get _filtered => widget.allTransactions.where((tx) {
+        final d = DateTime.tryParse(tx.date);
+        return d != null &&
+            !d.isBefore(widget.periodStart) &&
+            d.isBefore(widget.periodEnd) &&
+            tx.category == widget.categoryName &&
+            tx.type == widget.txType;
+      }).toList();
+
+  double get _total => _filtered.fold(0.0, (sum, tx) => sum + tx.amount);
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final accounts = await DatabaseHelper.instance.getAllAccounts();
+    final registry = await DatabaseHelper.instance.getCategoryRegistry();
+    if (!mounted) return;
+    setState(() {
+      _allAccounts = accounts;
+      _accountTypes = registry.accountTypes;
+      _accountCategories = registry.accountCategories;
+      _loading = false;
+    });
+  }
+
+  Future<void> _editTransaction(WalletTransaction existing) async {
+    await showTransactionReceipt(
+      context,
+      tx: existing,
+      accounts: _allAccounts,
+      txCategories: widget.txCategories,
+      accountTypes: _accountTypes,
+      accountCategories: _accountCategories,
+      onEdited: (updated) async {
+        await DatabaseHelper.instance.updateTransaction(existing, updated);
+        return updated;
+      },
+    );
+  }
+
+  Future<void> _deleteTransaction(WalletTransaction tx) async {
+    await DatabaseHelper.instance.deleteTransaction(tx);
+    setState(() {}); // re-filter from parent list (already mutated in DB)
+  }
+
+  Widget _buildGroupedList(
+      List<WalletTransaction> txs, ThemeData theme, ScrollController ctrl) {
+    final Map<String, List<WalletTransaction>> groups = {};
+    for (final tx in txs) {
+      final key = tx.date.length >= 10 ? tx.date.substring(0, 10) : tx.date;
+      groups.putIfAbsent(key, () => []).add(tx);
+    }
+    final keys = groups.keys.toList()..sort((a, b) => b.compareTo(a));
+
+    final items = <_AnalyticsTxItem>[];
+    for (final key in keys) {
+      final d = DateTime.tryParse(key);
+      if (d != null) {
+        items.add(_AnalyticsTxItem.header(DateFormat('MMM d, EEEE').format(d)));
+      }
+      for (final tx in groups[key]!) {
+        items.add(_AnalyticsTxItem.transaction(tx));
+      }
+    }
+
+    final lastInGroupIndices = <int>{};
+    for (int i = 0; i < items.length; i++) {
+      if (items[i].isHeader) continue;
+      final isLast = i == items.length - 1 || items[i + 1].isHeader;
+      if (isLast) lastInGroupIndices.add(i);
+    }
+
+    final isIncome = widget.txType == 'income';
+    final rowColor = isIncome ? Colors.green : Colors.red;
+    final amountPrefix = isIncome ? '+' : '−';
+
+    return ListView.builder(
+      controller: ctrl,
+      padding: EdgeInsets.zero,
+      itemCount: items.length,
+      itemBuilder: (_, i) {
+        final item = items[i];
+        final showDivider = !lastInGroupIndices.contains(i);
+
+        if (item.isHeader) {
+          return Padding(
+            padding: const EdgeInsets.only(top: 8, bottom: 2),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.label!,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: theme.colorScheme.outlineVariant,
+                ),
+              ],
+            ),
+          );
+        }
+
+        final tx = item.tx!;
+        final bgColor = isIncome ? Colors.green.shade100 : Colors.red.shade100;
+        final txCatIcon = widget.txCategories
+                .cast<WalletCategory?>()
+                .firstWhere((c) => c?.name == tx.category, orElse: () => null)
+                ?.iconData ??
+            iconForKey(tx.category);
+
+        // Account name for subtitle
+        final accountName = _allAccounts
+                .cast<Account?>()
+                .firstWhere((a) => a?.id == tx.accountId, orElse: () => null)
+                ?.name ??
+            '';
+
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Card(
+              margin: EdgeInsets.zero,
+              elevation: 0,
+              color: Colors.transparent,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+              clipBehavior: Clip.antiAlias,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Dismissible(
+                  key: Key('cat_tx_${tx.id}'),
+                  direction: DismissDirection.endToStart,
+                  background: Container(
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.only(right: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.delete, color: Colors.white),
+                  ),
+                  onDismissed: (_) => _deleteTransaction(tx),
+                  child: ListTile(
+                    dense: true,
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                    onTap: () => _editTransaction(tx),
+                    leading: CircleAvatar(
+                      radius: 22,
+                      backgroundColor: bgColor,
+                      child: Icon(txCatIcon, size: 20, color: rowColor),
+                    ),
+                    title: Text(
+                      tx.title,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w600, fontSize: 13),
+                    ),
+                    subtitle: Text(
+                      accountName.isNotEmpty ? accountName : tx.category,
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                    trailing: Text(
+                      '$amountPrefix ${currencySymbolNotifier.value}${_fmt(tx.amount)}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                        color: rowColor,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            if (showDivider)
+              Divider(
+                height: 1,
+                thickness: 0.5,
+                indent: 12,
+                endIndent: 12,
+                color: Colors.grey.withValues(alpha: 0.25),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = widget.categoryColor;
+    final isIncome = widget.txType == 'income';
+    final txIcon = widget.txCategories
+            .cast<WalletCategory?>()
+            .firstWhere((c) => c?.name == widget.categoryName,
+                orElse: () => null)
+            ?.iconData ??
+        iconForKey(widget.categoryName);
+
+    final filtered = _filtered;
+    final total = _total;
+
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.7,
+      maxChildSize: 0.95,
+      builder: (ctx, scrollCtrl) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+        child: Column(
+          children: [
+            // Handle bar
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.outlineVariant,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+
+            // Header row
+            Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(txIcon, color: color),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.categoryName,
+                        style: theme.textTheme.titleLarge
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      Row(
+                        children: [
+                          Icon(
+                            isIncome
+                                ? Icons.arrow_upward_rounded
+                                : Icons.arrow_downward_rounded,
+                            color: isIncome
+                                ? const Color(0xFF4ADE80)
+                                : const Color(0xFFF87171),
+                            size: 12,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            isIncome ? 'Income' : 'Expense',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: isIncome
+                                  ? const Color(0xFF4ADE80)
+                                  : const Color(0xFFF87171),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '· ${widget.periodLabel}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: theme.colorScheme.outline,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${isIncome ? '+' : '−'} ${currencySymbolNotifier.value}${_fmt(total)}',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: isIncome ? Colors.green.shade700 : Colors.red,
+                      ),
+                    ),
+                    Text(
+                      '${filtered.length} transaction${filtered.length == 1 ? '' : 's'}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: theme.colorScheme.outline,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+
+            // "Transactions" label
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Transactions',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.70),
+                  ),
+                ),
+              ),
+            ),
+
+            // Transaction list
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : filtered.isEmpty
+                      ? Center(
+                          child: Text(
+                            'No transactions for this period.',
+                            style: TextStyle(color: theme.colorScheme.outline),
+                          ),
+                        )
+                      : _buildGroupedList(filtered, theme, scrollCtrl),
             ),
           ],
         ),
