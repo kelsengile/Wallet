@@ -657,12 +657,12 @@ class AnalyticsPageState extends State<AnalyticsPage> {
               ),
               const SizedBox(height: 12),
               if (_accounts.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 16),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
                   child: Center(
                     child: Text(
                       'No accounts found.',
-                      style: TextStyle(color: Colors.grey),
+                      style: TextStyle(color: theme.colorScheme.outline),
                     ),
                   ),
                 )
@@ -876,7 +876,7 @@ class AnalyticsPageState extends State<AnalyticsPage> {
         Container(
           width: double.infinity,
           padding: EdgeInsets.fromLTRB(16, 12, 16, 12),
-          color: Colors.white,
+          color: theme.colorScheme.surface,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1176,7 +1176,7 @@ class AnalyticsPageState extends State<AnalyticsPage> {
         // ── Scrollable content ───────────────────────────────────────────────
         Expanded(
           child: ColoredBox(
-            color: Colors.white,
+            color: theme.colorScheme.surface,
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
               child: _showNet
@@ -1237,12 +1237,14 @@ class AnalyticsPageState extends State<AnalyticsPage> {
                                 final isExpense = _showExpenses;
 
                                 if (categoryData.isEmpty) {
-                                  return const Padding(
-                                    padding: EdgeInsets.symmetric(vertical: 24),
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 24),
                                     child: Center(
                                       child: Text(
                                         'No category data for this period.',
-                                        style: TextStyle(color: Colors.grey),
+                                        style: TextStyle(
+                                            color: theme.colorScheme.outline),
                                       ),
                                     ),
                                   );
@@ -1335,6 +1337,7 @@ class _ToggleChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final outline = Theme.of(context).colorScheme.outline;
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
@@ -1344,7 +1347,7 @@ class _ToggleChip extends StatelessWidget {
           color: selected ? color.withValues(alpha: 0.15) : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: selected ? color : Colors.grey.withValues(alpha: 0.3),
+            color: selected ? color : outline.withValues(alpha: 0.4),
             width: 1.2,
           ),
         ),
@@ -1353,7 +1356,7 @@ class _ToggleChip extends StatelessWidget {
           style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w600,
-            color: selected ? color : Colors.grey,
+            color: selected ? color : outline,
           ),
         ),
       ),
@@ -1368,12 +1371,12 @@ class _EmptyChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const SizedBox(
+    return SizedBox(
       height: 120,
       child: Center(
         child: Text(
           'No data for this period.',
-          style: TextStyle(color: Colors.grey),
+          style: TextStyle(color: Theme.of(context).colorScheme.outline),
         ),
       ),
     );
@@ -1465,6 +1468,7 @@ class _LineChartState extends State<_LineChart> {
               showEvery: showEvery,
               selectedIndex: _selectedIndex,
               currencySymbol: currencySymbolNotifier.value,
+              dotBackground: theme.colorScheme.surfaceContainer,
             ),
             child: const SizedBox.expand(),
           ),
@@ -1482,6 +1486,7 @@ class _LineChartPainter extends CustomPainter {
   final int showEvery;
   final int? selectedIndex;
   final String currencySymbol;
+  final Color dotBackground;
 
   const _LineChartPainter({
     required this.data,
@@ -1491,6 +1496,7 @@ class _LineChartPainter extends CustomPainter {
     required this.showEvery,
     required this.selectedIndex,
     required this.currencySymbol,
+    required this.dotBackground,
   });
 
   @override
@@ -1585,7 +1591,7 @@ class _LineChartPainter extends CustomPainter {
         ..color = color
         ..style = PaintingStyle.fill;
       final dotBg = Paint()
-        ..color = Colors.white
+        ..color = dotBackground
         ..style = PaintingStyle.fill;
       for (int i = 0; i < data.length; i++) {
         if (data[i].value > 0) {
@@ -1754,7 +1760,8 @@ class _LineChartPainter extends CustomPainter {
       old.data != data ||
       old.color != color ||
       old.selectedIndex != selectedIndex ||
-      old.currencySymbol != currencySymbol;
+      old.currencySymbol != currencySymbol ||
+      old.dotBackground != dotBackground;
 }
 
 // ── Pie chart ─────────────────────────────────────────────────────────────────
@@ -1767,10 +1774,11 @@ class _PieChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final total = data.fold(0.0, (s, d) => s + d.amount);
+    final gapColor = Theme.of(context).colorScheme.surfaceContainer;
     return SizedBox(
       height: 200,
       child: CustomPaint(
-        painter: _PieChartPainter(data: data, total: total),
+        painter: _PieChartPainter(data: data, total: total, gapColor: gapColor),
         child: const SizedBox.expand(),
       ),
     );
@@ -1780,8 +1788,10 @@ class _PieChart extends StatelessWidget {
 class _PieChartPainter extends CustomPainter {
   final List<({String category, double amount, Color color})> data;
   final double total;
+  final Color gapColor;
 
-  const _PieChartPainter({required this.data, required this.total});
+  const _PieChartPainter(
+      {required this.data, required this.total, required this.gapColor});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1822,7 +1832,7 @@ class _PieChartPainter extends CustomPainter {
       // Thin gap between slices — only needed when there are multiple slices
       if (data.length > 1) {
         final gapPaint = Paint()
-          ..color = Colors.white.withValues(alpha: 0.6)
+          ..color = gapColor
           ..strokeWidth = 1.5
           ..style = PaintingStyle.stroke;
         canvas.drawPath(path, gapPaint);
@@ -1834,7 +1844,7 @@ class _PieChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_PieChartPainter old) =>
-      old.data != data || old.total != total;
+      old.data != data || old.total != total || old.gapColor != gapColor;
 }
 
 // ── Summary tile (matches history page _AnalyticsTile) ────────────────────────
@@ -1858,7 +1868,10 @@ class _SummaryTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.08),
+        color: Theme.of(context)
+            .colorScheme
+            .surfaceContainerHighest
+            .withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Column(
@@ -2725,8 +2738,11 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
 
         final tx = item.tx!;
         final isIncome = tx.type == 'income';
-        final rowColor = isIncome ? Colors.green : Colors.red;
-        final bgColor = isIncome ? Colors.green.shade100 : Colors.red.shade100;
+        final rowColor =
+            isIncome ? const Color(0xFF4ADE80) : const Color(0xFFF87171);
+        final bgColor = isIncome
+            ? const Color(0xFF4ADE80).withValues(alpha: 0.15)
+            : const Color(0xFFF87171).withValues(alpha: 0.15);
         final amountPrefix = isIncome ? '+' : '−';
 
         final txCatIcon = widget.txCategories
@@ -2797,7 +2813,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                 thickness: 0.5,
                 indent: 12,
                 endIndent: 12,
-                color: Colors.grey.withValues(alpha: 0.25),
+                color: theme.colorScheme.outlineVariant,
               ),
           ],
         );
@@ -2879,7 +2895,9 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
-                        color: _net >= 0 ? Colors.green.shade700 : Colors.red,
+                        color: _net >= 0
+                            ? const Color(0xFF4ADE80)
+                            : const Color(0xFFF87171),
                       ),
                     ),
                     Text(
@@ -3109,7 +3127,8 @@ class _CategoryDetailSheetState extends State<_CategoryDetailSheet> {
     }
 
     final isIncome = widget.txType == 'income';
-    final rowColor = isIncome ? Colors.green : Colors.red;
+    final rowColor =
+        isIncome ? const Color(0xFF4ADE80) : const Color(0xFFF87171);
     final amountPrefix = isIncome ? '+' : '−';
 
     return ListView.builder(
@@ -3145,7 +3164,9 @@ class _CategoryDetailSheetState extends State<_CategoryDetailSheet> {
         }
 
         final tx = item.tx!;
-        final bgColor = isIncome ? Colors.green.shade100 : Colors.red.shade100;
+        final bgColor = isIncome
+            ? const Color(0xFF4ADE80).withValues(alpha: 0.15)
+            : const Color(0xFFF87171).withValues(alpha: 0.15);
         final txCatIcon = widget.txCategories
                 .cast<WalletCategory?>()
                 .firstWhere((c) => c?.name == tx.category, orElse: () => null)
@@ -3221,7 +3242,7 @@ class _CategoryDetailSheetState extends State<_CategoryDetailSheet> {
                 thickness: 0.5,
                 indent: 12,
                 endIndent: 12,
-                color: Colors.grey.withValues(alpha: 0.25),
+                color: theme.colorScheme.outlineVariant,
               ),
           ],
         );
@@ -3331,7 +3352,9 @@ class _CategoryDetailSheetState extends State<_CategoryDetailSheet> {
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
-                        color: isIncome ? Colors.green.shade700 : Colors.red,
+                        color: isIncome
+                            ? const Color(0xFF4ADE80)
+                            : const Color(0xFFF87171),
                       ),
                     ),
                     Text(
