@@ -5,6 +5,9 @@ import 'package:wallet/currency.dart';
 import 'package:wallet/pages/accounts_page.dart';
 import 'package:wallet/pages/history_page.dart';
 import 'package:wallet/pages/analytics_page.dart';
+import 'package:wallet/pages/calculator_page.dart';
+import 'package:wallet/pages/converter_page.dart';
+import 'package:wallet/pages/budget_page.dart';
 import 'package:wallet/pages/profile_page.dart';
 import 'package:wallet/pages/settings_page.dart';
 import 'package:wallet/pages/category_manager_page.dart';
@@ -91,7 +94,6 @@ class _WalletHomePageState extends State<WalletHomePage> {
   late final PageController _pageController;
   final _historyKey = GlobalKey<HistoryPageState>();
   final _accountsKey = GlobalKey<AccountsPageState>();
-  final _analyticsKey = GlobalKey<AnalyticsPageState>();
   bool _fabVisible = true;
   // 0.0 = fully on accounts tab, 1.0 = fully off it — drives status bar style.
   // Uses a ValueNotifier so scroll updates never trigger a full widget rebuild.
@@ -107,7 +109,7 @@ class _WalletHomePageState extends State<WalletHomePage> {
   void _onPageScroll() {
     // Store raw page position (not clamped to 1) so status-bar notifier also
     // covers the Accounts→History transition.
-    final t = (_pageController.page ?? 0.0).clamp(0.0, 3.0);
+    final t = (_pageController.page ?? 0.0).clamp(0.0, 2.0);
     if ((t - _pageTNotifier.value).abs() > 0.005) {
       _pageTNotifier.value = t;
     }
@@ -142,10 +144,7 @@ class _WalletHomePageState extends State<WalletHomePage> {
       case 1:
         await _historyKey.currentState?.refresh();
         break;
-      case 2:
-        await _analyticsKey.currentState?.refresh();
-        break;
-      // Profile page (3) has no async data to refresh
+      // Profile page (2) has no async data to refresh
     }
   }
 
@@ -157,7 +156,6 @@ class _WalletHomePageState extends State<WalletHomePage> {
     await Future.wait([
       _accountsKey.currentState?.refresh() ?? Future.value(),
       _historyKey.currentState?.refresh() ?? Future.value(),
-      _analyticsKey.currentState?.refresh() ?? Future.value(),
     ]);
     if (_selectedIndex != 0) {
       _onItemTapped(0);
@@ -205,6 +203,25 @@ class _WalletHomePageState extends State<WalletHomePage> {
       },
       child: Scaffold(
         backgroundColor: theme.colorScheme.surface,
+        endDrawer: Drawer(
+          width: double.infinity,
+          child: Scaffold(
+            appBar: AppBar(
+              automaticallyImplyLeading: false,
+              title: const Text('Analytics'),
+              actions: [
+                Builder(
+                  builder: (ctx) => IconButton(
+                    icon: const Icon(Icons.close),
+                    tooltip: 'Close',
+                    onPressed: () => Scaffold.of(ctx).closeEndDrawer(),
+                  ),
+                ),
+              ],
+            ),
+            body: const AnalyticsPage(),
+          ),
+        ),
         drawer: _WalletDrawer(
           selectedIndex: _selectedIndex,
           onNavigate: (index) {
@@ -256,7 +273,9 @@ class _WalletHomePageState extends State<WalletHomePage> {
                       index: 0,
                       child: AccountsPage(
                         key: _accountsKey,
-                        onNavigateToAnalytics: () => _onItemTapped(2),
+                        onNavigateToAnalytics: () {
+                          Scaffold.of(context).openEndDrawer();
+                        },
                       ),
                     ),
                     // History page handles its own top padding/overlay,
@@ -271,12 +290,6 @@ class _WalletHomePageState extends State<WalletHomePage> {
                     _PageSeparator(
                       pageController: _pageController,
                       index: 2,
-                      child: _WithTopNavPadding(
-                          child: AnalyticsPage(key: _analyticsKey)),
-                    ),
-                    _PageSeparator(
-                      pageController: _pageController,
-                      index: 3,
                       child: const _WithTopNavPadding(child: ProfilePage()),
                     ),
                   ],
@@ -422,11 +435,6 @@ class _WalletHomePageState extends State<WalletHomePage> {
               icon: Icon(Icons.receipt_long_outlined),
               selectedIcon: Icon(Icons.receipt_long),
               label: 'History',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.show_chart_outlined),
-              selectedIcon: Icon(Icons.show_chart),
-              label: 'Analytics',
             ),
             NavigationDestination(
               icon: Icon(Icons.person_outline),
@@ -686,7 +694,7 @@ class _TopNavBar extends StatefulWidget {
 
 class _TopNavBarState extends State<_TopNavBar> {
   double _page =
-      0.0; // raw page position (0.0 = accounts, 1.0 = history, 2.0 = analytics …)
+      0.0; // raw page position (0.0 = accounts, 1.0 = history, 2.0 = profile …)
 
   @override
   void initState() {
@@ -717,7 +725,7 @@ class _TopNavBarState extends State<_TopNavBar> {
   /// Returns a color that smoothly lerps across three waypoints:
   ///   page 0 → [c0]  (Accounts)
   ///   page 1 → [c1]  (History)
-  ///   page 2+ → [c2] (Analytics and beyond)
+  ///   page 2+ → [c2] (Profile and beyond)
   Color _lerpColor(Color c0, Color c1, Color c2) {
     if (_page <= 1.0) {
       // Segment 1: Accounts → History
@@ -737,7 +745,7 @@ class _TopNavBarState extends State<_TopNavBar> {
     // ── Colour waypoints ──────────────────────────────────────────────────────
     // Accounts (page 0):  white icons over gradient hero
     // History  (page 1):  dark icons over white header
-    // Analytics (page 2): dark icons
+    // Profile  (page 2):  dark icons
 
     // Icon colour:  white (Accounts) → onSurface/dark (History+)
     final iconColor = _lerpColor(
@@ -947,18 +955,67 @@ class _WalletDrawerState extends State<_WalletDrawer> {
                   onTap: () => widget.onNavigate(1),
                 ),
                 _NavTile(
-                  icon: Icons.show_chart_outlined,
-                  selectedIcon: Icons.show_chart,
-                  label: 'Analytics',
-                  selected: widget.selectedIndex == 2,
-                  onTap: () => widget.onNavigate(2),
-                ),
-                _NavTile(
                   icon: Icons.person_outline,
                   selectedIcon: Icons.person,
                   label: 'Profile',
-                  selected: widget.selectedIndex == 3,
-                  onTap: () => widget.onNavigate(3),
+                  selected: widget.selectedIndex == 2,
+                  onTap: () => widget.onNavigate(2),
+                ),
+
+                const _DrawerDivider(),
+
+                // TOOLS
+                _SectionHeader(label: 'Tools'),
+                _NavTile(
+                  icon: Icons.show_chart_outlined,
+                  selectedIcon: Icons.show_chart,
+                  label: 'Analytics',
+                  onTap: () {
+                    Navigator.pop(context); // close the left drawer first
+                    // Small delay so the left drawer finishes closing before
+                    // the end drawer opens — avoids two drawers fighting.
+                    Future.delayed(const Duration(milliseconds: 250), () {
+                      if (context.mounted) {
+                        Scaffold.of(context).openEndDrawer();
+                      }
+                    });
+                  },
+                ),
+                _NavTile(
+                  icon: Icons.calculate_outlined,
+                  selectedIcon: Icons.calculate,
+                  label: 'Calculator',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const CalculatorPage()),
+                    );
+                  },
+                ),
+                _NavTile(
+                  icon: Icons.swap_horiz_outlined,
+                  selectedIcon: Icons.swap_horiz,
+                  label: 'Converter',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const ConverterPage()),
+                    );
+                  },
+                ),
+                _NavTile(
+                  icon: Icons.account_balance_outlined,
+                  selectedIcon: Icons.account_balance,
+                  label: 'Budget',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const BudgetPage()),
+                    );
+                  },
                 ),
 
                 const _DrawerDivider(),
