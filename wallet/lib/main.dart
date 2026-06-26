@@ -106,7 +106,7 @@ class _WalletHomePageState extends State<WalletHomePage> {
 
   void _onPageScroll() {
     // Store raw page position (not clamped to 1) so status-bar notifier also
-    // covers the History→Analytics transition.
+    // covers the Accounts→History transition.
     final t = (_pageController.page ?? 0.0).clamp(0.0, 3.0);
     if ((t - _pageTNotifier.value).abs() > 0.005) {
       _pageTNotifier.value = t;
@@ -179,9 +179,9 @@ class _WalletHomePageState extends State<WalletHomePage> {
             ? Brightness.light
             : Brightness.dark;
 
-        // Status bar icons: light (white) on Accounts + History, dark on Analytics+.
-        // Switches at the midpoint of the History→Analytics swipe (pageT crosses 1.5).
-        final overlayStyle = pageT < 1.5
+        // Status bar icons: light (white) on Accounts, dark on History+.
+        // Switches at the midpoint of the Accounts→History swipe (pageT crosses 0.5).
+        final overlayStyle = pageT < 0.5
             ? SystemUiOverlayStyle(
                 statusBarColor: Colors.transparent,
                 statusBarIconBrightness: Brightness.light,
@@ -736,27 +736,27 @@ class _TopNavBarState extends State<_TopNavBar> {
 
     // ── Colour waypoints ──────────────────────────────────────────────────────
     // Accounts (page 0):  white icons over gradient hero
-    // History  (page 1):  deep-indigo tinted icons
-    // Analytics (page 2): teal/tertiary tinted icons
+    // History  (page 1):  dark icons over white header
+    // Analytics (page 2): dark icons
 
-    // Icon colour:  white (Accounts) → white (History) → onSurface/dark (Analytics+)
+    // Icon colour:  white (Accounts) → onSurface/dark (History+)
     final iconColor = _lerpColor(
       Colors.white,
-      Colors.white,
+      cs.onSurface,
       cs.onSurface,
     );
 
-    // Subtitle colour:  white70 → white70 → onSurfaceVariant
+    // Subtitle colour:  white70 → onSurfaceVariant (History+)
     final subtitleColor = _lerpColor(
       Colors.white70,
-      Colors.white70,
+      cs.onSurfaceVariant,
       cs.onSurfaceVariant,
     );
 
-    // Pill background:  white.20 → white.20 → onSurface.10
+    // Pill background:  white.20 → onSurface.10 (History+)
     final pillColor = _lerpColor(
       Colors.white.withValues(alpha: 0.20),
-      Colors.white.withValues(alpha: 0.20),
+      cs.onSurface.withValues(alpha: 0.10),
       cs.onSurface.withValues(alpha: 0.10),
     );
 

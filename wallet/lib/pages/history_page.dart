@@ -749,20 +749,12 @@ class HistoryPageState extends State<HistoryPage> {
     // matching AccountsPage's total balance hero.
     final topPadding = MediaQuery.paddingOf(context).top;
 
+    // ignore: unused_local_variable
     final primary = theme.colorScheme.primary;
-    final tertiary = theme.colorScheme.tertiary;
-    final isDark = theme.brightness == Brightness.dark;
 
-    final headerGradientColors = isDark
-        ? [
-            const Color(0xFF2A2A2E),
-            const Color(0xFF3A3A40),
-          ]
-        : [primary, tertiary];
-
-    final headerShadowColor = isDark
-        ? Colors.black.withValues(alpha: 0.40)
-        : primary.withValues(alpha: 0.30);
+    final headerBgColor = theme.colorScheme.surface;
+    final headerTextColor = theme.colorScheme.onSurface;
+    final headerIconColor = theme.colorScheme.onSurface;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -771,23 +763,7 @@ class HistoryPageState extends State<HistoryPage> {
         Container(
           width: double.infinity,
           padding: EdgeInsets.fromLTRB(16, topPadding + 70, 16, 12),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: headerGradientColors,
-            ),
-            borderRadius: const BorderRadius.vertical(
-              bottom: Radius.circular(28),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: headerShadowColor,
-                blurRadius: 20,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
+          color: headerBgColor,
           child: Column(
             children: [
               // ── Header row ───────────────────────────────────────────
@@ -799,15 +775,15 @@ class HistoryPageState extends State<HistoryPage> {
                     style: theme.textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.w600,
                       fontSize: 17,
-                      color: Colors.white,
+                      color: headerTextColor,
                       letterSpacing: 0.2,
                     ),
                   ),
                   IconButton(
                     tooltip: 'Filter',
                     onPressed: _pickPeriod,
-                    icon: const _FunnelIcon(
-                      color: Colors.white,
+                    icon: _FunnelIcon(
+                      color: headerIconColor,
                     ),
                   ),
                 ],
@@ -822,8 +798,7 @@ class HistoryPageState extends State<HistoryPage> {
                     child: IgnorePointer(
                       ignoring: _filterMode == _FilterMode.allTime,
                       child: IconButton(
-                        icon:
-                            const Icon(Icons.chevron_left, color: Colors.white),
+                        icon: Icon(Icons.chevron_left, color: headerIconColor),
                         onPressed: _goBack,
                       ),
                     ),
@@ -836,7 +811,7 @@ class HistoryPageState extends State<HistoryPage> {
                           _periodLabel,
                           style: theme.textTheme.bodyMedium?.copyWith(
                             fontWeight: FontWeight.w600,
-                            color: Colors.white,
+                            color: headerTextColor,
                           ),
                         ),
                       ),
@@ -850,8 +825,8 @@ class HistoryPageState extends State<HistoryPage> {
                         icon: Icon(
                           Icons.chevron_right,
                           color: _canGoForward
-                              ? Colors.white
-                              : Colors.white.withValues(alpha: 0.3),
+                              ? headerIconColor
+                              : headerIconColor.withValues(alpha: 0.3),
                         ),
                         onPressed: _canGoForward ? _goForward : null,
                       ),
@@ -869,7 +844,7 @@ class HistoryPageState extends State<HistoryPage> {
                       icon: Icons.arrow_upward_rounded,
                       amount: income,
                       color: const Color(0xFF4ADE80),
-                      textColor: Colors.white,
+                      textColor: headerTextColor,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -878,7 +853,7 @@ class HistoryPageState extends State<HistoryPage> {
                       icon: Icons.arrow_downward_rounded,
                       amount: expenses,
                       color: const Color(0xFFF87171),
-                      textColor: Colors.white,
+                      textColor: headerTextColor,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -889,7 +864,7 @@ class HistoryPageState extends State<HistoryPage> {
                       color: net >= 0
                           ? const Color(0xFF4ADE80)
                           : const Color(0xFFF87171),
-                      textColor: Colors.white,
+                      textColor: headerTextColor,
                     ),
                   ),
                 ],
@@ -897,6 +872,9 @@ class HistoryPageState extends State<HistoryPage> {
             ],
           ),
         ),
+
+        Divider(
+            height: 1, thickness: 1, color: theme.colorScheme.outlineVariant),
 
         // ── Transaction list ───────────────────────────────────────────────
         Expanded(
