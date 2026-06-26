@@ -866,8 +866,20 @@ class _TotalBalanceHero extends StatelessWidget {
     final theme = Theme.of(context);
     final primary = theme.colorScheme.primary;
     final tertiary = theme.colorScheme.tertiary;
+    final isDark = theme.brightness == Brightness.dark;
     // Extend gradient behind the transparent top nav bar overlay.
     final topPadding = MediaQuery.paddingOf(context).top;
+
+    final heroGradientColors = isDark
+        ? [
+            const Color(0xFF2A2A2E),
+            const Color(0xFF3A3A40),
+          ]
+        : [primary, tertiary];
+
+    final heroShadowColor = isDark
+        ? Colors.black.withValues(alpha: 0.40)
+        : primary.withValues(alpha: 0.35);
 
     return Container(
       width: double.infinity,
@@ -876,14 +888,14 @@ class _TotalBalanceHero extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [primary, tertiary],
+          colors: heroGradientColors,
         ),
         borderRadius: const BorderRadius.vertical(
           bottom: Radius.circular(32),
         ),
         boxShadow: [
           BoxShadow(
-            color: primary.withValues(alpha: 0.35),
+            color: heroShadowColor,
             blurRadius: 24,
             offset: const Offset(0, 10),
           ),
@@ -2515,8 +2527,11 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
           final isTransferOut = outTx.accountId == widget.account.id;
           final transferLabel = isTransferOut ? 'Transfer Out' : 'Transfer In';
           final transferAmountPrefix = isTransferOut ? '−' : '+';
-          const transferColor = Color(0xFF2563EB);
-          const transferBgColor = Color(0xFFDBEAFE);
+          final transferColor = Theme.of(context).colorScheme.primary;
+          final transferBgColor =
+              Theme.of(context).colorScheme.primaryContainer;
+          final transferFgColor =
+              Theme.of(context).colorScheme.onPrimaryContainer;
           final transferIcon = isTransferOut
               ? Icons.arrow_upward_rounded
               : Icons.arrow_downward_rounded;
@@ -2561,7 +2576,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                         child: Icon(
                           transferIcon,
                           size: 20,
-                          color: transferColor,
+                          color: transferFgColor,
                         ),
                       ),
                       title: Text(
@@ -2600,8 +2615,11 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
         // ── Regular transaction card ──────────────────────────────────────
         final tx = item.tx!;
         final isIncome = tx.type == 'income';
-        final rowColor = isIncome ? Colors.green : Colors.red;
-        final bgColor = isIncome ? Colors.green.shade100 : Colors.red.shade100;
+        final rowColor =
+            isIncome ? const Color(0xFF22C55E) : const Color(0xFFEF4444);
+        final bgColor = isIncome
+            ? const Color(0xFF22C55E).withValues(alpha: 0.15)
+            : const Color(0xFFEF4444).withValues(alpha: 0.15);
         final amountPrefix = isIncome ? '+' : '−';
         final txCatIcon = _txCategories
                 .cast<WalletCategory?>()

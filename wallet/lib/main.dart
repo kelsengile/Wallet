@@ -594,9 +594,17 @@ class _SpeedDialFabState extends State<_SpeedDialFab>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
     final screenWidth = MediaQuery.sizeOf(context).width;
     final size = (screenWidth * 0.155).clamp(56.0, 68.0);
     final iconSize = size * 0.5;
+
+    final fabColor = _open
+        ? cs.surface
+        : isDark
+            ? const Color(0xFF3A3A40)
+            : cs.primary;
 
     // Wrap everything in a TapRegion so any tap outside this widget closes it.
     return TapRegion(
@@ -609,21 +617,21 @@ class _SpeedDialFabState extends State<_SpeedDialFab>
           _miniButton(
             icon: Icons.swap_horiz,
             label: 'Transfer',
-            color: const Color(0xFF0D9488),
+            color: isDark ? const Color(0xFF3A3A40) : const Color(0xFF0D9488),
             onTap: widget.onTransfer,
             index: 0,
           ),
           _miniButton(
             icon: Icons.arrow_upward,
             label: 'Expense',
-            color: Colors.red,
+            color: isDark ? const Color(0xFF4A2A2A) : Colors.red,
             onTap: widget.onAddExpense,
             index: 1,
           ),
           _miniButton(
             icon: Icons.arrow_downward,
             label: 'Income',
-            color: Colors.green,
+            color: isDark ? const Color(0xFF1E3A2A) : Colors.green,
             onTap: widget.onAddIncome,
             index: 2,
           ),
@@ -636,9 +644,7 @@ class _SpeedDialFabState extends State<_SpeedDialFab>
               height: size,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: _open
-                    ? theme.colorScheme.surface
-                    : theme.colorScheme.primary,
+                color: fabColor,
                 border: Border.all(
                   color: theme.colorScheme.surface,
                   width: 3.5,
@@ -858,6 +864,11 @@ class _WalletDrawerState extends State<_WalletDrawer> {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
 
+    final isDark = theme.brightness == Brightness.dark;
+    final drawerGradientColors = isDark
+        ? [const Color(0xFF2A2A2E), const Color(0xFF3A3A40)]
+        : [cs.primary, cs.tertiary];
+
     return Drawer(
       child: Column(
         children: [
@@ -868,7 +879,7 @@ class _WalletDrawerState extends State<_WalletDrawer> {
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [cs.primary, cs.tertiary],
+                colors: drawerGradientColors,
               ),
             ),
             padding: EdgeInsets.fromLTRB(

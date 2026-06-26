@@ -581,15 +581,18 @@ class HistoryPageState extends State<HistoryPage> {
                       contentPadding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 2),
                       onTap: () => _showTransferInfo(outTx),
-                      leading: CircleAvatar(
-                        radius: 22,
-                        backgroundColor: const Color(0xFFDBEAFE),
-                        child: const Icon(
-                          Icons.swap_horiz_rounded,
-                          size: 20,
-                          color: Color(0xFF2563EB),
-                        ),
-                      ),
+                      leading: Builder(builder: (ctx) {
+                        final cs = Theme.of(ctx).colorScheme;
+                        return CircleAvatar(
+                          radius: 22,
+                          backgroundColor: cs.primaryContainer,
+                          child: Icon(
+                            Icons.swap_horiz_rounded,
+                            size: 20,
+                            color: cs.onPrimaryContainer,
+                          ),
+                        );
+                      }),
                       title: const Text(
                         'Transfer',
                         style: TextStyle(
@@ -599,14 +602,16 @@ class HistoryPageState extends State<HistoryPage> {
                         '$fromAccount → $toAccount',
                         style: const TextStyle(fontSize: 11),
                       ),
-                      trailing: Text(
-                        '± ${currencySymbolNotifier.value}${_fmt(outTx.amount)}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                          color: Color(0xFF2563EB),
-                        ),
-                      ),
+                      trailing: Builder(builder: (ctx) {
+                        return Text(
+                          '± ${currencySymbolNotifier.value}${_fmt(outTx.amount)}',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                            color: Theme.of(ctx).colorScheme.primary,
+                          ),
+                        );
+                      }),
                     ),
                   ),
                 ),
@@ -626,8 +631,12 @@ class HistoryPageState extends State<HistoryPage> {
         // ── Regular transaction card ──────────────────────────────────────
         final tx = item.tx!;
         final isIncome = tx.type == 'income';
-        final rowColor = isIncome ? Colors.green : Colors.red;
-        final bgColor = isIncome ? Colors.green.shade100 : Colors.red.shade100;
+        final rowColor = isIncome
+            ? const Color(0xFF22C55E) // green-500
+            : const Color(0xFFEF4444); // red-500
+        final bgColor = isIncome
+            ? const Color(0xFF22C55E).withValues(alpha: 0.15)
+            : const Color(0xFFEF4444).withValues(alpha: 0.15);
         final amountPrefix = isIncome ? '+' : '−';
         final accountName = _accounts
             .firstWhere(
@@ -740,6 +749,21 @@ class HistoryPageState extends State<HistoryPage> {
     // matching AccountsPage's total balance hero.
     final topPadding = MediaQuery.paddingOf(context).top;
 
+    final primary = theme.colorScheme.primary;
+    final tertiary = theme.colorScheme.tertiary;
+    final isDark = theme.brightness == Brightness.dark;
+
+    final headerGradientColors = isDark
+        ? [
+            const Color(0xFF2A2A2E),
+            const Color(0xFF3A3A40),
+          ]
+        : [primary, tertiary];
+
+    final headerShadowColor = isDark
+        ? Colors.black.withValues(alpha: 0.40)
+        : primary.withValues(alpha: 0.30);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -748,17 +772,21 @@ class HistoryPageState extends State<HistoryPage> {
           width: double.infinity,
           padding: EdgeInsets.fromLTRB(16, topPadding + 70, 16, 12),
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
+            gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [
-                Color.fromARGB(255, 97, 60, 27),
-                Color.fromARGB(255, 144, 99, 59),
-              ],
+              colors: headerGradientColors,
             ),
             borderRadius: const BorderRadius.vertical(
-              bottom: Radius.circular(10),
+              bottom: Radius.circular(28),
             ),
+            boxShadow: [
+              BoxShadow(
+                color: headerShadowColor,
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
           child: Column(
             children: [
@@ -769,9 +797,10 @@ class HistoryPageState extends State<HistoryPage> {
                   Text(
                     'Transaction History',
                     style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w500,
+                      fontWeight: FontWeight.w600,
                       fontSize: 17,
-                      color: const Color.fromARGB(255, 219, 219, 219),
+                      color: Colors.white,
+                      letterSpacing: 0.2,
                     ),
                   ),
                   IconButton(
@@ -793,8 +822,8 @@ class HistoryPageState extends State<HistoryPage> {
                     child: IgnorePointer(
                       ignoring: _filterMode == _FilterMode.allTime,
                       child: IconButton(
-                        icon: const Icon(Icons.chevron_left,
-                            color: Color.fromARGB(255, 219, 219, 219)),
+                        icon:
+                            const Icon(Icons.chevron_left, color: Colors.white),
                         onPressed: _goBack,
                       ),
                     ),
@@ -806,8 +835,8 @@ class HistoryPageState extends State<HistoryPage> {
                         child: Text(
                           _periodLabel,
                           style: theme.textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w500,
-                            color: const Color.fromARGB(255, 219, 219, 219),
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
                           ),
                         ),
                       ),
@@ -821,9 +850,8 @@ class HistoryPageState extends State<HistoryPage> {
                         icon: Icon(
                           Icons.chevron_right,
                           color: _canGoForward
-                              ? const Color.fromARGB(255, 219, 219, 219)
-                              : const Color.fromARGB(255, 219, 219, 219)
-                                  .withValues(alpha: 0.3),
+                              ? Colors.white
+                              : Colors.white.withValues(alpha: 0.3),
                         ),
                         onPressed: _canGoForward ? _goForward : null,
                       ),
@@ -841,7 +869,7 @@ class HistoryPageState extends State<HistoryPage> {
                       icon: Icons.arrow_upward_rounded,
                       amount: income,
                       color: const Color(0xFF4ADE80),
-                      textColor: const Color.fromARGB(255, 219, 219, 219),
+                      textColor: Colors.white,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -850,7 +878,7 @@ class HistoryPageState extends State<HistoryPage> {
                       icon: Icons.arrow_downward_rounded,
                       amount: expenses,
                       color: const Color(0xFFF87171),
-                      textColor: const Color.fromARGB(255, 219, 219, 219),
+                      textColor: Colors.white,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -861,7 +889,7 @@ class HistoryPageState extends State<HistoryPage> {
                       color: net >= 0
                           ? const Color(0xFF4ADE80)
                           : const Color(0xFFF87171),
-                      textColor: const Color.fromARGB(255, 219, 219, 219),
+                      textColor: Colors.white,
                     ),
                   ),
                 ],
@@ -949,25 +977,40 @@ class _DateHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
     return Padding(
       padding: EdgeInsets.only(top: 8, bottom: 2, left: indented ? 12 : 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            label,
-            style: theme.textTheme.labelMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
-            ),
+          Row(
+            children: [
+              Container(
+                width: 3,
+                height: 14,
+                margin: const EdgeInsets.only(right: 8),
+                decoration: BoxDecoration(
+                  color: primary.withValues(alpha: 0.7),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Text(
+                label,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.65),
+                  letterSpacing: 0.3,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 4),
           Divider(
             height: 1,
-            thickness: 1,
+            thickness: 0.5,
             indent: 0,
             endIndent: 0,
-            color: theme.colorScheme.outlineVariant,
+            color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
           ),
         ],
       ),
