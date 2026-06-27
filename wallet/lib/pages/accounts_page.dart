@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -1204,14 +1206,11 @@ class _AccountCardInert extends StatelessWidget {
 
 // ── Account card ───────────────────────────────────────────────────────────────
 //
-// Tap    → view detail (opens _AccountDetailSheet which has edit button)
-// Delete → small trash icon button on the card
-// Drag   → handled by LongPressDraggable in reorder mode (uses _AccountCardInert)
-//
-// Deliberately StatelessWidget — no AnimationController — so it can be safely
-// swapped into and out of LongPressDraggable without ticker conflicts.
+// Tap        → flip the card (front ↔ back)
+// Long-press → view detail (opens _AccountDetailSheet which has edit button)
+// Drag       → handled by LongPressDraggable in reorder mode (uses _AccountCardInert)
 
-class _AccountCard extends StatelessWidget {
+class _AccountCard extends StatefulWidget {
   final Account account;
   final VoidCallback onTap;
   final VoidCallback onDelete;
@@ -1224,16 +1223,55 @@ class _AccountCard extends StatelessWidget {
   });
 
   @override
+  State<_AccountCard> createState() => _AccountCardState();
+}
+
+class _AccountCardState extends State<_AccountCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _anim;
+  bool _showingFront = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 450),
+    );
+    _anim = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _flip() {
+    if (_ctrl.isAnimating) return;
+    if (_showingFront) {
+      _ctrl.forward();
+    } else {
+      _ctrl.reverse();
+    }
+    setState(() => _showingFront = !_showingFront);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final accountColor = account.colorHex.isNotEmpty
-        ? colorFromHex(account.colorHex)
+    final accountColor = widget.account.colorHex.isNotEmpty
+        ? colorFromHex(widget.account.colorHex)
         : const Color(0xFF6366F1);
     final gradients = gradientForColor(accountColor);
     final registry = _registryNotifier.value;
-    final cornerStyle = registry.typeCornerStyle(account.type);
-    final br = registry.cardBorderRadius(account.type);
+    final cornerStyle = registry.typeCornerStyle(widget.account.type);
+    final br = registry.cardBorderRadius(widget.account.type);
 
-    Widget card = Container(
+    // ── Front face ────────────────────────────────────────────────────────
+    Widget frontFace = Container(
       width: 255,
       height: 155,
       decoration: BoxDecoration(
@@ -1279,7 +1317,7 @@ class _AccountCard extends StatelessWidget {
               valueListenable: _registryNotifier,
               builder: (context, registry, _) {
                 final catEntry = registry.accountCategories
-                    .where((c) => c.name == account.category)
+                    .where((c) => c.name == widget.account.category)
                     .firstOrNull;
                 final catIcon = catEntry?.iconData ?? Icons.folder_outlined;
                 return Container(
@@ -1304,7 +1342,7 @@ class _AccountCard extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(right: 36),
                   child: Text(
-                    account.name,
+                    widget.account.name,
                     style: const TextStyle(
                       color: Colors.white70,
                       fontSize: 12,
@@ -1317,9 +1355,9 @@ class _AccountCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '${currencySymbolNotifier.value} ${_fmt(account.balance)}',
+                  '${currencySymbolNotifier.value} ${_fmt(widget.account.balance)}',
                   style: TextStyle(
-                    color: account.balance >= 0
+                    color: widget.account.balance >= 0
                         ? Colors.white
                         : Colors.red.shade200,
                     fontSize: 22,
@@ -1336,7 +1374,7 @@ class _AccountCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    account.category.toUpperCase(),
+                    widget.account.category.toUpperCase(),
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 8,
@@ -1352,14 +1390,193 @@ class _AccountCard extends StatelessWidget {
       ),
     );
 
-    // Apply clipping: polygon styles use CustomClipper, others use ClipRRect.
+    // ── Back face ─────────────────────────────────────────────────────────
+    Widget backFace = Container(
+      width: 255,
+      height: 155,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.bottomRight,
+          end: Alignment.topLeft,
+          colors: gradients,
+        ),
+        borderRadius: isClipperCornerStyle(cornerStyle) ? null : br,
+      ),
+      child: Stack(
+        children: [
+          // Decorative circles (mirrored)
+          Positioned(
+            left: -22,
+            top: -22,
+            child: Container(
+              width: 100,
+              height: 100,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.09),
+              ),
+            ),
+          ),
+          Positioned(
+            right: -10,
+            bottom: -22,
+            child: Container(
+              width: 75,
+              height: 75,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.06),
+              ),
+            ),
+          ),
+          // Magnetic stripe bar
+          Positioned(
+            top: 28,
+            left: 0,
+            right: 0,
+            child: Container(
+              height: 32,
+              color: Colors.black.withValues(alpha: 0.55),
+            ),
+          ),
+          // Back content
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 76, 16, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                // Signature strip-style row
+                Container(
+                  width: double.infinity,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          widget.account.name,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.3,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Icon(Icons.lock_outline,
+                          size: 11, color: Colors.white.withValues(alpha: 0.6)),
+                    ],
+                  ),
+                ),
+                // Type & tap-to-view hint
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    ValueListenableBuilder<CategoryRegistry>(
+                      valueListenable: _registryNotifier,
+                      builder: (context, registry, _) {
+                        return Row(
+                          children: [
+                            Icon(
+                              registry.typeIcon(widget.account.type),
+                              color: Colors.white70,
+                              size: 12,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              registry
+                                  .typeLabel(widget.account.type)
+                                  .toUpperCase(),
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 8,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1.2,
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                    GestureDetector(
+                      onTap: widget.onTap,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.open_in_new,
+                                size: 9, color: Colors.white),
+                            SizedBox(width: 4),
+                            Text(
+                              'VIEW DETAILS',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 7,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 0.8,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+
+    // Apply clipping to both faces
     if (isClipperCornerStyle(cornerStyle)) {
-      card = _applyCornerClip(cornerStyle, card);
+      frontFace = _applyCornerClip(cornerStyle, frontFace);
+      backFace = _applyCornerClip(cornerStyle, backFace);
     } else {
-      card = ClipRRect(borderRadius: br, child: card);
+      frontFace = ClipRRect(borderRadius: br, child: frontFace);
+      backFace = ClipRRect(borderRadius: br, child: backFace);
     }
 
-    return GestureDetector(onTap: onTap, child: card);
+    return GestureDetector(
+      onTap: _flip,
+      onLongPress: widget.onTap,
+      child: AnimatedBuilder(
+        animation: _anim,
+        builder: (_, __) {
+          final angle = _anim.value * math.pi;
+          final isFrontVisible = angle <= math.pi / 2;
+          return Transform(
+            alignment: Alignment.center,
+            transform: Matrix4.identity()
+              ..setEntry(3, 2, 0.001)
+              ..rotateY(angle),
+            child: isFrontVisible
+                ? frontFace
+                : Transform(
+                    alignment: Alignment.center,
+                    transform: Matrix4.identity()..rotateY(math.pi),
+                    child: backFace,
+                  ),
+          );
+        },
+      ),
+    );
   }
 }
 
