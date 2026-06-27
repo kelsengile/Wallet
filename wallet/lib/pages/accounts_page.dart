@@ -213,6 +213,17 @@ class AccountsPageState extends State<AccountsPage> {
   }
 
   void _showAccountDetail(Account account) {
+    // Insert the flip card into the Overlay so it lives completely outside
+    // the bottom sheet's widget tree and renders on top of everything.
+    // A GlobalKey gives us access to the card's state so we can trigger the
+    // slide-out animation before removing the entry.
+    final cardKey = GlobalKey<_FloatingDetailCardState>();
+    late OverlayEntry cardEntry;
+    cardEntry = OverlayEntry(
+      builder: (_) => _FloatingDetailCard(key: cardKey, account: account),
+    );
+    Overlay.of(context).insert(cardEntry);
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -223,12 +234,14 @@ class AccountsPageState extends State<AccountsPage> {
         account: account,
         onTransactionChanged: _loadAccounts,
         onEditAccount: (a) {
-          // Open the edit form; on save, pop the detail sheet too so the
-          // freshly-reloaded card reflects the new colors immediately.
           _showEditAndRefreshDetail(a, ctx);
         },
       ),
-    );
+    ).whenComplete(() async {
+      // Play the slide-down exit animation, then remove the overlay entry.
+      await cardKey.currentState?.animateOut();
+      cardEntry.remove();
+    });
   }
 
   void _showEditAndRefreshDetail(Account account, BuildContext detailCtx) {
@@ -2178,6 +2191,433 @@ class _CategoryPickerSheet extends StatelessWidget {
   }
 }
 
+// ── Overlay card: floats above the bottom sheet, completely outside its tree ───────
+//
+// Inserted into the root Overlay by _showAccountDetail and removed when the
+// sheet closes. Positioned so the card sits half-above the sheet top edge.
+
+class _FloatingDetailCard extends StatefulWidget {
+  final Account account;
+  const _FloatingDetailCard({super.key, required this.account});
+
+  @override
+  State<_FloatingDetailCard> createState() => _FloatingDetailCardState();
+}
+
+class _FloatingDetailCardState extends State<_FloatingDetailCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _slideCtrl;
+  late final Animation<Offset> _slideAnim;
+  late final Animation<double> _fadeAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _slideCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+    );
+    // Slides in from above (negative Y = above the final position)
+    _slideAnim = Tween<Offset>(
+      begin: const Offset(0, -1.4),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _slideCtrl, curve: Curves.easeOutCubic));
+
+    _fadeAnim = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(
+        parent: _slideCtrl,
+        curve: const Interval(0.0, 0.5, curve: Curves.easeIn),
+      ),
+    );
+
+    // Start the entry animation immediately.
+    _slideCtrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _slideCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Called by [AccountsPageState] before the overlay entry is removed so the
+  /// card slides back up before disappearing.
+  Future<void> animateOut() async {
+    if (!mounted) return;
+    await _slideCtrl.reverse();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Position the card near the top of the screen with generous top padding
+    // so it clears the status bar / notch.
+    const cardH = 230.0;
+    const cardW = 350.0;
+    final screenW = MediaQuery.sizeOf(context).width;
+    const topPadding = 56.0; // below status bar / notch
+
+    return Positioned(
+      top: topPadding,
+      left: (screenW - cardW) / 2,
+      width: cardW,
+      height: cardH,
+      child: SlideTransition(
+        position: _slideAnim,
+        child: FadeTransition(
+          opacity: _fadeAnim,
+          child: Material(
+            color: Colors.transparent,
+            child: _DetailFlipCard(account: widget.account),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Flippable card shown above the detail sheet ───────────────────────────────
+//
+// Mirrors _AccountCard's flip animation but is self-contained (no onTap→detail,
+// no onLongPress→edit). Tap to flip front ↔ back.
+
+class _DetailFlipCard extends StatefulWidget {
+  final Account account;
+  const _DetailFlipCard({required this.account});
+
+  @override
+  State<_DetailFlipCard> createState() => _DetailFlipCardState();
+}
+
+class _DetailFlipCardState extends State<_DetailFlipCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _anim;
+  bool _showingFront = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 450),
+    );
+    _anim = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _flip() {
+    if (_ctrl.isAnimating) return;
+    if (_showingFront) {
+      _ctrl.forward();
+    } else {
+      _ctrl.reverse();
+    }
+    setState(() => _showingFront = !_showingFront);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final account = widget.account;
+    final accountColor = account.colorHex.isNotEmpty
+        ? colorFromHex(account.colorHex)
+        : const Color(0xFF6366F1);
+    final gradients = gradientForColor(accountColor);
+    final registry = _registryNotifier.value;
+    final cornerStyle = registry.typeCornerStyle(account.type);
+    final br = registry.cardBorderRadius(account.type);
+
+    // ── Front face (same design as _AccountCard, bigger: 350×230) ─────────
+    const cardW = 350.0;
+    const cardH = 230.0;
+
+    Widget frontFace = Container(
+      width: cardW,
+      height: cardH,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: gradients,
+        ),
+        borderRadius: isClipperCornerStyle(cornerStyle) ? null : br,
+        boxShadow: [
+          BoxShadow(
+            color: accountColor.withValues(alpha: 0.45),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            right: -22,
+            top: -22,
+            child: Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.09),
+              ),
+            ),
+          ),
+          Positioned(
+            left: -10,
+            bottom: -22,
+            child: Container(
+              width: 90,
+              height: 90,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.06),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 14,
+            right: 14,
+            child: ValueListenableBuilder<CategoryRegistry>(
+              valueListenable: _registryNotifier,
+              builder: (context, reg, _) {
+                final catEntry = reg.accountCategories
+                    .where((c) => c.name == account.category)
+                    .firstOrNull;
+                final catIcon = catEntry?.iconData ?? Icons.folder_outlined;
+                return Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(catIcon, color: Colors.white70, size: 17),
+                );
+              },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 40),
+                  child: Text(
+                    account.name,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 0.2,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                ValueListenableBuilder<String>(
+                  valueListenable: currencySymbolNotifier,
+                  builder: (_, sym, __) => Text(
+                    '$sym ${_fmt(account.balance)}',
+                    style: TextStyle(
+                      color: account.balance >= 0
+                          ? Colors.white
+                          : Colors.red.shade200,
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 7),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    account.category.toUpperCase(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+
+    // ── Back face ─────────────────────────────────────────────────────────
+    Widget backFace = Container(
+      width: cardW,
+      height: cardH,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.bottomRight,
+          end: Alignment.topLeft,
+          colors: gradients,
+        ),
+        borderRadius: isClipperCornerStyle(cornerStyle) ? null : br,
+        boxShadow: [
+          BoxShadow(
+            color: accountColor.withValues(alpha: 0.45),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            left: -22,
+            top: -22,
+            child: Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.09),
+              ),
+            ),
+          ),
+          Positioned(
+            right: -10,
+            bottom: -22,
+            child: Container(
+              width: 90,
+              height: 90,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.06),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 32,
+            left: 0,
+            right: 0,
+            child: Container(
+              height: 38,
+              color: Colors.black.withValues(alpha: 0.55),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 86, 18, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  width: double.infinity,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          account.name,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.3,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Icon(Icons.lock_outline,
+                          size: 12, color: Colors.white.withValues(alpha: 0.6)),
+                    ],
+                  ),
+                ),
+                ValueListenableBuilder<CategoryRegistry>(
+                  valueListenable: _registryNotifier,
+                  builder: (context, reg, _) {
+                    return Row(
+                      children: [
+                        Icon(
+                          reg.typeIcon(account.type),
+                          color: Colors.white70,
+                          size: 13,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          reg.typeLabel(account.type).toUpperCase(),
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.2,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+
+    // Apply clipping
+    if (isClipperCornerStyle(cornerStyle)) {
+      frontFace = _applyCornerClip(cornerStyle, frontFace);
+      backFace = _applyCornerClip(cornerStyle, backFace);
+    } else {
+      frontFace = ClipRRect(borderRadius: br, child: frontFace);
+      backFace = ClipRRect(borderRadius: br, child: backFace);
+    }
+
+    return GestureDetector(
+      onTap: _flip,
+      child: AnimatedBuilder(
+        animation: _anim,
+        builder: (_, __) {
+          final angle = _anim.value * math.pi;
+          final isFrontVisible = angle <= math.pi / 2;
+          return Transform(
+            alignment: Alignment.center,
+            transform: Matrix4.identity()
+              ..setEntry(3, 2, 0.001)
+              ..rotateY(angle),
+            child: isFrontVisible
+                ? frontFace
+                : Transform(
+                    alignment: Alignment.center,
+                    transform: Matrix4.identity()..rotateY(math.pi),
+                    child: backFace,
+                  ),
+          );
+        },
+      ),
+    );
+  }
+}
+
 // ── Account detail bottom sheet ────────────────────────────────────────────────
 
 class _AccountDetailSheet extends StatefulWidget {
@@ -2437,6 +2877,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
         child: Column(
           children: [
+            // ── Drag handle ──────────────────────────────
             Center(
               child: Container(
                 width: 40,
