@@ -474,6 +474,7 @@ class _ProfilePageState extends State<ProfilePage>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       children: [
@@ -481,8 +482,13 @@ class _ProfilePageState extends State<ProfilePage>
         Center(
           child: CircleAvatar(
             radius: 40,
-            backgroundColor: Colors.grey,
-            child: Icon(Icons.person, size: 40, color: Colors.white),
+            backgroundColor:
+                isDark ? Colors.grey : theme.colorScheme.primaryContainer,
+            child: Icon(Icons.person,
+                size: 40,
+                color: isDark
+                    ? Colors.white
+                    : theme.colorScheme.onPrimaryContainer),
           ),
         ),
         const SizedBox(height: 12),
@@ -520,13 +526,14 @@ class _ProfilePageState extends State<ProfilePage>
             Row(
               children: [
                 Icon(Icons.sticky_note_2_outlined,
-                    size: 18, color: Colors.white),
+                    size: 18,
+                    color: isDark ? Colors.white : theme.colorScheme.primary),
                 const SizedBox(width: 6),
                 Text(
                   'Notes',
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.bold,
-                    color: Colors.white,
+                    color: isDark ? Colors.white : theme.colorScheme.primary,
                   ),
                 ),
                 const Spacer(),
@@ -537,7 +544,11 @@ class _ProfilePageState extends State<ProfilePage>
                 ),
               ],
             ),
-            const Divider(color: Colors.white24, thickness: 1, height: 8),
+            Divider(
+                color:
+                    isDark ? Colors.white24 : theme.colorScheme.outlineVariant,
+                thickness: 1,
+                height: 8),
           ],
         ),
         const SizedBox(height: 12),
@@ -562,25 +573,31 @@ class _ProfilePageState extends State<ProfilePage>
     required String label,
     required Widget action,
   }) {
+    final isDark = theme.brightness == Brightness.dark;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            Icon(icon, size: 18, color: Colors.white),
+            Icon(icon,
+                size: 18,
+                color: isDark ? Colors.white : theme.colorScheme.primary),
             const SizedBox(width: 6),
             Text(
               label,
               style: theme.textTheme.titleSmall?.copyWith(
                 fontWeight: FontWeight.bold,
-                color: Colors.white,
+                color: isDark ? Colors.white : theme.colorScheme.primary,
               ),
             ),
             const Spacer(),
             action,
           ],
         ),
-        const Divider(color: Colors.white24, thickness: 1, height: 8),
+        Divider(
+            color: isDark ? Colors.white24 : theme.colorScheme.outlineVariant,
+            thickness: 1,
+            height: 8),
       ],
     );
   }
