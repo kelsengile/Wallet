@@ -1354,10 +1354,11 @@ class _NavTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+    final isLight = theme.brightness == Brightness.light;
     final color = destructive
         ? Colors.red
         : selected
-            ? cs.primary
+            ? (isLight ? Colors.grey.shade700 : Colors.grey)
             : cs.onSurfaceVariant;
 
     return ListTile(
@@ -1375,7 +1376,8 @@ class _NavTile extends StatelessWidget {
         ),
       ),
       selected: selected,
-      selectedTileColor: cs.primaryContainer.withValues(alpha: 0.5),
+      selectedTileColor:
+          isLight ? Colors.grey.shade200 : Colors.grey.withValues(alpha: 0.15),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
       horizontalTitleGap: 8,
