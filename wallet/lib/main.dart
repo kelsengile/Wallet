@@ -95,6 +95,7 @@ class _WalletHomePageState extends State<WalletHomePage> {
   final _historyKey = GlobalKey<HistoryPageState>();
   final _accountsKey = GlobalKey<AccountsPageState>();
   bool _fabVisible = true;
+  bool _showCalculator = false;
   // 0.0 = fully on accounts tab, 1.0 = fully off it — drives status bar style.
   // Uses a ValueNotifier so scroll updates never trigger a full widget rebuild.
   final _pageTNotifier = ValueNotifier<double>(0.0);
@@ -206,7 +207,9 @@ class _WalletHomePageState extends State<WalletHomePage> {
         endDrawer: Drawer(
           width: double.infinity,
           child: Scaffold(
-            body: const AnalyticsPage(),
+            body: _showCalculator
+                ? const CalculatorPage()
+                : const AnalyticsPage(),
           ),
         ),
         drawer: _WalletDrawer(
@@ -222,6 +225,8 @@ class _WalletHomePageState extends State<WalletHomePage> {
           onAccountRestored: () {
             _accountsKey.currentState?.refresh();
           },
+          onOpenAnalytics: () => setState(() => _showCalculator = false),
+          onOpenCalculator: () => setState(() => _showCalculator = true),
         ),
         body: RefreshIndicator(
           onRefresh: _onRefresh,
@@ -846,6 +851,8 @@ class _WalletDrawer extends StatefulWidget {
   final VoidCallback onDataCleared;
   final VoidCallback onCategoryChanged;
   final VoidCallback onAccountRestored;
+  final VoidCallback onOpenAnalytics;
+  final VoidCallback onOpenCalculator;
 
   const _WalletDrawer({
     required this.selectedIndex,
@@ -853,6 +860,8 @@ class _WalletDrawer extends StatefulWidget {
     required this.onDataCleared,
     required this.onCategoryChanged,
     required this.onAccountRestored,
+    required this.onOpenAnalytics,
+    required this.onOpenCalculator,
   });
 
   @override
@@ -978,6 +987,7 @@ class _WalletDrawerState extends State<_WalletDrawer> {
                   label: 'Analytics',
                   onTap: () {
                     Navigator.pop(context); // close the left drawer first
+                    widget.onOpenAnalytics();
                     // Small delay so the left drawer finishes closing before
                     // the end drawer opens — avoids two drawers fighting.
                     Future.delayed(const Duration(milliseconds: 250), () {
@@ -993,10 +1003,12 @@ class _WalletDrawerState extends State<_WalletDrawer> {
                   label: 'Calculator',
                   onTap: () {
                     Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const CalculatorPage()),
-                    );
+                    widget.onOpenCalculator();
+                    Future.delayed(const Duration(milliseconds: 250), () {
+                      if (context.mounted) {
+                        Scaffold.of(context).openEndDrawer();
+                      }
+                    });
                   },
                 ),
                 _NavTile(
