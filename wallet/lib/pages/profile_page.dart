@@ -481,9 +481,8 @@ class _ProfilePageState extends State<ProfilePage>
         Center(
           child: CircleAvatar(
             radius: 40,
-            backgroundColor: theme.colorScheme.primaryContainer,
-            child: Icon(Icons.person,
-                size: 40, color: theme.colorScheme.onPrimaryContainer),
+            backgroundColor: Colors.grey,
+            child: Icon(Icons.person, size: 40, color: Colors.white),
           ),
         ),
         const SizedBox(height: 12),
@@ -501,7 +500,7 @@ class _ProfilePageState extends State<ProfilePage>
         _buildSectionHeader(
           theme,
           icon: Icons.badge_outlined,
-          label: 'ID Cards',
+          label: 'Identification',
           action: IconButton(
             onPressed: () => _showAddOrEditDialog(),
             icon: const Icon(Icons.add, size: 20),
@@ -515,36 +514,35 @@ class _ProfilePageState extends State<ProfilePage>
         const SizedBox(height: 32),
 
         // ── Note ──────────────────────────────────────────────────────────
-        Row(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.sticky_note_2_outlined,
-                size: 18, color: theme.colorScheme.primary),
-            const SizedBox(width: 6),
-            Text(
-              'Notes',
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: theme.colorScheme.primary,
-              ),
+            Row(
+              children: [
+                Icon(Icons.sticky_note_2_outlined,
+                    size: 18, color: Colors.white),
+                const SizedBox(width: 6),
+                Text(
+                  'Notes',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  tooltip: 'Add note',
+                  icon: const Icon(Icons.add, size: 20),
+                  onPressed: _addNote,
+                ),
+              ],
             ),
-            const Spacer(),
-            IconButton(
-              tooltip: 'Add note',
-              icon: const Icon(Icons.add, size: 20),
-              onPressed: _addNote,
-            ),
+            const Divider(color: Colors.white24, thickness: 1, height: 8),
           ],
         ),
         const SizedBox(height: 12),
         if (_notes.isEmpty)
-          Center(
-            child: Text(
-              'Tap + to add a note',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          )
+          const SizedBox(height: 12)
         else
           for (int i = 0; i < _notes.length; i++) ...[
             _buildNote(theme, i),
@@ -564,19 +562,25 @@ class _ProfilePageState extends State<ProfilePage>
     required String label,
     required Widget action,
   }) {
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 18, color: theme.colorScheme.primary),
-        const SizedBox(width: 6),
-        Text(
-          label,
-          style: theme.textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.bold,
-            color: theme.colorScheme.primary,
-          ),
+        Row(
+          children: [
+            Icon(icon, size: 18, color: Colors.white),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            const Spacer(),
+            action,
+          ],
         ),
-        const Spacer(),
-        action,
+        const Divider(color: Colors.white24, thickness: 1, height: 8),
       ],
     );
   }
@@ -584,32 +588,9 @@ class _ProfilePageState extends State<ProfilePage>
   // ── Empty state ───────────────────────────────────────────────────────────
 
   Widget _buildEmptyIdState(ThemeData theme) {
-    return GestureDetector(
-      onTap: () => _showAddOrEditDialog(),
-      child: AspectRatio(
-        aspectRatio: _cardAspectRatio,
-        child: Container(
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceVariant.withOpacity(0.4),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: theme.colorScheme.outlineVariant),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.add_card,
-                  size: 40, color: theme.colorScheme.onSurfaceVariant),
-              const SizedBox(height: 8),
-              Text(
-                'Tap to add an ID card',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return AspectRatio(
+      aspectRatio: _cardAspectRatio,
+      child: const SizedBox.shrink(),
     );
   }
 
