@@ -80,8 +80,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version:
-          13, // bumped to 13 to re-apply cash corner_style = sharp (idempotent)
+      version: 14, // bumped to 14 to add note_header / note_body to accounts
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -90,13 +89,15 @@ class DatabaseHelper {
   Future<void> _onCreate(Database db, int version) async {
     await db.execute('''
       CREATE TABLE accounts (
-        id          INTEGER PRIMARY KEY AUTOINCREMENT,
-        name        TEXT    NOT NULL,
-        balance     REAL    NOT NULL DEFAULT 0.0,
-        type        TEXT    NOT NULL,
-        category    TEXT    NOT NULL DEFAULT 'personal',
-        color_hex   TEXT    NOT NULL DEFAULT '#6366F1',
-        icon        TEXT    NOT NULL DEFAULT 'wallet'
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        name         TEXT    NOT NULL,
+        balance      REAL    NOT NULL DEFAULT 0.0,
+        type         TEXT    NOT NULL,
+        category     TEXT    NOT NULL DEFAULT 'personal',
+        color_hex    TEXT    NOT NULL DEFAULT '#6366F1',
+        icon         TEXT    NOT NULL DEFAULT 'wallet',
+        note_header  TEXT    NOT NULL DEFAULT '',
+        note_body    TEXT    NOT NULL DEFAULT ''
       )
     ''');
 
@@ -144,15 +145,17 @@ class DatabaseHelper {
     /// Soft-deleted accounts. Mirrors the accounts table plus `deleted_at`.
     await db.execute('''
       CREATE TABLE trash_accounts (
-        id          INTEGER PRIMARY KEY AUTOINCREMENT,
-        orig_id     INTEGER NOT NULL,
-        name        TEXT    NOT NULL,
-        balance     REAL    NOT NULL DEFAULT 0.0,
-        type        TEXT    NOT NULL,
-        category    TEXT    NOT NULL DEFAULT 'personal',
-        color_hex   TEXT    NOT NULL DEFAULT '#6366F1',
-        icon        TEXT    NOT NULL DEFAULT 'wallet',
-        deleted_at  TEXT    NOT NULL
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        orig_id      INTEGER NOT NULL,
+        name         TEXT    NOT NULL,
+        balance      REAL    NOT NULL DEFAULT 0.0,
+        type         TEXT    NOT NULL,
+        category     TEXT    NOT NULL DEFAULT 'personal',
+        color_hex    TEXT    NOT NULL DEFAULT '#6366F1',
+        icon         TEXT    NOT NULL DEFAULT 'wallet',
+        note_header  TEXT    NOT NULL DEFAULT '',
+        note_body    TEXT    NOT NULL DEFAULT '',
+        deleted_at   TEXT    NOT NULL
       )
     ''');
 
@@ -208,6 +211,8 @@ class DatabaseHelper {
       'category': 'personal',
       'color_hex': '#22C55E',
       'icon': 'wallet',
+      'note_header': '',
+      'note_body': '',
     });
   }
 
@@ -878,6 +883,23 @@ class DatabaseHelper {
         "WHERE group_type = '$kCategoryGroupAccountType' AND name = 'cash'",
       );
     }
+
+    if (oldVersion < 14) {
+      // Add note_header and note_body columns to the live accounts table and
+      // the trash_accounts table (existing rows default to empty string).
+      await db.execute(
+        "ALTER TABLE accounts ADD COLUMN note_header TEXT NOT NULL DEFAULT ''",
+      );
+      await db.execute(
+        "ALTER TABLE accounts ADD COLUMN note_body TEXT NOT NULL DEFAULT ''",
+      );
+      await db.execute(
+        "ALTER TABLE trash_accounts ADD COLUMN note_header TEXT NOT NULL DEFAULT ''",
+      );
+      await db.execute(
+        "ALTER TABLE trash_accounts ADD COLUMN note_body TEXT NOT NULL DEFAULT ''",
+      );
+    }
   }
 
   /// Ensures any account type/category or transaction category already
@@ -1255,6 +1277,8 @@ class DatabaseHelper {
         'category': row['category'] ?? 'personal',
         'color_hex': row['color_hex'],
         'icon': row['icon'],
+        'note_header': row['note_header'] ?? '',
+        'note_body': row['note_body'] ?? '',
         'deleted_at': now,
       });
     }
@@ -1885,6 +1909,8 @@ class DatabaseHelper {
       'category': row['category'] ?? 'personal',
       'color_hex': row['color_hex'],
       'icon': row['icon'],
+      'note_header': row['note_header'] ?? '',
+      'note_body': row['note_body'] ?? '',
     });
 
     await db.delete('trash_accounts', where: 'id = ?', whereArgs: [trashId]);
@@ -2025,6 +2051,8 @@ class DatabaseHelper {
       'category': 'personal',
       'color_hex': '#22C55E',
       'icon': 'wallet',
+      'note_header': '',
+      'note_body': '',
     });
   }
 

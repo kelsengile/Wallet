@@ -9,6 +9,12 @@ class Account {
   final String colorHex;
   final String icon;
 
+  /// Optional short title shown on the back of the account card (≤ 30 chars).
+  final String? noteHeader;
+
+  /// Optional longer note shown below the header on the card back (≤ 120 chars).
+  final String? noteBody;
+
   Account({
     this.id,
     required this.name,
@@ -17,6 +23,8 @@ class Account {
     this.category = 'personal',
     required this.colorHex,
     required this.icon,
+    this.noteHeader,
+    this.noteBody,
   });
 
   Account copyWith({
@@ -27,6 +35,9 @@ class Account {
     String? category,
     String? colorHex,
     String? icon,
+    // Use Object? sentinel so callers can explicitly clear these to null.
+    Object? noteHeader = _sentinel,
+    Object? noteBody = _sentinel,
   }) {
     return Account(
       id: id ?? this.id,
@@ -36,6 +47,9 @@ class Account {
       category: category ?? this.category,
       colorHex: colorHex ?? this.colorHex,
       icon: icon ?? this.icon,
+      noteHeader:
+          noteHeader == _sentinel ? this.noteHeader : noteHeader as String?,
+      noteBody: noteBody == _sentinel ? this.noteBody : noteBody as String?,
     );
   }
 
@@ -48,6 +62,8 @@ class Account {
       'category': category,
       'color_hex': colorHex,
       'icon': icon,
+      'note_header': noteHeader ?? '',
+      'note_body': noteBody ?? '',
     };
   }
 
@@ -60,6 +76,16 @@ class Account {
       category: (map['category'] as String?) ?? 'personal',
       colorHex: map['color_hex'] as String,
       icon: map['icon'] as String,
+      noteHeader: (map['note_header'] as String?)?.isEmpty == true
+          ? null
+          : map['note_header'] as String?,
+      noteBody: (map['note_body'] as String?)?.isEmpty == true
+          ? null
+          : map['note_body'] as String?,
     );
   }
 }
+
+/// Private sentinel used by [Account.copyWith] to distinguish "not provided"
+/// from an explicit `null` for the nullable [noteHeader] / [noteBody] fields.
+const Object _sentinel = Object();
