@@ -229,6 +229,7 @@ class AccountsPageState extends State<AccountsPage> {
         return _AccountDetailDialog(
           account: account,
           cardKey: cardKey,
+          dialogCtx: dialogCtx,
           onTransactionChanged: _loadAccounts,
           onEditAccount: (a, detailCtx) {
             _cardFlipLockedNotifier.value = true;
@@ -2459,6 +2460,7 @@ class _DraggableSheetPanel extends StatefulWidget {
   const _DraggableSheetPanel({
     required this.child,
     required this.onDismiss,
+    required GlobalKey<_DraggableSheetPanelState> key,
   });
 
   @override
@@ -2466,7 +2468,7 @@ class _DraggableSheetPanel extends StatefulWidget {
 }
 
 class _DraggableSheetPanelState extends State<_DraggableSheetPanel>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   // Tracks the raw finger offset while dragging.
   double _dragOffset = 0;
   bool _dismissing = false;
@@ -2475,8 +2477,12 @@ class _DraggableSheetPanelState extends State<_DraggableSheetPanel>
   late final AnimationController _snapCtrl;
   late Animation<double> _snapAnim;
 
-  static const double _dismissThreshold = 100.0;
-  static const double _dismissVelocity = 600.0;
+  // Slide-down exit animation played when the sheet is dismissed.
+  late final AnimationController _exitCtrl;
+  late final Animation<double> _exitAnim;
+
+  static const double _dismissThreshold = 300.0;
+  static const double _dismissVelocity = 100.0;
   static const double _sheetHeightFraction = 0.70;
   // Rubber-band resistance: the sheet moves at 40 % of finger speed so it
   // feels like it has weight without snapping stiffly.
@@ -2487,14 +2493,37 @@ class _DraggableSheetPanelState extends State<_DraggableSheetPanel>
     super.initState();
     _snapCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 380),
+      duration: const Duration(milliseconds: 180),
     );
+    _exitCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 180),
+    );
+    _exitAnim = CurvedAnimation(parent: _exitCtrl, curve: Curves.easeIn);
   }
 
   @override
   void dispose() {
     _snapCtrl.dispose();
+    _exitCtrl.dispose();
     super.dispose();
+  }
+
+  /// Plays only the slide-down animation (called externally by the dialog).
+  Future<void> animateOut() async {
+    if (_dismissing) return;
+    _dismissing = true;
+    _snapCtrl.stop();
+    await _exitCtrl.forward();
+  }
+
+  /// Plays the slide-down exit animation, then calls [onDismiss] (used on drag).
+  Future<void> _animateOutAndDismiss() async {
+    if (_dismissing) return;
+    _dismissing = true;
+    _snapCtrl.stop();
+    await _exitCtrl.forward();
+    await widget.onDismiss();
   }
 
   void _onVerticalDragUpdate(DragUpdateDetails d) {
@@ -2511,8 +2540,7 @@ class _DraggableSheetPanelState extends State<_DraggableSheetPanel>
     final velocity = d.primaryVelocity ?? 0;
 
     if (_dragOffset > _dismissThreshold || velocity > _dismissVelocity) {
-      _dismissing = true;
-      await widget.onDismiss();
+      await _animateOutAndDismiss();
     } else {
       // Spring back to resting position with a bouncy curve.
       _snapAnim = Tween<double>(begin: _dragOffset, end: 0).animate(
@@ -2530,8 +2558,12 @@ class _DraggableSheetPanelState extends State<_DraggableSheetPanel>
 
     return Align(
       alignment: Alignment.bottomCenter,
-      child: Transform.translate(
-        offset: Offset(0, _dragOffset),
+      child: AnimatedBuilder(
+        animation: _exitAnim,
+        builder: (context, child) => Transform.translate(
+          offset: Offset(0, _dragOffset + _exitAnim.value * sheetH),
+          child: child,
+        ),
         child: GestureDetector(
           onTap: () {}, // absorb taps so they don't bubble to scrim
           onVerticalDragUpdate: _onVerticalDragUpdate,
@@ -2564,6 +2596,7 @@ class _DraggableSheetPanelState extends State<_DraggableSheetPanel>
 class _AccountDetailDialog extends StatefulWidget {
   final Account account;
   final GlobalKey<_FloatingDetailCardState> cardKey;
+  final BuildContext dialogCtx;
   final VoidCallback? onTransactionChanged;
   final void Function(Account, BuildContext)? onEditAccount;
   final VoidCallback? onReceiptOpen;
@@ -2573,6 +2606,7 @@ class _AccountDetailDialog extends StatefulWidget {
   const _AccountDetailDialog({
     required this.account,
     required this.cardKey,
+    required this.dialogCtx,
     this.onTransactionChanged,
     this.onEditAccount,
     this.onReceiptOpen,
@@ -2585,9 +2619,18 @@ class _AccountDetailDialog extends StatefulWidget {
 }
 
 class _AccountDetailDialogState extends State<_AccountDetailDialog> {
+  final _sheetKey = GlobalKey<_DraggableSheetPanelState>();
+  bool _popped = false;
+
+  /// Single dismiss path — sheet slides down + card slides up, then pop.
   Future<void> _dismiss() async {
-    await widget.cardKey.currentState?.animateOut();
-    if (mounted) Navigator.of(context).pop();
+    if (_popped) return;
+    _popped = true;
+    await Future.wait([
+      _sheetKey.currentState?.animateOut() ?? Future.value(),
+      widget.cardKey.currentState?.animateOut() ?? Future.value(),
+    ]);
+    if (widget.dialogCtx.mounted) Navigator.pop(widget.dialogCtx);
   }
 
   @override
@@ -2606,6 +2649,7 @@ class _AccountDetailDialogState extends State<_AccountDetailDialog> {
 
           // ── Bottom sheet panel ────────────────────────────────────────────
           _DraggableSheetPanel(
+            key: _sheetKey,
             onDismiss: _dismiss,
             child: _AccountDetailSheet(
               account: widget.account,
@@ -2661,7 +2705,7 @@ class _FloatingDetailCardState extends State<_FloatingDetailCard>
     _account = widget.account;
     _slideCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 420),
+      duration: const Duration(milliseconds: 480),
     );
     // Slides in from above (negative Y = above the final position)
     _slideAnim = Tween<Offset>(
@@ -2690,7 +2734,11 @@ class _FloatingDetailCardState extends State<_FloatingDetailCard>
   /// card slides back up before disappearing.
   Future<void> animateOut() async {
     if (!mounted) return;
-    await _slideCtrl.reverse();
+    await _slideCtrl.animateBack(
+      0,
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeInCubic,
+    );
   }
 
   /// Called after the user saves edits so the floating card reflects the
@@ -3163,6 +3211,9 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
   List<WalletCategory> _accountCategories = [];
   bool _loading = true;
 
+  /// Keys of date groups the user has collapsed (e.g. "2024-06-09").
+  final Set<String> _collapsedGroups = {};
+
   // ── Per-account filter cache (survives sheet close/reopen within session) ──
   static final Map<
       int,
@@ -3569,7 +3620,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
       if (d != null) {
         // e.g. "Jun 9, Monday"
         final label = DateFormat('MMM d, EEEE').format(d);
-        items.add(_TxItem.header(label));
+        items.add(_TxItem.header(label, key));
       }
 
       final dayTxs = groups[key]!;
@@ -3640,6 +3691,18 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
       if (isLast) lastInGroupIndices.add(i);
     }
 
+    // Collect the date-key for each item so transaction rows know their group.
+    final itemKeys = <String?>[];
+    String? currentKey;
+    for (final item in items) {
+      if (item.isHeader) {
+        currentKey = item.dateKey;
+        itemKeys.add(null);
+      } else {
+        itemKeys.add(currentKey);
+      }
+    }
+
     return ListView.builder(
       padding: EdgeInsets.zero,
       itemCount: items.length,
@@ -3647,27 +3710,59 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
         final item = items[i];
         final showDivider = !lastInGroupIndices.contains(i);
 
-        // ── Date header ───────────────────────────────────────────────────
+        // ── Date header (tappable → collapse/expand group) ────────────────
         if (item.isHeader) {
-          return Padding(
-            padding: const EdgeInsets.only(top: 8, bottom: 2),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item.label!,
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+          final key = item.dateKey!;
+          final collapsed = _collapsedGroups.contains(key);
+          return InkWell(
+            onTap: () {
+              setState(() {
+                if (collapsed) {
+                  _collapsedGroups.remove(key);
+                } else {
+                  _collapsedGroups.add(key);
+                }
+              });
+            },
+            borderRadius: BorderRadius.circular(6),
+            child: Padding(
+              padding: const EdgeInsets.only(top: 8, bottom: 2),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          item.label!,
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.onSurface
+                                .withValues(alpha: 0.55),
+                          ),
+                        ),
+                      ),
+                      AnimatedRotation(
+                        turns: collapsed ? -0.25 : 0,
+                        duration: const Duration(milliseconds: 250),
+                        curve: Curves.easeInOut,
+                        child: Icon(
+                          Icons.expand_more_rounded,
+                          size: 16,
+                          color: theme.colorScheme.onSurface
+                              .withValues(alpha: 0.40),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(height: 4),
-                Divider(
-                  height: 1,
-                  thickness: 1,
-                  color: theme.colorScheme.outlineVariant,
-                ),
-              ],
+                  const SizedBox(height: 4),
+                  Divider(
+                    height: 1,
+                    thickness: 1,
+                    color: theme.colorScheme.outlineVariant,
+                  ),
+                ],
+              ),
             ),
           );
         }
@@ -3708,79 +3803,97 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
               ? Icons.arrow_upward_rounded
               : Icons.arrow_downward_rounded;
 
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Card(
-                margin: EdgeInsets.zero,
-                elevation: 0,
-                color: Colors.transparent,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-                clipBehavior: Clip.antiAlias,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Dismissible(
-                    key: Key('acct_transfer_${outTx.id}_${inTx.id}'),
-                    direction: DismissDirection.endToStart,
-                    background: Container(
-                      alignment: Alignment.centerRight,
-                      padding: const EdgeInsets.only(right: 16),
-                      decoration: BoxDecoration(
-                        color: Colors.red,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(Icons.delete, color: Colors.white),
-                    ),
-                    confirmDismiss: (_) async => true,
-                    onDismissed: (_) async {
-                      await _deleteTransfer(outTx, inTx);
-                    },
-                    child: ListTile(
-                      dense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 2),
-                      onTap: () => _showTransferInfo(outTx,
-                          transferTitle: transferLabel),
-                      leading: CircleAvatar(
-                        radius: 22,
-                        backgroundColor: transferBgColor,
-                        child: Icon(
-                          transferIcon,
-                          size: 20,
-                          color: transferFgColor,
+          final groupKey = itemKeys[i];
+          final isCollapsed =
+              groupKey != null && _collapsedGroups.contains(groupKey);
+
+          return AnimatedSize(
+            duration: const Duration(milliseconds: 280),
+            curve: Curves.easeInOut,
+            alignment: Alignment.topCenter,
+            child: isCollapsed
+                ? const SizedBox.shrink()
+                : AnimatedOpacity(
+                    opacity: isCollapsed ? 0.0 : 1.0,
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeInOut,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Card(
+                          margin: EdgeInsets.zero,
+                          elevation: 0,
+                          color: Colors.transparent,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                          clipBehavior: Clip.antiAlias,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Dismissible(
+                              key: Key('acct_transfer_${outTx.id}_${inTx.id}'),
+                              direction: DismissDirection.endToStart,
+                              background: Container(
+                                alignment: Alignment.centerRight,
+                                padding: const EdgeInsets.only(right: 16),
+                                decoration: BoxDecoration(
+                                  color: Colors.red,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Icon(Icons.delete,
+                                    color: Colors.white),
+                              ),
+                              confirmDismiss: (_) async => true,
+                              onDismissed: (_) async {
+                                await _deleteTransfer(outTx, inTx);
+                              },
+                              child: ListTile(
+                                dense: true,
+                                contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 2),
+                                onTap: () => _showTransferInfo(outTx,
+                                    transferTitle: transferLabel),
+                                leading: CircleAvatar(
+                                  radius: 22,
+                                  backgroundColor: transferBgColor,
+                                  child: Icon(
+                                    transferIcon,
+                                    size: 20,
+                                    color: transferFgColor,
+                                  ),
+                                ),
+                                title: Text(
+                                  transferLabel,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13),
+                                ),
+                                subtitle: Text(
+                                  '$fromAccount → $toAccount',
+                                  style: const TextStyle(fontSize: 11),
+                                ),
+                                trailing: Text(
+                                  '$transferAmountPrefix ${currencySymbolNotifier.value}${_fmt(outTx.amount)}',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                    color: transferColor,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
-                      title: Text(
-                        transferLabel,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w600, fontSize: 13),
-                      ),
-                      subtitle: Text(
-                        '$fromAccount → $toAccount',
-                        style: const TextStyle(fontSize: 11),
-                      ),
-                      trailing: Text(
-                        '$transferAmountPrefix ${currencySymbolNotifier.value}${_fmt(outTx.amount)}',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                          color: transferColor,
-                        ),
-                      ),
+                        if (showDivider)
+                          Divider(
+                            height: 1,
+                            thickness: 0.5,
+                            indent: 12,
+                            endIndent: 12,
+                            color: Colors.grey.withValues(alpha: 0.25),
+                          ),
+                      ],
                     ),
                   ),
-                ),
-              ),
-              if (showDivider)
-                Divider(
-                  height: 1,
-                  thickness: 0.5,
-                  indent: 12,
-                  endIndent: 12,
-                  color: Colors.grey.withValues(alpha: 0.25),
-                ),
-            ],
           );
         }
 
@@ -3799,75 +3912,92 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                 ?.iconData ??
             iconForKey(tx.category);
 
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Card(
-              margin: EdgeInsets.zero,
-              elevation: 0,
-              color: Colors.transparent,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-              clipBehavior: Clip.antiAlias,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Dismissible(
-                  key: Key('acct_tx_${tx.id}'),
-                  direction: DismissDirection.endToStart,
-                  background: Container(
-                    alignment: Alignment.centerRight,
-                    padding: const EdgeInsets.only(right: 16),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(Icons.delete, color: Colors.white),
-                  ),
-                  onDismissed: (_) => _deleteTransaction(tx),
-                  child: ListTile(
-                    dense: true,
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                    onTap: () => _editTransaction(tx),
-                    leading: CircleAvatar(
-                      radius: 22,
-                      backgroundColor: bgColor,
-                      child: Icon(
-                        txCatIcon,
-                        size: 20,
-                        color: rowColor,
+        final groupKey2 = itemKeys[i];
+        final isCollapsed2 =
+            groupKey2 != null && _collapsedGroups.contains(groupKey2);
+
+        return AnimatedSize(
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeInOut,
+          alignment: Alignment.topCenter,
+          child: isCollapsed2
+              ? const SizedBox.shrink()
+              : AnimatedOpacity(
+                  opacity: isCollapsed2 ? 0.0 : 1.0,
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeInOut,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Card(
+                        margin: EdgeInsets.zero,
+                        elevation: 0,
+                        color: Colors.transparent,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        clipBehavior: Clip.antiAlias,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Dismissible(
+                            key: Key('acct_tx_${tx.id}'),
+                            direction: DismissDirection.endToStart,
+                            background: Container(
+                              alignment: Alignment.centerRight,
+                              padding: const EdgeInsets.only(right: 16),
+                              decoration: BoxDecoration(
+                                color: Colors.red,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child:
+                                  const Icon(Icons.delete, color: Colors.white),
+                            ),
+                            onDismissed: (_) => _deleteTransaction(tx),
+                            child: ListTile(
+                              dense: true,
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 2),
+                              onTap: () => _editTransaction(tx),
+                              leading: CircleAvatar(
+                                radius: 22,
+                                backgroundColor: bgColor,
+                                child: Icon(
+                                  txCatIcon,
+                                  size: 20,
+                                  color: rowColor,
+                                ),
+                              ),
+                              title: Text(
+                                tx.title,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w600, fontSize: 13),
+                              ),
+                              subtitle: Text(
+                                tx.category,
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                              trailing: Text(
+                                '$amountPrefix ${currencySymbolNotifier.value}${_fmt(tx.amount)}',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                  color: rowColor,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                    title: Text(
-                      tx.title,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w600, fontSize: 13),
-                    ),
-                    subtitle: Text(
-                      tx.category,
-                      style: const TextStyle(fontSize: 11),
-                    ),
-                    trailing: Text(
-                      '$amountPrefix ${currencySymbolNotifier.value}${_fmt(tx.amount)}',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                        color: rowColor,
-                      ),
-                    ),
+                      if (showDivider)
+                        Divider(
+                          height: 1,
+                          thickness: 0.5,
+                          indent: 12,
+                          endIndent: 12,
+                          color: Colors.grey.withValues(alpha: 0.25),
+                        ),
+                    ],
                   ),
                 ),
-              ),
-            ),
-            if (showDivider)
-              Divider(
-                height: 1,
-                thickness: 0.5,
-                indent: 12,
-                endIndent: 12,
-                color: Colors.grey.withValues(alpha: 0.25),
-              ),
-          ],
         );
       },
     );
@@ -4024,11 +4154,12 @@ class _TxItem {
   final bool isHeader;
   final bool isTransfer;
   final String? label;
+  final String? dateKey;
   final WalletTransaction? tx;
   final WalletTransaction? transferOut;
   final WalletTransaction? transferIn;
 
-  const _TxItem.header(this.label)
+  const _TxItem.header(this.label, this.dateKey)
       : isHeader = true,
         isTransfer = false,
         tx = null,
@@ -4039,6 +4170,7 @@ class _TxItem {
       : isHeader = false,
         isTransfer = false,
         label = null,
+        dateKey = null,
         transferOut = null,
         transferIn = null;
 
@@ -4046,6 +4178,7 @@ class _TxItem {
       : isHeader = false,
         isTransfer = true,
         label = null,
+        dateKey = null,
         tx = null;
 }
 
