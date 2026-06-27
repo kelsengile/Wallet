@@ -1124,10 +1124,11 @@ class _AccountCardInert extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final accountColor = account.colorHex.isNotEmpty
         ? colorFromHex(account.colorHex)
         : const Color(0xFF6366F1);
-    final gradients = gradientForColor(accountColor);
+    final gradients = gradientForColor(accountColor, isDark: isDark);
     final registry = _registryNotifier.value;
     final cornerStyle = registry.typeCornerStyle(account.type);
     final br = registry.cardBorderRadius(account.type);
@@ -1299,7 +1300,8 @@ class _AccountCardState extends State<_AccountCard>
     final accountColor = widget.account.colorHex.isNotEmpty
         ? colorFromHex(widget.account.colorHex)
         : const Color(0xFF6366F1);
-    final gradients = gradientForColor(accountColor);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final gradients = gradientForColor(accountColor, isDark: isDark);
     final registry = _registryNotifier.value;
     final cornerStyle = registry.typeCornerStyle(widget.account.type);
     final br = registry.cardBorderRadius(widget.account.type);
@@ -2866,7 +2868,8 @@ class _DetailFlipCardState extends State<_DetailFlipCard>
     final accountColor = account.colorHex.isNotEmpty
         ? colorFromHex(account.colorHex)
         : const Color(0xFF6366F1);
-    final gradients = gradientForColor(accountColor);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final gradients = gradientForColor(accountColor, isDark: isDark);
     final registry = _registryNotifier.value;
     final cornerStyle = registry.typeCornerStyle(account.type);
     final br = registry.cardBorderRadius(account.type);

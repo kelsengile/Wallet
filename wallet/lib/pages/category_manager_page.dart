@@ -1141,9 +1141,11 @@ class _CornerStylePicker extends StatelessWidget {
   });
 
   // Mini gradient card used inside every picker tile.
-  Widget _miniCard(String style, Color baseColor) {
+  Widget _miniCard(String style, Color baseColor, {bool isDark = false}) {
     final activeColor = baseColor;
-    final lighterColor = Color.lerp(baseColor, Colors.white, 0.35)!;
+    final blendTarget = isDark ? Colors.black : Colors.white;
+    final blendAmount = isDark ? 0.25 : 0.35;
+    final lighterColor = Color.lerp(baseColor, blendTarget, blendAmount)!;
     final gradient = LinearGradient(
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
@@ -1187,6 +1189,7 @@ class _CornerStylePicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     return Wrap(
       spacing: 8,
       runSpacing: 8,
@@ -1212,7 +1215,7 @@ class _CornerStylePicker extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _miniCard(style, previewColor),
+                _miniCard(style, previewColor, isDark: isDark),
                 const SizedBox(height: 4),
                 Text(
                   cornerStyleLabel(style),

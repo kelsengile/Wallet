@@ -229,12 +229,24 @@ String colorToHex(Color color) {
   return '#${color.toARGB32().toRadixString(16).substring(2).toUpperCase()}';
 }
 
-/// Returns a two-stop gradient (darker → lighter) derived from [base], used
-/// for account cards so custom account types still look good without the
-/// app needing a hand-curated gradient for every possible color.
-List<Color> gradientForColor(Color base) {
-  final lighter = Color.lerp(base, Colors.white, 0.35)!;
-  return [base, lighter];
+/// Returns a two-stop gradient derived from [base].
+///
+/// In light mode the second stop blends toward white (brighter highlight).
+/// In dark mode the second stop blends toward black (deeper shadow) so the
+/// card doesn't look washed-out on a dark background.
+///
+/// Pass [isDark] = true when the current [ThemeData.brightness] is dark.
+List<Color> gradientForColor(Color base, {bool isDark = false}) {
+  final blendTarget = isDark ? Colors.black : Colors.white;
+  final blendAmount = isDark ? 0.50 : 0.35;
+  final second = Color.lerp(base, blendTarget, blendAmount)!;
+  return [base, second];
+}
+
+/// Convenience wrapper that reads [Brightness] from [context] automatically.
+List<Color> gradientForColorOf(BuildContext context, Color base) {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  return gradientForColor(base, isDark: isDark);
 }
 
 // ── Category model ────────────────────────────────────────────────────────────
@@ -385,7 +397,8 @@ class CategoryRegistry {
   IconData typeIcon(String name) =>
       findAccountType(name)?.iconData ?? Icons.account_balance_wallet;
 
-  List<Color> typeGradient(String name) => gradientForColor(typeColor(name));
+  List<Color> typeGradient(String name, {bool isDark = false}) =>
+      gradientForColor(typeColor(name), isDark: isDark);
 
   String typeLabel(String name) => capitalizeWords(name);
 
