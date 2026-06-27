@@ -206,19 +206,6 @@ class _WalletHomePageState extends State<WalletHomePage> {
         endDrawer: Drawer(
           width: double.infinity,
           child: Scaffold(
-            appBar: AppBar(
-              automaticallyImplyLeading: false,
-              title: const Text('Analytics'),
-              actions: [
-                Builder(
-                  builder: (ctx) => IconButton(
-                    icon: const Icon(Icons.close),
-                    tooltip: 'Close',
-                    onPressed: () => Scaffold.of(ctx).closeEndDrawer(),
-                  ),
-                ),
-              ],
-            ),
             body: const AnalyticsPage(),
           ),
         ),

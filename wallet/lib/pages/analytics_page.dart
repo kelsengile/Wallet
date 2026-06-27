@@ -896,7 +896,8 @@ class AnalyticsPageState extends State<AnalyticsPage> {
         // ── Header ──────────────────────────────────────────────────────────
         Container(
           width: double.infinity,
-          padding: EdgeInsets.fromLTRB(16, 12, 16, 12),
+          padding: EdgeInsets.fromLTRB(
+              16, MediaQuery.paddingOf(context).top + 12, 16, 12),
           color: theme.colorScheme.surface,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -906,7 +907,7 @@ class AnalyticsPageState extends State<AnalyticsPage> {
                 children: [
                   Expanded(
                     child: Text(
-                      'Overview',
+                      'Analytics',
                       style: theme.textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.w700,
                         color: theme.colorScheme.onSurface,
