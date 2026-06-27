@@ -1861,22 +1861,11 @@ class _AccountFormSheetState extends State<_AccountFormSheet> {
           const SizedBox(height: 20),
 
           // ── Note section ──────────────────────────────────────────────
-          _NoteFieldWithCounter(
-            controller: _noteHeaderCtrl,
-            label: 'Note Header',
-            hint: 'Short title shown on card back',
-            maxChars: _noteHeaderMaxChars,
-            prefixIcon: Icons.title_rounded,
-            maxLines: 1,
-          ),
-          const SizedBox(height: 10),
-          _NoteFieldWithCounter(
-            controller: _noteBodyCtrl,
-            label: 'Note Body',
-            hint: 'Additional details (optional)',
-            maxChars: _noteBodyMaxChars,
-            prefixIcon: Icons.notes_rounded,
-            maxLines: 3,
+          _NoteBox(
+            headerController: _noteHeaderCtrl,
+            bodyController: _noteBodyCtrl,
+            headerMaxChars: _noteHeaderMaxChars,
+            bodyMaxChars: _noteBodyMaxChars,
           ),
           const SizedBox(height: 20),
 
@@ -2030,88 +2019,232 @@ class _PickerButton extends StatelessWidget {
   }
 }
 
-// ── Note field with character counter ─────────────────────────────────────────
+// ── Combined note box (header + divider + body in one container) ───────────────
+//
+// Renders as a single OutlineInputBorder-style box with a floating "Note" label,
+// matching the other form fields. The header and body are separated by a short
+// divider that does not touch the left/right edges. Only the header row has an
+// icon (notes/lines icon); the body row has none.
 
-class _NoteFieldWithCounter extends StatefulWidget {
-  final TextEditingController controller;
-  final String label;
-  final String hint;
-  final int maxChars;
-  final IconData prefixIcon;
-  final int maxLines;
+class _NoteBox extends StatefulWidget {
+  final TextEditingController headerController;
+  final TextEditingController bodyController;
+  final int headerMaxChars;
+  final int bodyMaxChars;
 
-  const _NoteFieldWithCounter({
-    required this.controller,
-    required this.label,
-    required this.hint,
-    required this.maxChars,
-    required this.prefixIcon,
-    required this.maxLines,
+  const _NoteBox({
+    required this.headerController,
+    required this.bodyController,
+    required this.headerMaxChars,
+    required this.bodyMaxChars,
   });
 
   @override
-  State<_NoteFieldWithCounter> createState() => _NoteFieldWithCounterState();
+  State<_NoteBox> createState() => _NoteBoxState();
 }
 
-class _NoteFieldWithCounterState extends State<_NoteFieldWithCounter> {
-  late int _charCount;
+class _NoteBoxState extends State<_NoteBox> {
+  late int _headerCount;
+  late int _bodyCount;
+  final _headerFocus = FocusNode();
+  final _bodyFocus = FocusNode();
+  bool _focused = false;
 
   @override
   void initState() {
     super.initState();
-    _charCount = widget.controller.text.length;
-    widget.controller.addListener(_onChanged);
+    _headerCount = widget.headerController.text.length;
+    _bodyCount = widget.bodyController.text.length;
+    widget.headerController.addListener(_onHeaderChanged);
+    widget.bodyController.addListener(_onBodyChanged);
+    _headerFocus.addListener(_onFocusChanged);
+    _bodyFocus.addListener(_onFocusChanged);
   }
 
-  void _onChanged() {
-    final newCount = widget.controller.text.length;
-    if (newCount != _charCount) setState(() => _charCount = newCount);
+  void _onHeaderChanged() {
+    final n = widget.headerController.text.length;
+    if (n != _headerCount) setState(() => _headerCount = n);
+  }
+
+  void _onBodyChanged() {
+    final n = widget.bodyController.text.length;
+    if (n != _bodyCount) setState(() => _bodyCount = n);
+  }
+
+  void _onFocusChanged() {
+    final nowFocused = _headerFocus.hasFocus || _bodyFocus.hasFocus;
+    if (nowFocused != _focused) setState(() => _focused = nowFocused);
   }
 
   @override
   void dispose() {
-    widget.controller.removeListener(_onChanged);
+    widget.headerController.removeListener(_onHeaderChanged);
+    widget.bodyController.removeListener(_onBodyChanged);
+    _headerFocus.removeListener(_onFocusChanged);
+    _bodyFocus.removeListener(_onFocusChanged);
+    _headerFocus.dispose();
+    _bodyFocus.dispose();
     super.dispose();
+  }
+
+  Color _counterColor(BuildContext context, int count, int max) {
+    final remaining = max - count;
+    if (remaining == 0) return Colors.red;
+    if (remaining <= 10) return Colors.orange;
+    return Theme.of(context).colorScheme.onSurfaceVariant;
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final remaining = widget.maxChars - _charCount;
-    final isNearLimit = remaining <= 10;
-    final counterColor = remaining == 0
-        ? Colors.red
-        : isNearLimit
-            ? Colors.orange
-            : theme.colorScheme.onSurfaceVariant;
+    final colorScheme = theme.colorScheme;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
+    // Match OutlineInputBorder colours exactly
+    final borderColor = _focused ? colorScheme.primary : colorScheme.outline;
+    final borderWidth = _focused ? 2.0 : 1.0;
+    final labelColor =
+        _focused ? colorScheme.primary : colorScheme.onSurfaceVariant;
+
+    // Whether any content exists (controls floating label like TextField does)
+    final hasContent = _headerCount > 0 || _bodyCount > 0;
+    final labelFloated = _focused || hasContent;
+
+    return Stack(
+      clipBehavior: Clip.none,
       children: [
-        TextField(
-          controller: widget.controller,
-          maxLines: widget.maxLines,
-          minLines: 1,
-          maxLength: widget.maxChars,
-          buildCounter: (_,
-                  {required currentLength, required isFocused, maxLength}) =>
-              null, // hide default counter; we draw our own
-          textCapitalization: TextCapitalization.sentences,
-          decoration: InputDecoration(
-            labelText: widget.label,
-            hintText: widget.hint,
-            border: const OutlineInputBorder(),
-            prefixIcon: Icon(widget.prefixIcon, size: 18),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        // ── Outlined container ───────────────────────────────────────
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: borderColor, width: borderWidth),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // ── Header input row ─────────────────────────────────
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                child: Row(
+                  children: [
+                    Icon(Icons.notes_rounded,
+                        size: 18, color: colorScheme.onSurfaceVariant),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: widget.headerController,
+                        focusNode: _headerFocus,
+                        maxLines: 1,
+                        maxLength: widget.headerMaxChars,
+                        buildCounter: (_,
+                                {required currentLength,
+                                required isFocused,
+                                maxLength}) =>
+                            null,
+                        textCapitalization: TextCapitalization.sentences,
+                        style: theme.textTheme.bodyMedium,
+                        decoration: const InputDecoration(
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          contentPadding: EdgeInsets.symmetric(vertical: 12),
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '$_headerCount / ${widget.headerMaxChars}',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: _counterColor(
+                            context, _headerCount, widget.headerMaxChars),
+                        fontWeight: (widget.headerMaxChars - _headerCount) <= 10
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // ── Inset divider (does not touch the outer border) ──
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Divider(
+                    height: 1, thickness: 1, color: colorScheme.outlineVariant),
+              ),
+
+              // ── Body input row ───────────────────────────────────
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: widget.bodyController,
+                        focusNode: _bodyFocus,
+                        maxLines: 3,
+                        minLines: 2,
+                        maxLength: widget.bodyMaxChars,
+                        buildCounter: (_,
+                                {required currentLength,
+                                required isFocused,
+                                maxLength}) =>
+                            null,
+                        textCapitalization: TextCapitalization.sentences,
+                        style: theme.textTheme.bodyMedium,
+                        decoration: const InputDecoration(
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          contentPadding: EdgeInsets.symmetric(vertical: 12),
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 14),
+                      child: Text(
+                        '$_bodyCount / ${widget.bodyMaxChars}',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: _counterColor(
+                              context, _bodyCount, widget.bodyMaxChars),
+                          fontWeight: (widget.bodyMaxChars - _bodyCount) <= 10
+                              ? FontWeight.w600
+                              : FontWeight.normal,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 3),
-        Text(
-          '$_charCount / ${widget.maxChars}',
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: counterColor,
-            fontWeight: isNearLimit ? FontWeight.w600 : FontWeight.normal,
+
+        // ── Floating "Note" label — sits on top of the border ───────
+        Positioned(
+          left: labelFloated ? 10 : 42,
+          top: labelFloated ? -10 : 14,
+          child: AnimatedDefaultTextStyle(
+            duration: const Duration(milliseconds: 150),
+            style: labelFloated
+                ? theme.textTheme.bodySmall!.copyWith(
+                    color: labelColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w400,
+                  )
+                : theme.textTheme.bodyMedium!.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+            child: Container(
+              // White/surface background to cut through the border line
+              color: theme.colorScheme.surface,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: const Text('Note'),
+            ),
           ),
         ),
       ],
