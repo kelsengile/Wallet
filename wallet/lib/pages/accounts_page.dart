@@ -236,6 +236,8 @@ class AccountsPageState extends State<AccountsPage> {
         onEditAccount: (a) {
           _showEditAndRefreshDetail(a, ctx);
         },
+        onReceiptOpen: () => cardKey.currentState?.dimForReceipt(),
+        onReceiptClose: () => cardKey.currentState?.undimForReceipt(),
       ),
     ).whenComplete(() async {
       // Play the slide-down exit animation, then remove the overlay entry.
@@ -2209,6 +2211,7 @@ class _FloatingDetailCardState extends State<_FloatingDetailCard>
   late final AnimationController _slideCtrl;
   late final Animation<Offset> _slideAnim;
   late final Animation<double> _fadeAnim;
+  bool _receiptOpen = false;
 
   @override
   void initState() {
@@ -2247,14 +2250,33 @@ class _FloatingDetailCardState extends State<_FloatingDetailCard>
     await _slideCtrl.reverse();
   }
 
+  void dimForReceipt() {
+    if (!mounted) return;
+    setState(() => _receiptOpen = true);
+  }
+
+  void undimForReceipt() {
+    if (!mounted) return;
+    setState(() => _receiptOpen = false);
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Position the card near the top of the screen with generous top padding
-    // so it clears the status bar / notch.
     const cardH = 230.0;
     const cardW = 350.0;
     final screenW = MediaQuery.sizeOf(context).width;
-    const topPadding = 56.0; // below status bar / notch
+    const topPadding = 56.0;
+    final registry = _registryNotifier.value;
+    final cornerStyle = registry.typeCornerStyle(widget.account.type);
+    final br = registry.cardBorderRadius(widget.account.type);
+
+    // Scrim shape: polygon styles use a large radius fallback, others use the
+    // real card border radius so the overlay perfectly hugs the card edges.
+    final scrimDecoration = BoxDecoration(
+      color: Colors.black,
+      borderRadius:
+          isClipperCornerStyle(cornerStyle) ? BorderRadius.circular(20) : br,
+    );
 
     return Positioned(
       top: topPadding,
@@ -2267,7 +2289,25 @@ class _FloatingDetailCardState extends State<_FloatingDetailCard>
           opacity: _fadeAnim,
           child: Material(
             color: Colors.transparent,
-            child: _DetailFlipCard(account: widget.account),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                _DetailFlipCard(account: widget.account),
+                // Dark scrim layered on top when receipt is open.
+                // IgnorePointer so the scrim never swallows taps.
+                IgnorePointer(
+                  child: AnimatedOpacity(
+                    opacity: _receiptOpen ? 0.45 : 0.0,
+                    duration: const Duration(milliseconds: 200),
+                    child: Container(
+                      width: double.infinity,
+                      height: double.infinity,
+                      decoration: scrimDecoration,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -2624,11 +2664,15 @@ class _AccountDetailSheet extends StatefulWidget {
   final Account account;
   final VoidCallback? onTransactionChanged;
   final void Function(Account)? onEditAccount;
+  final VoidCallback? onReceiptOpen;
+  final VoidCallback? onReceiptClose;
 
   const _AccountDetailSheet({
     required this.account,
     this.onTransactionChanged,
     this.onEditAccount,
+    this.onReceiptOpen,
+    this.onReceiptClose,
   });
 
   @override
@@ -2819,6 +2863,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
 
   Future<void> _editTransaction(WalletTransaction existing,
       {String? transferTitle}) async {
+    widget.onReceiptOpen?.call();
     await showTransactionReceipt(
       context,
       tx: existing,
@@ -2853,6 +2898,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
         widget.onTransactionChanged?.call();
       },
     );
+    widget.onReceiptClose?.call();
   }
 
   // Transfer info is now handled by showTransactionReceipt inside _editTransaction.
@@ -2872,7 +2918,8 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
     return DraggableScrollableSheet(
       expand: false,
       initialChildSize: 0.7,
-      maxChildSize: 0.95,
+      minChildSize: 0.7,
+      maxChildSize: 0.7,
       builder: (ctx, scrollCtrl) => Padding(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
         child: Column(
