@@ -234,10 +234,15 @@ class AccountsPageState extends State<AccountsPage> {
         account: account,
         onTransactionChanged: _loadAccounts,
         onEditAccount: (a) {
-          _showEditAndRefreshDetail(a, ctx);
+          _showEditAndRefreshDetail(
+            a,
+            ctx,
+            onClose: () => cardKey.currentState?.undimForReceipt(),
+          );
         },
         onReceiptOpen: () => cardKey.currentState?.dimForReceipt(),
         onReceiptClose: () => cardKey.currentState?.undimForReceipt(),
+        onEditOpen: () => cardKey.currentState?.dimForReceipt(),
       ),
     ).whenComplete(() async {
       // Play the slide-down exit animation, then remove the overlay entry.
@@ -246,7 +251,11 @@ class AccountsPageState extends State<AccountsPage> {
     });
   }
 
-  void _showEditAndRefreshDetail(Account account, BuildContext detailCtx) {
+  void _showEditAndRefreshDetail(
+    Account account,
+    BuildContext detailCtx, {
+    VoidCallback? onClose,
+  }) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -269,7 +278,7 @@ class AccountsPageState extends State<AccountsPage> {
           _loadAccounts();
         },
       ),
-    );
+    ).whenComplete(() => onClose?.call());
   }
 
   // ── Card dragged to a different section (type change) ──────────────────────
@@ -2666,6 +2675,7 @@ class _AccountDetailSheet extends StatefulWidget {
   final void Function(Account)? onEditAccount;
   final VoidCallback? onReceiptOpen;
   final VoidCallback? onReceiptClose;
+  final VoidCallback? onEditOpen;
 
   const _AccountDetailSheet({
     required this.account,
@@ -2673,6 +2683,7 @@ class _AccountDetailSheet extends StatefulWidget {
     this.onEditAccount,
     this.onReceiptOpen,
     this.onReceiptClose,
+    this.onEditOpen,
   });
 
   @override
@@ -2957,6 +2968,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                     children: [
                       GestureDetector(
                         onLongPress: () async {
+                          widget.onEditOpen?.call();
                           widget.onEditAccount?.call(widget.account);
                           await _load();
                         },
