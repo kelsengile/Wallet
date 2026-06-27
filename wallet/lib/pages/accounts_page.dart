@@ -29,6 +29,10 @@ enum _FilterMode { daily, weekly, monthly, yearly, allTime, custom }
 final _registryNotifier =
     ValueNotifier<CategoryRegistry>(CategoryRegistry.empty());
 
+/// True while a receipt dialog or edit-account dialog is open.
+/// When true, account cards in the carousel cannot be flipped.
+final _cardFlipLockedNotifier = ValueNotifier<bool>(false);
+
 /// Loads the latest registry from the DB and pushes it into [_registryNotifier].
 Future<void> _refreshRegistry() async {
   final reg = await DatabaseHelper.instance.getCategoryRegistry();
@@ -213,47 +217,46 @@ class AccountsPageState extends State<AccountsPage> {
   }
 
   void _showAccountDetail(Account account) {
-    // Insert the flip card into the Overlay so it lives completely outside
-    // the bottom sheet's widget tree and renders on top of everything.
-    // A GlobalKey gives us access to the card's state so we can trigger the
-    // slide-out animation before removing the entry.
     final cardKey = GlobalKey<_FloatingDetailCardState>();
-    late OverlayEntry cardEntry;
-    cardEntry = OverlayEntry(
-      builder: (_) => _FloatingDetailCard(key: cardKey, account: account),
-    );
-    Overlay.of(context).insert(cardEntry);
 
-    showModalBottomSheet(
+    showGeneralDialog(
       context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (ctx) => _AccountDetailSheet(
-        account: account,
-        onTransactionChanged: _loadAccounts,
-        onEditAccount: (a) {
-          _showEditAndRefreshDetail(
-            a,
-            ctx,
-            onClose: () => cardKey.currentState?.undimForReceipt(),
-          );
-        },
-        onReceiptOpen: () => cardKey.currentState?.dimForReceipt(),
-        onReceiptClose: () => cardKey.currentState?.undimForReceipt(),
-        onEditOpen: () => cardKey.currentState?.dimForReceipt(),
-      ),
-    ).whenComplete(() async {
-      // Play the slide-down exit animation, then remove the overlay entry.
-      await cardKey.currentState?.animateOut();
-      cardEntry.remove();
-    });
+      barrierDismissible: false,
+      barrierLabel: 'Dismiss',
+      barrierColor: Colors.transparent,
+      transitionDuration: Duration.zero,
+      pageBuilder: (dialogCtx, _, __) {
+        return _AccountDetailDialog(
+          account: account,
+          cardKey: cardKey,
+          onTransactionChanged: _loadAccounts,
+          onEditAccount: (a, detailCtx) {
+            _cardFlipLockedNotifier.value = true;
+            _showEditAndRefreshDetail(
+              a,
+              detailCtx,
+              cardKey: cardKey,
+              onClose: () {
+                cardKey.currentState?.undimForReceipt();
+                _cardFlipLockedNotifier.value = false;
+              },
+            );
+          },
+          onReceiptOpen: () => cardKey.currentState?.dimForReceipt(),
+          onReceiptClose: () => cardKey.currentState?.undimForReceipt(),
+          onEditOpen: () {
+            cardKey.currentState?.dimForReceipt();
+            _cardFlipLockedNotifier.value = true;
+          },
+        );
+      },
+    );
   }
 
   void _showEditAndRefreshDetail(
     Account account,
     BuildContext detailCtx, {
+    GlobalKey<_FloatingDetailCardState>? cardKey,
     VoidCallback? onClose,
   }) {
     showModalBottomSheet(
@@ -267,6 +270,10 @@ class AccountsPageState extends State<AccountsPage> {
         existing: account,
         onSave: (updated) async {
           await _db.updateAccount(updated);
+          // Push the updated account to the floating card immediately so it
+          // reflects the new data (name, note header/body, color, etc.) without
+          // waiting for the overlay to be removed and rebuilt.
+          cardKey?.currentState?.updateAccount(updated);
           // Refresh registry so color-sensitive widgets rebuild everywhere.
           await _refreshRegistry();
           if (ctx.mounted) Navigator.pop(ctx); // close edit form
@@ -1276,6 +1283,8 @@ class _AccountCardState extends State<_AccountCard>
 
   void _flip() {
     if (_ctrl.isAnimating) return;
+    // Do not allow flipping while a receipt or edit-account dialog is open.
+    if (_cardFlipLockedNotifier.value) return;
     if (_showingFront) {
       _ctrl.forward();
     } else {
@@ -1470,37 +1479,49 @@ class _AccountCardState extends State<_AccountCard>
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                // Signature strip-style row
-                Container(
-                  width: double.infinity,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          widget.account.name,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.3,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                // Note header inside the signature strip box
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(4),
                       ),
-                      const SizedBox(width: 8),
-                      Icon(Icons.lock_outline,
-                          size: 11, color: Colors.white.withValues(alpha: 0.6)),
+                      child: Text(
+                        (widget.account.noteHeader ?? '').isNotEmpty
+                            ? widget.account.noteHeader!
+                            : widget.account.name,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.3,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if ((widget.account.noteBody ?? '').isNotEmpty) ...[
+                      const SizedBox(height: 5),
+                      Text(
+                        widget.account.noteBody!,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.75),
+                          fontSize: 9,
+                          fontWeight: FontWeight.w400,
+                          height: 1.4,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ],
-                  ),
+                  ],
                 ),
-                // Type & tap-to-view hint
+                // Type icon + tap-to-view button
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.end,
@@ -1508,26 +1529,10 @@ class _AccountCardState extends State<_AccountCard>
                     ValueListenableBuilder<CategoryRegistry>(
                       valueListenable: _registryNotifier,
                       builder: (context, registry, _) {
-                        return Row(
-                          children: [
-                            Icon(
-                              registry.typeIcon(widget.account.type),
-                              color: Colors.white70,
-                              size: 12,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              registry
-                                  .typeLabel(widget.account.type)
-                                  .toUpperCase(),
-                              style: const TextStyle(
-                                color: Colors.white70,
-                                fontSize: 8,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 1.2,
-                              ),
-                            ),
-                          ],
+                        return Icon(
+                          registry.typeIcon(widget.account.type),
+                          color: Colors.white70,
+                          size: 14,
                         );
                       },
                     ),
@@ -1540,23 +1545,8 @@ class _AccountCardState extends State<_AccountCard>
                           color: Colors.white.withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.open_in_new,
-                                size: 9, color: Colors.white),
-                            SizedBox(width: 4),
-                            Text(
-                              'VIEW DETAILS',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 7,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 0.8,
-                              ),
-                            ),
-                          ],
-                        ),
+                        child: const Icon(Icons.open_in_new,
+                            size: 9, color: Colors.white),
                       ),
                     ),
                   ],
@@ -1627,8 +1617,13 @@ class _AccountFormSheet extends StatefulWidget {
 class _AccountFormSheetState extends State<_AccountFormSheet> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _balanceCtrl;
+  late final TextEditingController _noteHeaderCtrl;
+  late final TextEditingController _noteBodyCtrl;
   String? _selectedType;
   String? _selectedCategory;
+
+  static const int _noteHeaderMaxChars = 30;
+  static const int _noteBodyMaxChars = 120;
 
   // Loaded from DB so the form always reflects whatever the user has configured
   // in the Category Manager.
@@ -1644,6 +1639,8 @@ class _AccountFormSheetState extends State<_AccountFormSheet> {
     _balanceCtrl = TextEditingController(
       text: e != null ? e.balance.toStringAsFixed(2) : '',
     );
+    _noteHeaderCtrl = TextEditingController(text: e?.noteHeader ?? '');
+    _noteBodyCtrl = TextEditingController(text: e?.noteBody ?? '');
     _selectedType = e?.type; // null = unset (new account)
     _selectedCategory = e?.category; // null = unset (new account)
     _loadRegistry();
@@ -1676,6 +1673,8 @@ class _AccountFormSheetState extends State<_AccountFormSheet> {
   void dispose() {
     _nameCtrl.dispose();
     _balanceCtrl.dispose();
+    _noteHeaderCtrl.dispose();
+    _noteBodyCtrl.dispose();
     super.dispose();
   }
 
@@ -1861,6 +1860,26 @@ class _AccountFormSheetState extends State<_AccountFormSheet> {
             ),
           const SizedBox(height: 20),
 
+          // ── Note section ──────────────────────────────────────────────
+          _NoteFieldWithCounter(
+            controller: _noteHeaderCtrl,
+            label: 'Note Header',
+            hint: 'Short title shown on card back',
+            maxChars: _noteHeaderMaxChars,
+            prefixIcon: Icons.title_rounded,
+            maxLines: 1,
+          ),
+          const SizedBox(height: 10),
+          _NoteFieldWithCounter(
+            controller: _noteBodyCtrl,
+            label: 'Note Body',
+            hint: 'Additional details (optional)',
+            maxChars: _noteBodyMaxChars,
+            prefixIcon: Icons.notes_rounded,
+            maxLines: 3,
+          ),
+          const SizedBox(height: 20),
+
           // Submit
           SizedBox(
             width: double.infinity,
@@ -1892,6 +1911,8 @@ class _AccountFormSheetState extends State<_AccountFormSheet> {
                         type: _selectedType!,
                         category: _selectedCategory!,
                         colorHex: typeHex,
+                        noteHeader: _noteHeaderCtrl.text.trim(),
+                        noteBody: _noteBodyCtrl.text.trim(),
                       )
                     : Account(
                         name: _nameCtrl.text.trim(),
@@ -1901,6 +1922,8 @@ class _AccountFormSheetState extends State<_AccountFormSheet> {
                         category: _selectedCategory!,
                         colorHex: typeHex,
                         icon: 'wallet',
+                        noteHeader: _noteHeaderCtrl.text.trim(),
+                        noteBody: _noteBodyCtrl.text.trim(),
                       );
                 await widget.onSave(account);
               },
@@ -2003,6 +2026,95 @@ class _PickerButton extends StatelessWidget {
               )
             : const SizedBox.shrink(),
       ),
+    );
+  }
+}
+
+// ── Note field with character counter ─────────────────────────────────────────
+
+class _NoteFieldWithCounter extends StatefulWidget {
+  final TextEditingController controller;
+  final String label;
+  final String hint;
+  final int maxChars;
+  final IconData prefixIcon;
+  final int maxLines;
+
+  const _NoteFieldWithCounter({
+    required this.controller,
+    required this.label,
+    required this.hint,
+    required this.maxChars,
+    required this.prefixIcon,
+    required this.maxLines,
+  });
+
+  @override
+  State<_NoteFieldWithCounter> createState() => _NoteFieldWithCounterState();
+}
+
+class _NoteFieldWithCounterState extends State<_NoteFieldWithCounter> {
+  late int _charCount;
+
+  @override
+  void initState() {
+    super.initState();
+    _charCount = widget.controller.text.length;
+    widget.controller.addListener(_onChanged);
+  }
+
+  void _onChanged() {
+    final newCount = widget.controller.text.length;
+    if (newCount != _charCount) setState(() => _charCount = newCount);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onChanged);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final remaining = widget.maxChars - _charCount;
+    final isNearLimit = remaining <= 10;
+    final counterColor = remaining == 0
+        ? Colors.red
+        : isNearLimit
+            ? Colors.orange
+            : theme.colorScheme.onSurfaceVariant;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        TextField(
+          controller: widget.controller,
+          maxLines: widget.maxLines,
+          minLines: 1,
+          maxLength: widget.maxChars,
+          buildCounter: (_,
+                  {required currentLength, required isFocused, maxLength}) =>
+              null, // hide default counter; we draw our own
+          textCapitalization: TextCapitalization.sentences,
+          decoration: InputDecoration(
+            labelText: widget.label,
+            hintText: widget.hint,
+            border: const OutlineInputBorder(),
+            prefixIcon: Icon(widget.prefixIcon, size: 18),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          '$_charCount / ${widget.maxChars}',
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: counterColor,
+            fontWeight: isNearLimit ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -2202,14 +2314,199 @@ class _CategoryPickerSheet extends StatelessWidget {
   }
 }
 
+// ── Draggable sheet panel ──────────────────────────────────────────────────────
+//
+// Wraps the sheet content so the user can drag it downward to dismiss.
+// A drag of >80 px (or fling velocity >400) triggers the dismiss callback.
+
+class _DraggableSheetPanel extends StatefulWidget {
+  final Widget child;
+  final Future<void> Function() onDismiss;
+
+  const _DraggableSheetPanel({
+    required this.child,
+    required this.onDismiss,
+  });
+
+  @override
+  State<_DraggableSheetPanel> createState() => _DraggableSheetPanelState();
+}
+
+class _DraggableSheetPanelState extends State<_DraggableSheetPanel>
+    with SingleTickerProviderStateMixin {
+  // Tracks the raw finger offset while dragging.
+  double _dragOffset = 0;
+  bool _dismissing = false;
+
+  // Spring-back animation used when the user releases without dismissing.
+  late final AnimationController _snapCtrl;
+  late Animation<double> _snapAnim;
+
+  static const double _dismissThreshold = 100.0;
+  static const double _dismissVelocity = 600.0;
+  static const double _sheetHeightFraction = 0.70;
+  // Rubber-band resistance: the sheet moves at 40 % of finger speed so it
+  // feels like it has weight without snapping stiffly.
+  static const double _dragResistance = 0.55;
+
+  @override
+  void initState() {
+    super.initState();
+    _snapCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 380),
+    );
+  }
+
+  @override
+  void dispose() {
+    _snapCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onVerticalDragUpdate(DragUpdateDetails d) {
+    if (_dismissing) return;
+    _snapCtrl.stop();
+    setState(() {
+      _dragOffset = (_dragOffset + d.delta.dy * _dragResistance)
+          .clamp(0.0, double.infinity);
+    });
+  }
+
+  Future<void> _onVerticalDragEnd(DragEndDetails d) async {
+    if (_dismissing) return;
+    final velocity = d.primaryVelocity ?? 0;
+
+    if (_dragOffset > _dismissThreshold || velocity > _dismissVelocity) {
+      _dismissing = true;
+      await widget.onDismiss();
+    } else {
+      // Spring back to resting position with a bouncy curve.
+      _snapAnim = Tween<double>(begin: _dragOffset, end: 0).animate(
+        CurvedAnimation(parent: _snapCtrl, curve: Curves.elasticOut),
+      )..addListener(() => setState(() => _dragOffset = _snapAnim.value));
+      _snapCtrl.forward(from: 0);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screenH = MediaQuery.sizeOf(context).height;
+    final bottomPad = MediaQuery.paddingOf(context).bottom;
+    final sheetH = screenH * _sheetHeightFraction + bottomPad;
+
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: Transform.translate(
+        offset: Offset(0, _dragOffset),
+        child: GestureDetector(
+          onTap: () {}, // absorb taps so they don't bubble to scrim
+          onVerticalDragUpdate: _onVerticalDragUpdate,
+          onVerticalDragEnd: _onVerticalDragEnd,
+          child: Container(
+            height: sheetH,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Padding(
+              padding: EdgeInsets.only(bottom: bottomPad),
+              child: widget.child,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Account detail dialog ──────────────────────────────────────────────────────
+//
+// Replaces the old OverlayEntry + showModalBottomSheet pattern.
+// Both the floating card and the sheet content live in the same Stack so the
+// card is a plain widget at the same tree level as the sheet — no Overlay needed.
+// The card still slides in from the top using _FloatingDetailCard's own animation.
+
+class _AccountDetailDialog extends StatefulWidget {
+  final Account account;
+  final GlobalKey<_FloatingDetailCardState> cardKey;
+  final VoidCallback? onTransactionChanged;
+  final void Function(Account, BuildContext)? onEditAccount;
+  final VoidCallback? onReceiptOpen;
+  final VoidCallback? onReceiptClose;
+  final VoidCallback? onEditOpen;
+
+  const _AccountDetailDialog({
+    required this.account,
+    required this.cardKey,
+    this.onTransactionChanged,
+    this.onEditAccount,
+    this.onReceiptOpen,
+    this.onReceiptClose,
+    this.onEditOpen,
+  });
+
+  @override
+  State<_AccountDetailDialog> createState() => _AccountDetailDialogState();
+}
+
+class _AccountDetailDialogState extends State<_AccountDetailDialog> {
+  Future<void> _dismiss() async {
+    await widget.cardKey.currentState?.animateOut();
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: Stack(
+        children: [
+          // ── Scrim — tapping it dismisses the dialog ───────────────────────
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: _dismiss,
+              child: Container(color: Colors.black54),
+            ),
+          ),
+
+          // ── Bottom sheet panel ────────────────────────────────────────────
+          _DraggableSheetPanel(
+            onDismiss: _dismiss,
+            child: _AccountDetailSheet(
+              account: widget.account,
+              onTransactionChanged: widget.onTransactionChanged,
+              onEditAccount: (a) => widget.onEditAccount?.call(a, context),
+              onReceiptOpen: widget.onReceiptOpen,
+              onReceiptClose: widget.onReceiptClose,
+              onEditOpen: widget.onEditOpen,
+            ),
+          ),
+
+          // ── Floating card — slides in from top ────────────────────────────
+          _FloatingDetailCard(
+            key: widget.cardKey,
+            account: widget.account,
+            onDismiss: _dismiss,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ── Overlay card: floats above the bottom sheet, completely outside its tree ───────
 //
-// Inserted into the root Overlay by _showAccountDetail and removed when the
-// sheet closes. Positioned so the card sits half-above the sheet top edge.
+// Now a plain Stack child in _AccountDetailDialog rather than an OverlayEntry.
+// Positioned so the card sits near the top of the screen and slides in from above.
 
 class _FloatingDetailCard extends StatefulWidget {
   final Account account;
-  const _FloatingDetailCard({super.key, required this.account});
+
+  /// Called when the dialog should be closed (barrier tapped while card is visible).
+  final Future<void> Function()? onDismiss;
+  const _FloatingDetailCard({super.key, required this.account, this.onDismiss});
 
   @override
   State<_FloatingDetailCard> createState() => _FloatingDetailCardState();
@@ -2222,9 +2519,13 @@ class _FloatingDetailCardState extends State<_FloatingDetailCard>
   late final Animation<double> _fadeAnim;
   bool _receiptOpen = false;
 
+  /// The account shown on the card. Updated via [updateAccount] after an edit.
+  late Account _account;
+
   @override
   void initState() {
     super.initState();
+    _account = widget.account;
     _slideCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 420),
@@ -2259,6 +2560,13 @@ class _FloatingDetailCardState extends State<_FloatingDetailCard>
     await _slideCtrl.reverse();
   }
 
+  /// Called after the user saves edits so the floating card reflects the
+  /// latest account data without needing to close and reopen the sheet.
+  void updateAccount(Account updated) {
+    if (!mounted) return;
+    setState(() => _account = updated);
+  }
+
   void dimForReceipt() {
     if (!mounted) return;
     setState(() => _receiptOpen = true);
@@ -2276,8 +2584,8 @@ class _FloatingDetailCardState extends State<_FloatingDetailCard>
     final screenW = MediaQuery.sizeOf(context).width;
     const topPadding = 56.0;
     final registry = _registryNotifier.value;
-    final cornerStyle = registry.typeCornerStyle(widget.account.type);
-    final br = registry.cardBorderRadius(widget.account.type);
+    final cornerStyle = registry.typeCornerStyle(_account.type);
+    final br = registry.cardBorderRadius(_account.type);
 
     // Scrim shape: polygon styles use a large radius fallback, others use the
     // real card border radius so the overlay perfectly hugs the card edges.
@@ -2301,7 +2609,7 @@ class _FloatingDetailCardState extends State<_FloatingDetailCard>
             child: Stack(
               fit: StackFit.expand,
               children: [
-                _DetailFlipCard(account: widget.account),
+                _DetailFlipCard(account: _account),
                 // Dark scrim layered on top when receipt is open.
                 // IgnorePointer so the scrim never swallows taps.
                 IgnorePointer(
@@ -2572,34 +2880,57 @@ class _DetailFlipCardState extends State<_DetailFlipCard>
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Container(
-                  width: double.infinity,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          account.name,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.3,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                // Note header in the signature strip box, note body below
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(4),
                       ),
-                      const SizedBox(width: 8),
-                      Icon(Icons.lock_outline,
-                          size: 12, color: Colors.white.withValues(alpha: 0.6)),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              (account.noteHeader ?? '').isNotEmpty
+                                  ? account.noteHeader!
+                                  : account.name,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 0.3,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Icon(Icons.lock_outline,
+                              size: 12,
+                              color: Colors.white.withValues(alpha: 0.6)),
+                        ],
+                      ),
+                    ),
+                    if ((account.noteBody ?? '').isNotEmpty) ...[
+                      const SizedBox(height: 5),
+                      Text(
+                        account.noteBody!,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.75),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w400,
+                          height: 1.4,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ],
-                  ),
+                  ],
                 ),
                 ValueListenableBuilder<CategoryRegistry>(
                   valueListenable: _registryNotifier,
@@ -2875,6 +3206,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
   Future<void> _editTransaction(WalletTransaction existing,
       {String? transferTitle}) async {
     widget.onReceiptOpen?.call();
+    _cardFlipLockedNotifier.value = true;
     await showTransactionReceipt(
       context,
       tx: existing,
@@ -2910,6 +3242,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
       },
     );
     widget.onReceiptClose?.call();
+    _cardFlipLockedNotifier.value = false;
   }
 
   // Transfer info is now handled by showTransactionReceipt inside _editTransaction.
@@ -2926,159 +3259,150 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
             ? colorFromHex(widget.account.colorHex)
             : theme.colorScheme.primary);
 
-    return DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: 0.7,
-      minChildSize: 0.7,
-      maxChildSize: 0.7,
-      builder: (ctx, scrollCtrl) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-        child: Column(
-          children: [
-            // ── Drag handle ──────────────────────────────
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.outlineVariant,
-                  borderRadius: BorderRadius.circular(2),
-                ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      child: Column(
+        children: [
+          // ── Drag handle ──────────────────────────────
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.outlineVariant,
+                borderRadius: BorderRadius.circular(2),
               ),
             ),
-            Row(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: typeColor.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Icon(
-                    _registryNotifier.value.typeIcon(widget.account.type),
-                    color: typeColor,
-                  ),
+          ),
+          Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: typeColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(14),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      GestureDetector(
-                        onLongPress: () async {
-                          widget.onEditOpen?.call();
-                          widget.onEditAccount?.call(widget.account);
-                          await _load();
-                        },
-                        child: Text(widget.account.name,
-                            style: theme.textTheme.titleLarge
-                                ?.copyWith(fontWeight: FontWeight.bold)),
-                      ),
-                      Row(
-                        children: [
-                          Text(
-                            _registryNotifier.value
-                                .typeLabel(widget.account.type)
-                                .toUpperCase(),
-                            style: TextStyle(
-                                fontSize: 11,
-                                color: typeColor,
-                                fontWeight: FontWeight.bold),
-                          ),
-                          if (widget.account.category.isNotEmpty) ...[
-                            const SizedBox(width: 6),
-                            Text(
-                              '· ${_capitalize(widget.account.category)}',
-                              style: TextStyle(
-                                  fontSize: 11,
-                                  color: theme.colorScheme.outline),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ],
-                  ),
+                child: Icon(
+                  _registryNotifier.value.typeIcon(widget.account.type),
+                  color: typeColor,
                 ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  mainAxisSize: MainAxisSize.min,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      '${currencySymbolNotifier.value} ${_fmt(widget.account.balance)}',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: widget.account.balance >= 0
-                            ? Colors.green.shade700
-                            : Colors.red,
-                      ),
+                    GestureDetector(
+                      onLongPress: () async {
+                        widget.onEditOpen?.call();
+                        widget.onEditAccount?.call(widget.account);
+                        await _load();
+                      },
+                      child: Text(widget.account.name,
+                          style: theme.textTheme.titleLarge
+                              ?.copyWith(fontWeight: FontWeight.bold)),
                     ),
-                    if (!_loading) ...[
-                      const SizedBox(height: 4),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _AccountStatChip(
-                            icon: Icons.arrow_upward,
-                            amount: _accountIncome,
-                            color: Colors.green,
-                          ),
-                          Container(
-                            width: 1,
-                            height: 10,
-                            margin: const EdgeInsets.symmetric(horizontal: 6),
-                            color: theme.colorScheme.outlineVariant,
-                          ),
-                          _AccountStatChip(
-                            icon: Icons.arrow_downward,
-                            amount: _accountExpenses,
-                            color: Colors.red,
+                    Row(
+                      children: [
+                        Text(
+                          _registryNotifier.value
+                              .typeLabel(widget.account.type)
+                              .toUpperCase(),
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: typeColor,
+                              fontWeight: FontWeight.bold),
+                        ),
+                        if (widget.account.category.isNotEmpty) ...[
+                          const SizedBox(width: 6),
+                          Text(
+                            '· ${_capitalize(widget.account.category)}',
+                            style: TextStyle(
+                                fontSize: 11, color: theme.colorScheme.outline),
                           ),
                         ],
-                      ),
-                    ],
+                      ],
+                    ),
                   ],
                 ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            // ── Transactions label (tappable → opens date filter) ─────────
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: GestureDetector(
-                  onTap: () => _pickPeriod(typeColor),
-                  child: Text(
-                    'Transactions',
-                    style: theme.textTheme.titleSmall?.copyWith(
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '${currencySymbolNotifier.value} ${_fmt(widget.account.balance)}',
+                    style: TextStyle(
+                      fontSize: 20,
                       fontWeight: FontWeight.bold,
-                      color:
-                          theme.colorScheme.onSurface.withValues(alpha: 0.70),
+                      color: widget.account.balance >= 0
+                          ? Colors.green.shade700
+                          : Colors.red,
                     ),
+                  ),
+                  if (!_loading) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _AccountStatChip(
+                          icon: Icons.arrow_upward,
+                          amount: _accountIncome,
+                          color: Colors.green,
+                        ),
+                        Container(
+                          width: 1,
+                          height: 10,
+                          margin: const EdgeInsets.symmetric(horizontal: 6),
+                          color: theme.colorScheme.outlineVariant,
+                        ),
+                        _AccountStatChip(
+                          icon: Icons.arrow_downward,
+                          amount: _accountExpenses,
+                          color: Colors.red,
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          // ── Transactions label (tappable → opens date filter) ─────────
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: GestureDetector(
+                onTap: () => _pickPeriod(typeColor),
+                child: Text(
+                  'Transactions',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.70),
                   ),
                 ),
               ),
             ),
-            Expanded(
-              child: _loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _filteredTransactions.isEmpty
-                      ? Center(
-                          child: Text(
-                            _transactions.isEmpty
-                                ? 'No transactions for this account'
-                                : 'No transactions for this period.',
-                            style: TextStyle(color: theme.colorScheme.outline),
-                          ),
-                        )
-                      : _buildGroupedList(
-                          _filteredTransactions, theme, scrollCtrl),
-            ),
-          ],
-        ),
+          ),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _filteredTransactions.isEmpty
+                    ? Center(
+                        child: Text(
+                          _transactions.isEmpty
+                              ? 'No transactions for this account'
+                              : 'No transactions for this period.',
+                          style: TextStyle(color: theme.colorScheme.outline),
+                        ),
+                      )
+                    : _buildGroupedList(_filteredTransactions, theme),
+          ),
+        ],
       ),
     );
   }
@@ -3096,8 +3420,7 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
     widget.onTransactionChanged?.call();
   }
 
-  Widget _buildGroupedList(
-      List<WalletTransaction> txs, ThemeData theme, ScrollController ctrl) {
+  Widget _buildGroupedList(List<WalletTransaction> txs, ThemeData theme) {
     // ── Group by calendar date "yyyy-MM-dd", sorted DESC ───────────────────
     final Map<String, List<WalletTransaction>> groups = {};
     for (final tx in txs) {
@@ -3185,7 +3508,6 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
     }
 
     return ListView.builder(
-      controller: ctrl,
       padding: EdgeInsets.zero,
       itemCount: items.length,
       itemBuilder: (_, i) {
