@@ -409,26 +409,45 @@ class _WalletHomePageState extends State<WalletHomePage> {
             ],
           ), // Stack
         ), // RefreshIndicator
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: _selectedIndex,
-          onDestinationSelected: _onItemTapped,
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.account_balance_wallet_outlined),
-              selectedIcon: Icon(Icons.account_balance_wallet),
-              label: 'Accounts',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.receipt_long_outlined),
-              selectedIcon: Icon(Icons.receipt_long),
-              label: 'History',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.person_outline),
-              selectedIcon: Icon(Icons.person),
-              label: 'Profile',
-            ),
-          ],
+        bottomNavigationBar: Theme(
+          data: theme.brightness == Brightness.dark
+              ? theme.copyWith(
+                  navigationBarTheme: theme.navigationBarTheme.copyWith(
+                    indicatorColor: Colors.grey.shade700,
+                    iconTheme: WidgetStateProperty.all(
+                      const IconThemeData(color: Colors.white),
+                    ),
+                    labelTextStyle: WidgetStateProperty.all(
+                      const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                )
+              : theme,
+          child: NavigationBar(
+            selectedIndex: _selectedIndex,
+            onDestinationSelected: _onItemTapped,
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.account_balance_wallet_outlined),
+                selectedIcon: Icon(Icons.account_balance_wallet),
+                label: 'Accounts',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.receipt_long_outlined),
+                selectedIcon: Icon(Icons.receipt_long),
+                label: 'History',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.person_outline),
+                selectedIcon: Icon(Icons.person),
+                label: 'Profile',
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -612,7 +631,7 @@ class _SpeedDialFabState extends State<_SpeedDialFab>
           _miniButton(
             icon: Icons.swap_horiz,
             label: 'Transfer',
-            color: isDark ? const Color(0xFF3A3A40) : const Color(0xFF0D9488),
+            color: isDark ? const Color(0xFF1A3A38) : const Color(0xFF0D9488),
             onTap: widget.onTransfer,
             index: 0,
           ),
