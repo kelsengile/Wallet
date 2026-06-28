@@ -595,12 +595,31 @@ class _TransactionFormState extends State<_TransactionForm> {
               ),
             ),
           ),
-          Text(
-            isEdit
-                ? 'Edit ${_type == 'income' ? 'Income' : 'Expense'}'
-                : 'New ${_type == 'income' ? 'Income' : 'Expense'}',
-            style: theme.textTheme.titleLarge
-                ?.copyWith(fontWeight: FontWeight.bold),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  _type == 'income'
+                      ? Icons.arrow_downward_rounded
+                      : Icons.arrow_upward_rounded,
+                  color: accent,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                isEdit
+                    ? 'Edit ${_type == 'income' ? 'Income' : 'Expense'}'
+                    : 'New ${_type == 'income' ? 'Income' : 'Expense'}',
+                style: theme.textTheme.titleLarge
+                    ?.copyWith(fontWeight: FontWeight.bold),
+              ),
+            ],
           ),
           const SizedBox(height: 20),
 
