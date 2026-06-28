@@ -2071,6 +2071,7 @@ class DatabaseHelper {
     await db.delete('trash_transactions');
     await db.delete('trash_accounts');
     await db.delete('trash_categories');
+    await db.delete('reminder_transactions');
 
     // Remove ALL categories so we can re-seed them cleanly from scratch.
     await db.delete('categories');
@@ -2132,6 +2133,23 @@ class DatabaseHelper {
       where: 'id = ?',
       whereArgs: [reminder.id],
     );
+  }
+
+  /// Converts a reminder into a real transaction, then deletes the reminder.
+  /// The account balance is updated via [insertTransaction].
+  Future<void> markReminderDoneAsTransaction(
+      ReminderTransaction reminder) async {
+    final tx = WalletTransaction(
+      title: reminder.title,
+      amount: reminder.amount,
+      date: reminder.dueDate,
+      type: reminder.type,
+      category: reminder.category,
+      note: reminder.note,
+      accountId: reminder.accountId,
+    );
+    await insertTransaction(tx);
+    await deleteReminder(reminder);
   }
 
   /// Marks a reminder as done (or not done) without a full update.
