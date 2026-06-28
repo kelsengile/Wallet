@@ -4,6 +4,7 @@ import 'package:path/path.dart';
 import '../models/transaction_model.dart';
 import '../models/account_model.dart';
 import '../models/category_model.dart';
+import '../models/reminder_model.dart';
 
 /// Result returned by [DatabaseHelper.insertTransfer].
 /// Named with a leading underscore to avoid colliding with the
@@ -80,7 +81,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 14, // bumped to 14 to add note_header / note_body to accounts
+      version: 15, // bumped to 15 to add reminder_transactions table
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -214,6 +215,21 @@ class DatabaseHelper {
       'note_header': '',
       'note_body': '',
     });
+
+    await db.execute('''
+      CREATE TABLE reminder_transactions (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        title       TEXT    NOT NULL,
+        amount      REAL    NOT NULL DEFAULT 0.0,
+        due_date    TEXT    NOT NULL,
+        type        TEXT    NOT NULL,
+        category    TEXT    NOT NULL,
+        note        TEXT    DEFAULT '',
+        account_id  INTEGER,
+        repeat      TEXT    NOT NULL DEFAULT 'none',
+        is_done     INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
   }
 
   /// Seeds the categories table with the app's original built-in
@@ -899,6 +915,23 @@ class DatabaseHelper {
       await db.execute(
         "ALTER TABLE trash_accounts ADD COLUMN note_body TEXT NOT NULL DEFAULT ''",
       );
+    }
+
+    if (oldVersion < 15) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS reminder_transactions (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          title       TEXT    NOT NULL,
+          amount      REAL    NOT NULL DEFAULT 0.0,
+          due_date    TEXT    NOT NULL,
+          type        TEXT    NOT NULL,
+          category    TEXT    NOT NULL,
+          note        TEXT    DEFAULT '',
+          account_id  INTEGER,
+          repeat      TEXT    NOT NULL DEFAULT 'none',
+          is_done     INTEGER NOT NULL DEFAULT 0
+        )
+      ''');
     }
   }
 
@@ -2054,6 +2087,72 @@ class DatabaseHelper {
       'note_header': '',
       'note_body': '',
     });
+  }
+
+  // ── Reminder CRUD ──────────────────────────────────────────────────────────
+
+  /// Inserts a new reminder and returns the assigned id.
+  Future<int> insertReminder(ReminderTransaction reminder) async {
+    final db = await database;
+    return db.insert('reminder_transactions', reminder.toMap());
+  }
+
+  /// Returns all reminders ordered by due_date ASC (earliest first),
+  /// with done reminders sorted to the bottom.
+  Future<List<ReminderTransaction>> getAllReminders() async {
+    final db = await database;
+    final rows = await db.query(
+      'reminder_transactions',
+      orderBy: 'is_done ASC, due_date ASC',
+    );
+    return rows.map(ReminderTransaction.fromMap).toList();
+  }
+
+  /// Returns only reminders whose due_date falls within [start, end).
+  /// Done reminders are always returned last (sorted by due_date within each group).
+  Future<List<ReminderTransaction>> getRemindersInRange(
+      DateTime start, DateTime end) async {
+    final db = await database;
+    final rows = await db.query(
+      'reminder_transactions',
+      where: "due_date >= ? AND due_date < ?",
+      whereArgs: [start.toIso8601String(), end.toIso8601String()],
+      orderBy: 'is_done ASC, due_date ASC',
+    );
+    return rows.map(ReminderTransaction.fromMap).toList();
+  }
+
+  /// Updates an existing reminder in-place.
+  Future<void> updateReminder(ReminderTransaction reminder) async {
+    assert(reminder.id != null, 'Cannot update a reminder without an id');
+    final db = await database;
+    await db.update(
+      'reminder_transactions',
+      reminder.toMap(),
+      where: 'id = ?',
+      whereArgs: [reminder.id],
+    );
+  }
+
+  /// Marks a reminder as done (or not done) without a full update.
+  Future<void> setReminderDone(int id, {required bool done}) async {
+    final db = await database;
+    await db.update(
+      'reminder_transactions',
+      {'is_done': done ? 1 : 0},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// Permanently deletes a reminder.
+  Future<void> deleteReminder(ReminderTransaction reminder) async {
+    final db = await database;
+    await db.delete(
+      'reminder_transactions',
+      where: 'id = ?',
+      whereArgs: [reminder.id],
+    );
   }
 
   Future<void> closeDatabase() async {
