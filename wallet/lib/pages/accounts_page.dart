@@ -3833,12 +3833,11 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
           final isTransferOut = outTx.accountId == widget.account.id;
           final transferLabel = isTransferOut ? 'Transfer Out' : 'Transfer In';
           final transferAmountPrefix = isTransferOut ? '−' : '+';
-          final transferColor = typeColor;
-          final transferBgColor = typeColor.withValues(alpha: 0.15);
-          final transferFgColor = typeColor;
-          final transferIcon = isTransferOut
-              ? Icons.arrow_upward_rounded
-              : Icons.arrow_downward_rounded;
+          const transferColor = Color(0xFF3B82F6);
+          final transferBgColor =
+              const Color(0xFF3B82F6).withValues(alpha: 0.18);
+          const transferFgColor = Color(0xFF3B82F6);
+          const transferIcon = Icons.swap_horiz_rounded;
 
           final groupKey = itemKeys[i];
           final isCollapsed =
