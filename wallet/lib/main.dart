@@ -15,6 +15,7 @@ import 'package:wallet/pages/faq_page.dart';
 import 'package:wallet/pages/feedback_page.dart';
 import 'package:wallet/pages/trash_bin_page.dart';
 import 'package:wallet/models/transaction_model.dart';
+import 'package:wallet/models/reminder_model.dart';
 
 /// Global dark-mode toggle, readable/writable from anywhere (currently just
 /// the Settings page). Persisted to the `settings` table so the choice
@@ -405,6 +406,29 @@ class _WalletHomePageState extends State<WalletHomePage> {
                             );
                             _historyKey.currentState?.refresh();
                           },
+                          onAddReminder: () async {
+                            final accounts = await DatabaseHelper.instance
+                                .getAccountsSortedByLatestTransaction();
+                            final registry = await DatabaseHelper.instance
+                                .getCategoryRegistry();
+                            final typeOrder =
+                                await DatabaseHelper.instance.getTypeOrder();
+                            if (!context.mounted) return;
+                            final reminder =
+                                await ReminderTransaction.showDialog(
+                              context,
+                              accounts: accounts,
+                              categories:
+                                  registry.selectableTransactionCategories,
+                              accountTypes: registry.accountTypes,
+                              accountCategories: registry.accountCategories,
+                              typeOrder: typeOrder,
+                            );
+                            if (reminder == null) return;
+                            await DatabaseHelper.instance
+                                .insertReminder(reminder);
+                            _historyKey.currentState?.refresh();
+                          },
                         ),
                       ),
                     ),
@@ -459,17 +483,19 @@ class _WalletHomePageState extends State<WalletHomePage> {
   }
 }
 
-// ── Speed-dial FAB (Income + Expense + Transfer) ──────────────────────────────
+// ── Speed-dial FAB (Income + Expense + Transfer + Reminder) ──────────────────
 
 class _SpeedDialFab extends StatefulWidget {
   final VoidCallback onAddIncome;
   final VoidCallback onAddExpense;
   final VoidCallback onTransfer;
+  final VoidCallback onAddReminder; // ← NEW
 
   const _SpeedDialFab({
     required this.onAddIncome,
     required this.onAddExpense,
     required this.onTransfer,
+    required this.onAddReminder, // ← NEW
   });
 
   @override
@@ -480,17 +506,14 @@ class _SpeedDialFabState extends State<_SpeedDialFab>
     with TickerProviderStateMixin {
   bool _open = false;
 
-  // Controls expand/collapse of mini buttons
   late final AnimationController _ctrl;
-
-  // Controls the double-spin of the + icon (0 → 1.0 = two full turns)
   late final AnimationController _spinCtrl;
   // ignore: unused_field
   late final Animation<double> _spinAnim;
 
-  // Per-button staggered slide+fade animations (Transfer=0, Expense=1, Income=2)
+  // 4 buttons: 0=Transfer, 1=Expense, 2=Income, 3=Reminder (topmost)
   late final List<AnimationController> _btnCtrls;
-  late final List<Animation<double>> _btnSlide; // 0=at FAB, 1=final position
+  late final List<Animation<double>> _btnSlide;
   late final List<Animation<double>> _btnFade;
 
   @override
@@ -511,9 +534,9 @@ class _SpeedDialFabState extends State<_SpeedDialFab>
       CurvedAnimation(parent: _spinCtrl, curve: Curves.easeInOut),
     );
 
-    // Three staggered controllers – each 280 ms, triggered with delay
+    // 4 staggered controllers
     _btnCtrls = List.generate(
-      3,
+      4,
       (_) => AnimationController(
         vsync: this,
         duration: const Duration(milliseconds: 280),
@@ -546,9 +569,8 @@ class _SpeedDialFabState extends State<_SpeedDialFab>
     if (!_open) {
       setState(() => _open = true);
       _ctrl.forward();
-      // Stagger: Income first (closest), then Expense, then Transfer
-      // Indices: 0=Transfer, 1=Expense, 2=Income → reverse stagger order
-      for (int i = 2; i >= 0; i--) {
+      // Stagger: Reminder first (topmost), down to Transfer
+      for (int i = 3; i >= 0; i--) {
         _btnCtrls[i].forward(from: 0);
         await Future.delayed(const Duration(milliseconds: 55));
       }
@@ -572,7 +594,7 @@ class _SpeedDialFabState extends State<_SpeedDialFab>
     required String label,
     required Color color,
     required VoidCallback onTap,
-    required int index, // 0=Transfer, 1=Expense, 2=Income
+    required int index,
   }) {
     // SizeTransition makes the button (and its spacing) grow from 0 height,
     // giving the illusion it bursts upward out of the main FAB.
@@ -632,7 +654,15 @@ class _SpeedDialFabState extends State<_SpeedDialFab>
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          // Mini buttons burst upward from the FAB (Transfer topmost)
+          // ── index 3: Reminder (topmost) ────────────────────────────────
+          _miniButton(
+            icon: Icons.notifications_outlined,
+            label: 'Reminder',
+            color: isDark ? const Color(0xFF4A3A10) : const Color(0xFFF59E0B),
+            onTap: widget.onAddReminder,
+            index: 3,
+          ),
+          // ── index 0: Transfer ──────────────────────────────────────────
           _miniButton(
             icon: Icons.swap_horiz,
             label: 'Transfer',
@@ -640,6 +670,7 @@ class _SpeedDialFabState extends State<_SpeedDialFab>
             onTap: widget.onTransfer,
             index: 0,
           ),
+          // ── index 1: Expense ───────────────────────────────────────────
           _miniButton(
             icon: Icons.arrow_upward,
             label: 'Expense',
@@ -647,6 +678,7 @@ class _SpeedDialFabState extends State<_SpeedDialFab>
             onTap: widget.onAddExpense,
             index: 1,
           ),
+          // ── index 2: Income ────────────────────────────────────────────
           _miniButton(
             icon: Icons.arrow_downward,
             label: 'Income',
@@ -654,7 +686,7 @@ class _SpeedDialFabState extends State<_SpeedDialFab>
             onTap: widget.onAddIncome,
             index: 2,
           ),
-          // Main FAB
+          // ── Main FAB ───────────────────────────────────────────────────
           GestureDetector(
             onTap: _toggle,
             child: AnimatedContainer(
