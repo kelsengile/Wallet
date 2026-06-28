@@ -280,6 +280,7 @@ class _TransactionReceiptDialogState extends State<_TransactionReceiptDialog> {
                     loadingPaired: _loadingPaired,
                     txCategories: widget.txCategories,
                     transferTitle: widget.transferTitle,
+                    transactionTitle: _isTransfer ? null : _tx.title,
                   ),
 
                   // ── Serrated divider ───────────────────────────────────
@@ -299,24 +300,6 @@ class _TransactionReceiptDialogState extends State<_TransactionReceiptDialog> {
                       theme: theme,
                       typeColor: typeColor,
                       resolveCategory: _resolveCategory,
-                    ),
-                  ),
-
-                  // ── Close button ──────────────────────────────────────
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.pop(context),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: const Text('Close'),
-                      ),
                     ),
                   ),
                 ],
@@ -369,6 +352,7 @@ class _ReceiptHeader extends StatelessWidget {
   final bool loadingPaired;
   final List<WalletCategory> txCategories;
   final String? transferTitle;
+  final String? transactionTitle;
 
   const _ReceiptHeader({
     required this.tx,
@@ -381,6 +365,7 @@ class _ReceiptHeader extends StatelessWidget {
     required this.loadingPaired,
     required this.txCategories,
     this.transferTitle,
+    this.transactionTitle,
   });
 
   // ignore: unused_element
@@ -434,7 +419,24 @@ class _ReceiptHeader extends StatelessWidget {
           ),
           const SizedBox(height: 14),
 
-          // Title
+          // Transaction title (only for income/expense)
+          if (!isTransfer &&
+              transactionTitle != null &&
+              transactionTitle!.isNotEmpty) ...[
+            Text(
+              transactionTitle!,
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: Colors.black,
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 4),
+          ],
+
+          // Type label (Income / Expense / Transfer)
           Text(
             title,
             style: theme.textTheme.titleMedium?.copyWith(
