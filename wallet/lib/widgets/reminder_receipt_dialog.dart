@@ -91,16 +91,16 @@ class _ReminderReceiptDialogState extends State<_ReminderReceiptDialog> {
 
   bool get _isIncome => _reminder.type == 'income';
 
-  Color _typeColor(ThemeData theme) =>
-      _isIncome ? Colors.green.shade600 : Colors.red.shade600;
+  Color _typeColor(ThemeData theme) {
+    final isDark = theme.brightness == Brightness.dark;
+    return isDark ? const Color(0xFFFFD54F) : Colors.amber.shade700;
+  }
 
-  Color _typeBgColor() => _isIncome ? Colors.green.shade50 : Colors.red.shade50;
-
-  bool get _isOverdue {
-    final due = DateTime.tryParse(_reminder.dueDate);
-    if (due == null) return false;
-    final now = DateTime.now();
-    return due.isBefore(DateTime(now.year, now.month, now.day));
+  Color _typeBgColor(ThemeData theme) {
+    final isDark = theme.brightness == Brightness.dark;
+    return isDark
+        ? const Color(0xFF3A2E00) // dark amber tint
+        : Colors.amber.shade50;
   }
 
   // ── Open edit ─────────────────────────────────────────────────────────────
@@ -133,8 +133,7 @@ class _ReminderReceiptDialogState extends State<_ReminderReceiptDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final typeColor = _typeColor(theme);
-    final typeBg = _typeBgColor();
-    final isDark = theme.brightness == Brightness.dark;
+    final typeBg = _typeBgColor(theme);
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -142,16 +141,16 @@ class _ReminderReceiptDialogState extends State<_ReminderReceiptDialog> {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          // ── Receipt card ────────────────────────────────────────────────
+          // ── Receipt card ──────────────────────────────────────────────────
           Container(
             decoration: BoxDecoration(
-              color: isDark ? theme.colorScheme.surfaceContainer : Colors.white,
+              color: theme.colorScheme.surface,
               borderRadius: BorderRadius.circular(20),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.15),
-                  blurRadius: 24,
-                  offset: const Offset(0, 8),
+                  color: Colors.black.withValues(alpha: 0.18),
+                  blurRadius: 32,
+                  offset: const Offset(0, 12),
                 ),
               ],
             ),
@@ -160,132 +159,25 @@ class _ReminderReceiptDialogState extends State<_ReminderReceiptDialog> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // ── Colored header ───────────────────────────────────
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.fromLTRB(20, 20, 16, 20),
-                    decoration: BoxDecoration(
-                      color:
-                          isDark ? typeColor.withValues(alpha: 0.25) : typeBg,
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Bell badge
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color:
-                                const Color(0xFFF59E0B).withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Icon(
-                            _reminder.isDone
-                                ? Icons.notifications_off_outlined
-                                : Icons.notifications_active_rounded,
-                            color: const Color(0xFFF59E0B),
-                            size: 22,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // "REMINDER" label
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF59E0B)
-                                      .withValues(alpha: 0.18),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  'REMINDER',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: 1.2,
-                                    color: const Color(0xFFF59E0B),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                _reminder.title,
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color: typeColor,
-                                  fontSize: 18,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              // Overdue chip
-                              if (_isOverdue && !_reminder.isDone)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color:
-                                        Colors.orange.withValues(alpha: 0.15),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.warning_amber_rounded,
-                                          size: 12,
-                                          color: Colors.orange.shade700),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        'Overdue',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w600,
-                                          color: Colors.orange.shade700,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              if (_reminder.isDone)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: Colors.green.withValues(alpha: 0.15),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.check_circle_rounded,
-                                          size: 12,
-                                          color: Colors.green.shade700),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        'Done',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w600,
-                                          color: Colors.green.shade700,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
+                  // ── Coloured header ──────────────────────────────────────
+                  _ReminderReceiptHeader(
+                    reminder: _reminder,
+                    typeColor: typeColor,
+                    typeBg: typeBg,
+                    isIncome: _isIncome,
+                    txCategories: widget.txCategories,
                   ),
 
-                  // ── Body ────────────────────────────────────────────────
+                  // ── Serrated divider ─────────────────────────────────────
+                  _SerratedDivider(
+                    color: theme.colorScheme.surface,
+                    bgColor: typeBg,
+                  ),
+
+                  // ── Body rows ────────────────────────────────────────────
                   Flexible(
                     child: SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
                       child: _ReminderReceiptBody(
                         reminder: _reminder,
                         accounts: widget.accounts,
@@ -296,16 +188,14 @@ class _ReminderReceiptDialogState extends State<_ReminderReceiptDialog> {
                     ),
                   ),
 
-                  // ── Action buttons ───────────────────────────────────────
+                  // ── Bottom action row ────────────────────────────────────
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
+                    child: Row(
                       children: [
-                        // Mark done / undo done
+                        // Mark as Done (only when not already done)
                         if (!_reminder.isDone)
                           SizedBox(
-                            width: double.infinity,
                             child: FilledButton.icon(
                               onPressed: () async {
                                 if (widget.onDone != null) {
@@ -322,65 +212,14 @@ class _ReminderReceiptDialogState extends State<_ReminderReceiptDialog> {
                               style: FilledButton.styleFrom(
                                 backgroundColor: Colors.green.shade600,
                                 foregroundColor: Colors.white,
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 12),
+                                padding: const EdgeInsets.symmetric(
+                                    vertical: 12, horizontal: 16),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                               ),
                             ),
                           ),
-                        if (!_reminder.isDone) const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            // Delete
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: () async {
-                                  final confirm = await _confirmDelete(context);
-                                  if (!confirm || !context.mounted) return;
-                                  if (widget.onDelete != null) {
-                                    await widget.onDelete!(_reminder);
-                                  }
-                                  if (context.mounted) {
-                                    Navigator.pop(context);
-                                  }
-                                },
-                                icon:
-                                    const Icon(Icons.delete_outline, size: 18),
-                                label: const Text('Delete'),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: Colors.red.shade600,
-                                  side: BorderSide(color: Colors.red.shade200),
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 11),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            // Edit
-                            Expanded(
-                              child: FilledButton.icon(
-                                onPressed:
-                                    widget.onEdited != null ? _openEdit : null,
-                                icon: const Icon(Icons.edit_outlined, size: 18),
-                                label: const Text('Edit'),
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: const Color(0xFFF59E0B),
-                                  foregroundColor: Colors.white,
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 11),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
                       ],
                     ),
                   ),
@@ -389,34 +228,38 @@ class _ReminderReceiptDialogState extends State<_ReminderReceiptDialog> {
             ),
           ),
 
-          // ── Close button ─────────────────────────────────────────────────
-          Positioned(
-            top: -14,
-            right: -14,
-            child: GestureDetector(
-              onTap: () => Navigator.pop(context),
-              child: Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surface,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                      color: theme.colorScheme.outlineVariant, width: 1.5),
-                ),
-                child: Icon(
-                  Icons.close,
-                  size: 18,
-                  color: theme.colorScheme.onSurface,
+          // ── Pencil FAB (top-right, outside the card) ──────────────────────
+          if (widget.onEdited != null)
+            Positioned(
+              top: -14,
+              right: -14,
+              child: GestureDetector(
+                onTap: _openEdit,
+                child: Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: typeColor,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: typeColor.withValues(alpha: 0.45),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(Icons.edit_rounded,
+                      color: Colors.white, size: 18),
                 ),
               ),
             ),
-          ),
         ],
       ),
     );
   }
 
+  // ignore: unused_element
   Future<bool> _confirmDelete(BuildContext context) async {
     return await showDialog<bool>(
           context: context,
@@ -437,6 +280,204 @@ class _ReminderReceiptDialogState extends State<_ReminderReceiptDialog> {
         ) ??
         false;
   }
+}
+
+// ── Receipt header ─────────────────────────────────────────────────────────────
+
+class _ReminderReceiptHeader extends StatelessWidget {
+  final ReminderTransaction reminder;
+  final Color typeColor;
+  final Color typeBg;
+  final bool isIncome;
+  final List<WalletCategory> txCategories;
+
+  const _ReminderReceiptHeader({
+    required this.reminder,
+    required this.typeColor,
+    required this.typeBg,
+    required this.isIncome,
+    required this.txCategories,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    final cat = txCategories.cast<WalletCategory?>().firstWhere(
+          (c) => c?.name == reminder.category,
+          orElse: () => null,
+        );
+    final icon = cat?.iconData ?? Icons.notifications_active_rounded;
+
+    return Container(
+      width: double.infinity,
+      color: typeBg,
+      padding: const EdgeInsets.fromLTRB(20, 28, 20, 20),
+      child: Column(
+        children: [
+          // Icon circle
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: typeColor.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+              border: Border.all(
+                  color: typeColor.withValues(alpha: 0.35), width: 2),
+            ),
+            child: Icon(icon, color: typeColor, size: 30),
+          ),
+          const SizedBox(height: 14),
+
+          // Reminder title
+          if (reminder.title.isNotEmpty) ...[
+            Text(
+              reminder.title,
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: theme.colorScheme.onSurface,
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 4),
+          ],
+
+          // Type label + status chips
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                'Reminder',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: typeColor,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+
+          // Overdue / Done chips
+          if (_isOverdue(reminder) && !reminder.isDone) ...[
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: Colors.orange.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.warning_amber_rounded,
+                      size: 12, color: Colors.orange.shade700),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Overdue',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.orange.shade700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ] else if (reminder.isDone) ...[
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: Colors.green.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.check_circle_rounded,
+                      size: 12, color: Colors.green.shade700),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Done',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.green.shade700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  bool _isOverdue(ReminderTransaction r) {
+    final due = DateTime.tryParse(r.dueDate);
+    if (due == null) return false;
+    final now = DateTime.now();
+    return due.isBefore(DateTime(now.year, now.month, now.day));
+  }
+}
+
+// ── Serrated divider ───────────────────────────────────────────────────────────
+//
+// Creates the classic receipt "tear" edge between the header and the body.
+
+class _SerratedDivider extends StatelessWidget {
+  final Color color; // card surface color (the "cut-out")
+  final Color bgColor; // header background color
+
+  const _SerratedDivider({required this.color, required this.bgColor});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 20,
+      child: CustomPaint(
+        painter: _SerratedPainter(surfaceColor: color, bgColor: bgColor),
+        child: const SizedBox.expand(),
+      ),
+    );
+  }
+}
+
+class _SerratedPainter extends CustomPainter {
+  final Color surfaceColor;
+  final Color bgColor;
+
+  const _SerratedPainter({required this.surfaceColor, required this.bgColor});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Fill top half with header bg color
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, size.width, size.height / 2),
+      Paint()..color = bgColor,
+    );
+    // Fill bottom half with card surface
+    canvas.drawRect(
+      Rect.fromLTWH(0, size.height / 2, size.width, size.height / 2),
+      Paint()..color = surfaceColor,
+    );
+
+    // Draw scalloped circles along the middle
+    const r = 9.0;
+    final paint = Paint()..color = surfaceColor;
+    double x = -r;
+    while (x < size.width + r) {
+      canvas.drawCircle(Offset(x, size.height / 2), r, paint);
+      x += r * 2;
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SerratedPainter old) =>
+      old.surfaceColor != surfaceColor || old.bgColor != bgColor;
 }
 
 // ── Receipt body ──────────────────────────────────────────────────────────────
@@ -471,8 +512,10 @@ class _ReminderReceiptBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dueDateStr = reminder.dueDate.length >= 10
-        ? DateFormat('MMM d, yyyy')
-            .format(DateTime.tryParse(reminder.dueDate) ?? DateTime.now())
+        ? () {
+            final dt = DateTime.tryParse(reminder.dueDate) ?? DateTime.now();
+            return DateFormat('MMM d, yyyy, EEE').format(dt);
+          }()
         : reminder.dueDate;
 
     final cat = _resolveCategory(reminder.category);
