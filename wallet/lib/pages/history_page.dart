@@ -392,7 +392,7 @@ class HistoryPageState extends State<HistoryPage> {
         return updated;
       },
       onDone: (r) async {
-        await _db.setReminderDone(r.id!, done: true);
+        await _db.markReminderDoneAsTransaction(r);
         await _load();
       },
       onDelete: (r) async {
@@ -626,18 +626,16 @@ class HistoryPageState extends State<HistoryPage> {
                       contentPadding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 2),
                       onTap: () => _showTransferInfo(outTx),
-                      leading: Builder(builder: (ctx) {
-                        final cs = Theme.of(ctx).colorScheme;
-                        return CircleAvatar(
-                          radius: 22,
-                          backgroundColor: cs.primaryContainer,
-                          child: Icon(
-                            Icons.swap_horiz_rounded,
-                            size: 20,
-                            color: cs.onPrimaryContainer,
-                          ),
-                        );
-                      }),
+                      leading: CircleAvatar(
+                        radius: 22,
+                        backgroundColor:
+                            const Color(0xFF3B82F6).withValues(alpha: 0.18),
+                        child: const Icon(
+                          Icons.swap_horiz_rounded,
+                          size: 20,
+                          color: Color(0xFF3B82F6),
+                        ),
+                      ),
                       title: const Text(
                         'Transfer',
                         style: TextStyle(
@@ -647,16 +645,14 @@ class HistoryPageState extends State<HistoryPage> {
                         '$fromAccount → $toAccount',
                         style: const TextStyle(fontSize: 11),
                       ),
-                      trailing: Builder(builder: (ctx) {
-                        return Text(
-                          '± ${currencySymbolNotifier.value}${_fmt(outTx.amount)}',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                            color: Theme.of(ctx).colorScheme.primary,
-                          ),
-                        );
-                      }),
+                      trailing: Text(
+                        '± ${currencySymbolNotifier.value}${_fmt(outTx.amount)}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                          color: Color(0xFF3B82F6),
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -935,6 +931,10 @@ class HistoryPageState extends State<HistoryPage> {
                   accountTypes: _accountTypes,
                   accountCategories: _accountCategories,
                   onTap: (r) => _openReminderReceipt(r),
+                  onDelete: (r) async {
+                    await _db.deleteReminder(r);
+                    await _load();
+                  },
                 ),
                 Expanded(
                   child: filtered.isEmpty
@@ -1942,6 +1942,7 @@ class _RemindersSection extends StatelessWidget {
   final List<WalletCategory> accountTypes;
   final List<WalletCategory> accountCategories;
   final void Function(ReminderTransaction) onTap;
+  final void Function(ReminderTransaction) onDelete;
 
   const _RemindersSection({
     required this.reminders,
@@ -1950,6 +1951,7 @@ class _RemindersSection extends StatelessWidget {
     required this.accountTypes,
     required this.accountCategories,
     required this.onTap,
+    required this.onDelete,
   });
 
   @override
@@ -1957,6 +1959,10 @@ class _RemindersSection extends StatelessWidget {
     if (reminders.isEmpty) return const SizedBox.shrink();
 
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final sectionYellow = isDark
+        ? const Color(0xFFFFD54F) // amber-300 for dark
+        : const Color(0xFFF59E0B); // amber-500 for light
 
     // Sort: pending overdue first, then pending by due date, done last.
     final now = DateTime.now();
@@ -1981,11 +1987,11 @@ class _RemindersSection extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(5),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                  color: sectionYellow.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(Icons.notifications_outlined,
-                    size: 14, color: Color(0xFFF59E0B)),
+                child: Icon(Icons.notifications_outlined,
+                    size: 14, color: sectionYellow),
               ),
               const SizedBox(width: 8),
               Text(
@@ -1993,22 +1999,22 @@ class _RemindersSection extends StatelessWidget {
                 style: theme.textTheme.labelSmall?.copyWith(
                   fontWeight: FontWeight.w800,
                   letterSpacing: 1.2,
-                  color: const Color(0xFFF59E0B),
+                  color: sectionYellow,
                 ),
               ),
               const SizedBox(width: 6),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                  color: sectionYellow.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
                   '${sorted.length}',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFFF59E0B),
+                    color: sectionYellow,
                   ),
                 ),
               ),
@@ -2017,12 +2023,29 @@ class _RemindersSection extends StatelessWidget {
         ),
 
         // ── Reminder cards ─────────────────────────────────────────────────
-        ...sorted.map((r) => _ReminderListItem(
+        ...() {
+          final widgets = <Widget>[];
+          for (int i = 0; i < sorted.length; i++) {
+            final r = sorted[i];
+            widgets.add(_ReminderListItem(
               reminder: r,
               accounts: accounts,
               txCategories: txCategories,
               onTap: () => onTap(r),
-            )),
+              onDelete: () => onDelete(r),
+            ));
+            if (i < sorted.length - 1) {
+              widgets.add(Divider(
+                height: 1,
+                thickness: 0.5,
+                indent: 12,
+                endIndent: 12,
+                color: Colors.grey.withValues(alpha: 0.25),
+              ));
+            }
+          }
+          return widgets;
+        }(),
 
         // ── Section divider ────────────────────────────────────────────────
         Padding(
@@ -2030,7 +2053,7 @@ class _RemindersSection extends StatelessWidget {
           child: Divider(
             height: 1,
             thickness: 1.5,
-            color: const Color(0xFFF59E0B).withValues(alpha: 0.25),
+            color: sectionYellow.withValues(alpha: 0.25),
           ),
         ),
       ],
@@ -2048,18 +2071,21 @@ class _ReminderListItem extends StatelessWidget {
   final List<Account> accounts;
   final List<WalletCategory> txCategories;
   final VoidCallback onTap;
+  final VoidCallback onDelete;
 
   const _ReminderListItem({
     required this.reminder,
     required this.accounts,
     required this.txCategories,
     required this.onTap,
+    required this.onDelete,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final due = DateTime.tryParse(reminder.dueDate);
@@ -2071,28 +2097,28 @@ class _ReminderListItem extends StatelessWidget {
     final isIncome = reminder.type == 'income';
     final typeColor = isIncome ? Colors.green.shade600 : Colors.red.shade600;
 
-    Color borderColor;
+    // Yellow palette: warmer amber in dark mode, classic amber in light
+    final reminderYellow = isDark
+        ? const Color(0xFFFFD54F) // amber-300 — readable on dark surfaces
+        : const Color(0xFFF59E0B); // amber-500 — standard yellow-amber
+
     Color bgColor;
     if (reminder.isDone) {
-      borderColor = cs.outlineVariant;
       bgColor = cs.surfaceContainerHighest.withValues(alpha: 0.3);
     } else if (isOverdue) {
-      borderColor = Colors.orange.withValues(alpha: 0.6);
-      bgColor = Colors.orange.withValues(alpha: 0.05);
+      bgColor = Colors.orange.withValues(alpha: 0.08);
     } else if (isDueToday) {
-      borderColor = const Color(0xFFF59E0B).withValues(alpha: 0.6);
-      bgColor = const Color(0xFFF59E0B).withValues(alpha: 0.05);
+      bgColor = reminderYellow.withValues(alpha: isDark ? 0.12 : 0.06);
     } else {
-      borderColor = const Color(0xFFF59E0B).withValues(alpha: 0.3);
-      bgColor = Colors.transparent;
+      bgColor = reminderYellow.withValues(alpha: isDark ? 0.07 : 0.03);
     }
 
     final dueDateStr = due != null
         ? (isDueToday
             ? 'Today'
             : isOverdue
-                ? 'Due ${DateFormat('MMM d').format(due)}'
-                : DateFormat('MMM d').format(due))
+                ? 'Due ${DateFormat('MMM d, EEE').format(due)}'
+                : DateFormat('MMM d, EEE').format(due))
         : '';
 
     final catObj = txCategories.cast<WalletCategory?>().firstWhere(
@@ -2108,188 +2134,205 @@ class _ReminderListItem extends StatelessWidget {
             )
         : null;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedOpacity(
-          duration: const Duration(milliseconds: 200),
-          opacity: reminder.isDone ? 0.5 : 1.0,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: bgColor,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: borderColor, width: 1.2),
-            ),
-            child: Row(
-              children: [
-                // ── Bell icon ───────────────────────────────────────────
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: reminder.isDone
-                        ? cs.outlineVariant.withValues(alpha: 0.3)
-                        : const Color(0xFFF59E0B).withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(10),
+    return Dismissible(
+      key: Key('reminder_${reminder.id}'),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        margin: const EdgeInsets.symmetric(horizontal: 0, vertical: 0),
+        decoration: BoxDecoration(
+          color: Colors.red,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Icon(Icons.delete, color: Colors.white),
+      ),
+      confirmDismiss: (_) async => true,
+      onDismissed: (_) => onDelete(),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 0),
+        child: GestureDetector(
+          onTap: onTap,
+          child: AnimatedOpacity(
+            duration: const Duration(milliseconds: 200),
+            opacity: reminder.isDone ? 0.5 : 1.0,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: bgColor,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  // ── Bell icon ───────────────────────────────────────────
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: reminder.isDone
+                          ? cs.outlineVariant.withValues(alpha: 0.3)
+                          : reminderYellow.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      reminder.isDone
+                          ? Icons.notifications_off_outlined
+                          : isOverdue
+                              ? Icons.warning_amber_rounded
+                              : Icons.notifications_active_rounded,
+                      size: 20,
+                      color: reminder.isDone
+                          ? cs.onSurfaceVariant
+                          : isOverdue
+                              ? Colors.orange.shade700
+                              : reminderYellow,
+                    ),
                   ),
-                  child: Icon(
-                    reminder.isDone
-                        ? Icons.notifications_off_outlined
-                        : isOverdue
-                            ? Icons.warning_amber_rounded
-                            : Icons.notifications_active_rounded,
-                    size: 20,
-                    color: reminder.isDone
-                        ? cs.onSurfaceVariant
-                        : isOverdue
-                            ? Colors.orange.shade700
-                            : const Color(0xFFF59E0B),
-                  ),
-                ),
-                const SizedBox(width: 10),
+                  const SizedBox(width: 10),
 
-                // ── Info ────────────────────────────────────────────────
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              reminder.title,
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: reminder.isDone
-                                    ? cs.onSurfaceVariant
-                                    : cs.onSurface,
-                                decoration: reminder.isDone
-                                    ? TextDecoration.lineThrough
-                                    : null,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          // Done badge
-                          if (reminder.isDone)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.green.withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                'Done',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.green.shade700,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 3),
-                      Row(
-                        children: [
-                          Icon(catIcon,
-                              size: 11,
-                              color: typeColor.withValues(alpha: 0.7)),
-                          const SizedBox(width: 4),
-                          Text(
-                            reminder.category,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: cs.onSurfaceVariant,
-                            ),
-                          ),
-                          if (account != null) ...[
-                            Text(' · ',
-                                style: TextStyle(
-                                    fontSize: 11, color: cs.onSurfaceVariant)),
-                            Icon(Icons.account_balance_wallet_outlined,
-                                size: 11, color: cs.onSurfaceVariant),
-                            const SizedBox(width: 3),
+                  // ── Info ────────────────────────────────────────────────
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
                             Expanded(
                               child: Text(
-                                account.name,
+                                reminder.title,
                                 style: TextStyle(
-                                  fontSize: 11,
-                                  color: cs.onSurfaceVariant,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: reminder.isDone
+                                      ? cs.onSurfaceVariant
+                                      : cs.onSurface,
+                                  decoration: reminder.isDone
+                                      ? TextDecoration.lineThrough
+                                      : null,
                                 ),
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
+                            // Done badge
+                            if (reminder.isDone)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  'Done',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.green.shade700,
+                                  ),
+                                ),
+                              ),
                           ],
-                        ],
+                        ),
+                        const SizedBox(height: 3),
+                        Row(
+                          children: [
+                            Icon(catIcon,
+                                size: 11,
+                                color: typeColor.withValues(alpha: 0.7)),
+                            const SizedBox(width: 4),
+                            Text(
+                              reminder.category,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: cs.onSurfaceVariant,
+                              ),
+                            ),
+                            if (account != null) ...[
+                              Text(' · ',
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      color: cs.onSurfaceVariant)),
+                              Icon(Icons.account_balance_wallet_outlined,
+                                  size: 11, color: cs.onSurfaceVariant),
+                              const SizedBox(width: 3),
+                              Expanded(
+                                child: Text(
+                                  account.name,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: cs.onSurfaceVariant,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+
+                  // ── Amount + due date ────────────────────────────────────
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      if (reminder.amount > 0)
+                        Text(
+                          '${isIncome ? '+' : '−'}${currencySymbolNotifier.value}${_fmtR(reminder.amount)}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: reminder.isDone
+                                ? cs.onSurfaceVariant
+                                : typeColor,
+                          ),
+                        )
+                      else
+                        Text(
+                          '—',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                      const SizedBox(height: 2),
+                      Text(
+                        dueDateStr,
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w500,
+                          color: isOverdue
+                              ? Colors.orange.shade700
+                              : isDueToday
+                                  ? reminderYellow
+                                  : cs.onSurfaceVariant,
+                        ),
                       ),
+                      if (reminder.repeat != ReminderRepeat.none)
+                        Row(
+                          children: [
+                            Icon(Icons.repeat,
+                                size: 10, color: cs.onSurfaceVariant),
+                            const SizedBox(width: 2),
+                            Text(
+                              reminder.repeat.label,
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: cs.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
                     ],
                   ),
-                ),
-                const SizedBox(width: 8),
-
-                // ── Amount + due date ────────────────────────────────────
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    if (reminder.amount > 0)
-                      Text(
-                        '${isIncome ? '+' : '−'}${currencySymbolNotifier.value}${_fmtR(reminder.amount)}',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color:
-                              reminder.isDone ? cs.onSurfaceVariant : typeColor,
-                        ),
-                      )
-                    else
-                      Text(
-                        '—',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: cs.onSurfaceVariant,
-                        ),
-                      ),
-                    const SizedBox(height: 2),
-                    Text(
-                      dueDateStr,
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w500,
-                        color: isOverdue
-                            ? Colors.orange.shade700
-                            : isDueToday
-                                ? const Color(0xFFF59E0B)
-                                : cs.onSurfaceVariant,
-                      ),
-                    ),
-                    if (reminder.repeat != ReminderRepeat.none)
-                      Row(
-                        children: [
-                          Icon(Icons.repeat,
-                              size: 10, color: cs.onSurfaceVariant),
-                          const SizedBox(width: 2),
-                          Text(
-                            reminder.repeat.label,
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: cs.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ),
-                  ],
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
-      ),
-    );
+      ), // Padding
+    ); // Dismissible
   }
 }
