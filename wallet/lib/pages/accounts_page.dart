@@ -1714,11 +1714,45 @@ class _AccountFormSheetState extends State<_AccountFormSheet> {
               ),
             ),
           ),
-          Text(
-            isEdit ? 'Edit Account' : 'New Account',
-            style: theme.textTheme.titleLarge
-                ?.copyWith(fontWeight: FontWeight.bold),
-          ),
+          Builder(builder: (context) {
+            // Resolve icon and color for the currently selected account type.
+            final selType = _registryLoaded && _selectedType != null
+                ? _accountTypes.firstWhere(
+                    (t) => t.name == _selectedType,
+                    orElse: () => _accountTypes.isNotEmpty
+                        ? _accountTypes.first
+                        : WalletCategory(
+                            name: _selectedType!,
+                            groupType: kCategoryGroupAccountType,
+                            icon: 'wallet',
+                            colorHex: '#6366F1',
+                          ),
+                  )
+                : null;
+            final typeIcon =
+                selType?.iconData ?? Icons.account_balance_wallet_outlined;
+            final typeColor = selType?.color ?? theme.colorScheme.primary;
+            return Row(
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: typeColor.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(typeIcon, color: typeColor, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  isEdit ? 'Edit Account' : 'New Account',
+                  style: theme.textTheme.titleLarge
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ],
+            );
+          }),
           const SizedBox(height: 20),
 
           // ── Name field — isolated: typing here only rebuilds this widget ──
@@ -3587,7 +3621,8 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
                           style: TextStyle(color: theme.colorScheme.outline),
                         ),
                       )
-                    : _buildGroupedList(_filteredTransactions, theme),
+                    : _buildGroupedList(
+                        _filteredTransactions, theme, typeColor),
           ),
         ],
       ),
@@ -3607,7 +3642,8 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
     widget.onTransactionChanged?.call();
   }
 
-  Widget _buildGroupedList(List<WalletTransaction> txs, ThemeData theme) {
+  Widget _buildGroupedList(
+      List<WalletTransaction> txs, ThemeData theme, Color typeColor) {
     // ── Group by calendar date "yyyy-MM-dd", sorted DESC ───────────────────
     final Map<String, List<WalletTransaction>> groups = {};
     for (final tx in txs) {
@@ -3797,11 +3833,9 @@ class _AccountDetailSheetState extends State<_AccountDetailSheet> {
           final isTransferOut = outTx.accountId == widget.account.id;
           final transferLabel = isTransferOut ? 'Transfer Out' : 'Transfer In';
           final transferAmountPrefix = isTransferOut ? '−' : '+';
-          final transferColor = Theme.of(context).colorScheme.primary;
-          final transferBgColor =
-              Theme.of(context).colorScheme.primaryContainer;
-          final transferFgColor =
-              Theme.of(context).colorScheme.onPrimaryContainer;
+          final transferColor = typeColor;
+          final transferBgColor = typeColor.withValues(alpha: 0.15);
+          final transferFgColor = typeColor;
           final transferIcon = isTransferOut
               ? Icons.arrow_upward_rounded
               : Icons.arrow_downward_rounded;
