@@ -13,7 +13,6 @@ import 'package:wallet/pages/settings_page.dart';
 import 'package:wallet/pages/category_manager_page.dart';
 import 'package:wallet/pages/faq_page.dart';
 import 'package:wallet/pages/feedback_page.dart';
-import 'package:wallet/pages/trash_bin_page.dart';
 import 'package:wallet/models/transaction_model.dart';
 import 'package:wallet/models/reminder_model.dart';
 
@@ -901,17 +900,9 @@ class _WalletDrawer extends StatefulWidget {
 }
 
 class _WalletDrawerState extends State<_WalletDrawer> {
-  int _trashCount = 0;
-
   @override
   void initState() {
     super.initState();
-    _loadTrashCount();
-  }
-
-  Future<void> _loadTrashCount() async {
-    final count = await DatabaseHelper.instance.getTrashCount();
-    if (mounted) setState(() => _trashCount = count);
   }
 
   @override
@@ -1080,7 +1071,12 @@ class _WalletDrawerState extends State<_WalletDrawer> {
                     Navigator.pop(context);
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const SettingsPage()),
+                      MaterialPageRoute(
+                        builder: (_) => SettingsPage(
+                          onDataCleared: widget.onDataCleared,
+                          onAccountRestored: widget.onAccountRestored,
+                        ),
+                      ),
                     );
                   },
                 ),
@@ -1095,7 +1091,6 @@ class _WalletDrawerState extends State<_WalletDrawer> {
                       MaterialPageRoute(
                           builder: (_) => const CategoryManagerPage()),
                     ).then((_) {
-                      _loadTrashCount();
                       widget.onCategoryChanged();
                     });
                   },
@@ -1136,66 +1131,6 @@ class _WalletDrawerState extends State<_WalletDrawer> {
                       context,
                       MaterialPageRoute(builder: (_) => const FeedbackPage()),
                     );
-                  },
-                ),
-
-                const _DrawerDivider(),
-
-                // SYSTEM ACTIONS
-                _SectionHeader(label: 'System Actions'),
-                _NavTile(
-                  icon: Icons.upload_outlined,
-                  selectedIcon: Icons.upload,
-                  label: 'Export Data',
-                  onTap: () {
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Export coming soon.')),
-                    );
-                  },
-                ),
-                _NavTile(
-                  icon: Icons.download_outlined,
-                  selectedIcon: Icons.download,
-                  label: 'Import Data',
-                  onTap: () {
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Import coming soon.')),
-                    );
-                  },
-                ),
-
-                // ── Trash Bin ───────────────────────────────────────────────
-                _NavTileWithBadge(
-                  icon: Icons.delete_outline,
-                  selectedIcon: Icons.delete,
-                  label: 'Trash',
-                  badgeCount: _trashCount,
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const TrashBinPage()),
-                    ).then((_) {
-                      _loadTrashCount();
-                      widget.onAccountRestored();
-                    });
-                  },
-                ),
-
-                _NavTile(
-                  icon: Icons.delete_forever_outlined,
-                  selectedIcon: Icons.delete_forever,
-                  label: 'Clear All Data',
-                  destructive: true,
-                  onTap: () {
-                    // Grab a stable reference *before* the drawer closes —
-                    // once popped, the drawer's own context is deactivated
-                    // and can no longer be used to look up ancestors.
-                    final messenger = ScaffoldMessenger.of(context);
-                    Navigator.pop(context);
-                    _showClearDataDialog(context, messenger);
                   },
                 ),
 
@@ -1250,38 +1185,6 @@ class _WalletDrawerState extends State<_WalletDrawer> {
           FilledButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Rate Now'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showClearDataDialog(
-      BuildContext context, ScaffoldMessengerState messenger) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Clear All Data'),
-        content: const Text(
-          'This will permanently delete all accounts, transactions, and trash. Are you sure?',
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () async {
-              await DatabaseHelper.instance.clearAllData();
-              if (ctx.mounted) {
-                Navigator.pop(ctx);
-                messenger.showSnackBar(
-                  const SnackBar(content: Text('All data cleared.')),
-                );
-              }
-              _loadTrashCount();
-              widget.onDataCleared();
-            },
-            child: const Text('Clear'),
           ),
         ],
       ),
@@ -1397,6 +1300,7 @@ class _NavTile extends StatelessWidget {
     required this.label,
     required this.onTap,
     this.selected = false,
+    // ignore: unused_element_parameter
     this.destructive = false,
   });
 
@@ -1438,6 +1342,7 @@ class _NavTile extends StatelessWidget {
 
 // ── Nav tile with a red count badge (used for Trash Bin) ──────────────────────
 
+// ignore: unused_element
 class _NavTileWithBadge extends StatelessWidget {
   final IconData icon;
   final IconData selectedIcon;

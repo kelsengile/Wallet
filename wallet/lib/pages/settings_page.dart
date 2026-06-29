@@ -1,12 +1,26 @@
 import 'package:flutter/material.dart';
 import '../main.dart' show themeModeNotifier, setDarkMode;
 import '../currency.dart';
+import '../database/database_helper.dart';
+import 'trash_bin_page.dart';
 
 /// Settings page — appearance, currency, notifications, etc.
 /// Extend this file to add real preferences backed by the `settings` table
 /// already present in [DatabaseHelper].
 class SettingsPage extends StatefulWidget {
-  const SettingsPage({super.key});
+  /// Called after "Clear All Data" wipes the database so the home page can
+  /// refresh its cached state immediately.
+  final VoidCallback? onDataCleared;
+
+  /// Called after the user leaves the Trash Bin page so the home page can
+  /// refresh accounts (e.g. a restored account should reappear).
+  final VoidCallback? onAccountRestored;
+
+  const SettingsPage({
+    super.key,
+    this.onDataCleared,
+    this.onAccountRestored,
+  });
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -14,6 +28,18 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   bool _notificationsEnabled = true;
+  int _trashCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTrashCount();
+  }
+
+  Future<void> _loadTrashCount() async {
+    final count = await DatabaseHelper.instance.getTrashCount();
+    if (mounted) setState(() => _trashCount = count);
+  }
 
   static const _currencyLabels = {
     'PHP': 'PHP (₱)',
@@ -126,6 +152,60 @@ class _SettingsPageState extends State<SettingsPage> {
                     const SnackBar(content: Text('Import coming soon.')),
                   ),
                 ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      const Icon(Icons.delete_outline, color: Colors.red),
+                      if (_trashCount > 0)
+                        Positioned(
+                          top: -4,
+                          right: -6,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              _trashCount > 99 ? '99+' : '$_trashCount',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                                height: 1.2,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  title: const Text('Trash Bin',
+                      style: TextStyle(color: Colors.red)),
+                  subtitle: const Text('View and restore deleted items'),
+                  trailing: const Icon(Icons.chevron_right, color: Colors.red),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const TrashBinPage()),
+                    ).then((_) {
+                      _loadTrashCount();
+                      widget.onAccountRestored?.call();
+                    });
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.delete_forever_outlined,
+                      color: Colors.red),
+                  title: const Text('Clear All Data',
+                      style: TextStyle(color: Colors.red)),
+                  subtitle: const Text('Permanently delete everything'),
+                  trailing: const Icon(Icons.chevron_right, color: Colors.red),
+                  onTap: () => _showClearDataDialog(context),
+                ),
               ],
             ),
           ),
@@ -140,6 +220,40 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
           const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  void _showClearDataDialog(BuildContext context) {
+    final messenger = ScaffoldMessenger.of(context);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Clear All Data'),
+        content: const Text(
+          'This will permanently delete all accounts, transactions, and trash. Are you sure?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () async {
+              await DatabaseHelper.instance.clearAllData();
+              if (ctx.mounted) {
+                Navigator.pop(ctx);
+                messenger.showSnackBar(
+                  const SnackBar(content: Text('All data cleared.')),
+                );
+              }
+              _loadTrashCount();
+              widget.onDataCleared?.call();
+            },
+            child: const Text('Clear'),
+          ),
         ],
       ),
     );
