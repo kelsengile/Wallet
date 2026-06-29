@@ -1427,12 +1427,8 @@ class _CalendarDatePickerDialogState extends State<_CalendarDatePickerDialog> {
     final primary = widget.accentColor;
     final now = DateTime.now();
 
-    final onForward = (_calendarMonth.year > now.year ||
-            (_calendarMonth.year == now.year &&
-                _calendarMonth.month >= now.month))
-        ? null
-        : () => setState(() => _calendarMonth =
-            DateTime(_calendarMonth.year, _calendarMonth.month + 1));
+    final onForward = () => setState(() => _calendarMonth =
+        DateTime(_calendarMonth.year, _calendarMonth.month + 1));
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -1467,6 +1463,7 @@ class _CalendarDatePickerDialogState extends State<_CalendarDatePickerDialog> {
                   constraints: const BoxConstraints(),
                   icon: Icon(
                     Icons.chevron_right,
+                    // ignore: unnecessary_null_comparison
                     color: onForward == null
                         ? theme.colorScheme.onSurface.withValues(alpha: 0.25)
                         : null,
@@ -1512,7 +1509,6 @@ class _CalendarDatePickerDialogState extends State<_CalendarDatePickerDialog> {
                         return const Expanded(child: SizedBox(height: 36));
                       }
 
-                      final isFuture = d.isAfter(now);
                       final isSelected = _isSameDay(d, _selected);
                       final isToday = _isSameDay(d, now);
 
@@ -1526,16 +1522,9 @@ class _CalendarDatePickerDialogState extends State<_CalendarDatePickerDialog> {
                         textColor = primary;
                       }
 
-                      if (isFuture) {
-                        textColor =
-                            theme.colorScheme.onSurface.withValues(alpha: 0.25);
-                      }
-
                       return Expanded(
                         child: GestureDetector(
-                          onTap: isFuture
-                              ? null
-                              : () => setState(() => _selected = d),
+                          onTap: () => setState(() => _selected = d),
                           child: Container(
                             height: 36,
                             decoration: BoxDecoration(

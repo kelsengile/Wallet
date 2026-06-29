@@ -118,8 +118,7 @@ class HistoryPageState extends State<HistoryPage> {
   bool get _canGoForward {
     if (_filterMode == _FilterMode.allTime || _filterMode == _FilterMode.custom)
       return false;
-    final now = DateTime.now();
-    return _periodEnd.isBefore(DateTime(now.year, now.month, now.day + 1));
+    return true;
   }
 
   void _goBack() {
@@ -1453,30 +1452,24 @@ class _PeriodPickerDialogState extends State<_PeriodPickerDialog> {
                       labelFontSize = 15;
                       onBack = () => setState(() => _calendarMonth = DateTime(
                           _calendarMonth.year - 1, _calendarMonth.month));
-                      onForward = _calendarMonth.year >= now.year
-                          ? null
-                          : () => setState(() => _calendarMonth = DateTime(
+                      onForward = () => setState(() => _calendarMonth =
+                          DateTime(
                               _calendarMonth.year + 1, _calendarMonth.month));
                     case _FilterMode.yearly:
                       navLabel = '$decadeStart – ${decadeStart + 9}';
                       labelFontSize = 15;
                       onBack = () => setState(() => _calendarMonth =
                           DateTime(_calendarMonth.year - 10, 1));
-                      onForward = decadeStart + 9 >= now.year
-                          ? null
-                          : () => setState(() => _calendarMonth =
-                              DateTime(_calendarMonth.year + 10, 1));
+                      onForward = () => setState(() => _calendarMonth =
+                          DateTime(_calendarMonth.year + 10, 1));
                     default:
                       // Daily / Weekly / Custom — navigate by month
                       navLabel = _calendarMonthLabel();
                       labelFontSize = 13;
                       onBack = () => setState(() => _calendarMonth = DateTime(
                           _calendarMonth.year, _calendarMonth.month - 1));
-                      onForward = (_calendarMonth.year > now.year ||
-                              (_calendarMonth.year == now.year &&
-                                  _calendarMonth.month >= now.month))
-                          ? null
-                          : () => setState(() => _calendarMonth = DateTime(
+                      onForward = () => setState(() => _calendarMonth =
+                          DateTime(
                               _calendarMonth.year, _calendarMonth.month + 1));
                   }
 
@@ -1503,6 +1496,7 @@ class _PeriodPickerDialogState extends State<_PeriodPickerDialog> {
                         constraints: const BoxConstraints(),
                         icon: Icon(
                           Icons.chevron_right,
+                          // ignore: unnecessary_null_comparison
                           color: onForward == null
                               ? theme.colorScheme.onSurface
                                   .withValues(alpha: 0.25)
@@ -1578,9 +1572,7 @@ class _PeriodPickerDialogState extends State<_PeriodPickerDialog> {
                                     child: SizedBox(height: 36));
                               }
 
-                              final isFuture = d.isAfter(now);
-                              final highlighted =
-                                  !isFuture && _isHighlighted(d);
+                              final highlighted = _isHighlighted(d);
                               final isStart = _customStart != null &&
                                   _isSameDay(d, _customStart!);
                               final isEnd = _customEnd != null &&
@@ -1600,15 +1592,9 @@ class _PeriodPickerDialogState extends State<_PeriodPickerDialog> {
                                 textColor = primary;
                               }
 
-                              if (isFuture) {
-                                textColor = theme.colorScheme.onSurface
-                                    .withValues(alpha: 0.25);
-                              }
-
                               return Expanded(
                                 child: GestureDetector(
-                                  onTap:
-                                      isFuture ? null : () => _onDayTapped(d),
+                                  onTap: () => _onDayTapped(d),
                                   child: Container(
                                     height: 36,
                                     decoration: BoxDecoration(
@@ -1660,31 +1646,23 @@ class _PeriodPickerDialogState extends State<_PeriodPickerDialog> {
                           return Row(
                             children: List.generate(4, (col) {
                               final monthIdx = row * 4 + col + 1;
-                              final isFuture = _calendarMonth.year > now.year ||
-                                  (_calendarMonth.year == now.year &&
-                                      monthIdx > now.month);
                               final isSelected =
                                   _anchor.year == _calendarMonth.year &&
                                       _anchor.month == monthIdx;
                               final isCurrentMonth =
                                   _calendarMonth.year == now.year &&
                                       monthIdx == now.month;
-                              Color textColor = isFuture
-                                  ? theme.colorScheme.onSurface
-                                      .withValues(alpha: 0.25)
-                                  : isSelected
+                              Color textColor = isSelected
+                                  ? primary
+                                  : isCurrentMonth
                                       ? primary
-                                      : isCurrentMonth
-                                          ? primary
-                                          : theme.colorScheme.onSurface;
+                                      : theme.colorScheme.onSurface;
                               return Expanded(
                                 child: GestureDetector(
-                                  onTap: isFuture
-                                      ? null
-                                      : () => setState(() {
-                                            _anchor = DateTime(
-                                                _calendarMonth.year, monthIdx);
-                                          }),
+                                  onTap: () => setState(() {
+                                    _anchor =
+                                        DateTime(_calendarMonth.year, monthIdx);
+                                  }),
                                   child: Container(
                                     height: 56,
                                     margin: const EdgeInsets.all(3),
@@ -1724,22 +1702,16 @@ class _PeriodPickerDialogState extends State<_PeriodPickerDialog> {
                       const rowSizes = [4, 4, 2];
 
                       Widget yearCell(int yr) {
-                        final isFuture = yr > now.year;
                         final isSelected = _anchor.year == yr;
                         final isCurrentYear = yr == now.year;
-                        final Color textColor = isFuture
-                            ? theme.colorScheme.onSurface
-                                .withValues(alpha: 0.25)
-                            : isSelected
+                        final Color textColor = isSelected
+                            ? primary
+                            : isCurrentYear
                                 ? primary
-                                : isCurrentYear
-                                    ? primary
-                                    : theme.colorScheme.onSurface;
+                                : theme.colorScheme.onSurface;
                         return Expanded(
                           child: GestureDetector(
-                            onTap: isFuture
-                                ? null
-                                : () => setState(() => _anchor = DateTime(yr)),
+                            onTap: () => setState(() => _anchor = DateTime(yr)),
                             child: Container(
                               height: 56,
                               margin: const EdgeInsets.all(3),
@@ -1824,9 +1796,7 @@ class _PeriodPickerDialogState extends State<_PeriodPickerDialog> {
                                     child: SizedBox(height: 36));
                               }
 
-                              final isFuture = d.isAfter(now);
-                              final highlighted =
-                                  !isFuture && _isHighlighted(d);
+                              final highlighted = _isHighlighted(d);
                               final isToday = _isSameDay(d, now);
 
                               Color? bgColor;
@@ -1839,18 +1809,11 @@ class _PeriodPickerDialogState extends State<_PeriodPickerDialog> {
                                 textColor = primary;
                               }
 
-                              if (isFuture) {
-                                textColor = theme.colorScheme.onSurface
-                                    .withValues(alpha: 0.25);
-                              }
-
                               return Expanded(
                                 child: GestureDetector(
-                                  onTap: isFuture
-                                      ? null
-                                      : () {
-                                          _onDayTapped(d);
-                                        },
+                                  onTap: () {
+                                    _onDayTapped(d);
+                                  },
                                   child: Container(
                                     height: 36,
                                     decoration: BoxDecoration(
