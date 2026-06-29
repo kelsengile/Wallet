@@ -81,7 +81,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 15, // bumped to 15 to add reminder_transactions table
+      version: 16, // bumped to 16 to add card-theme columns to accounts
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -90,15 +90,18 @@ class DatabaseHelper {
   Future<void> _onCreate(Database db, int version) async {
     await db.execute('''
       CREATE TABLE accounts (
-        id           INTEGER PRIMARY KEY AUTOINCREMENT,
-        name         TEXT    NOT NULL,
-        balance      REAL    NOT NULL DEFAULT 0.0,
-        type         TEXT    NOT NULL,
-        category     TEXT    NOT NULL DEFAULT 'personal',
-        color_hex    TEXT    NOT NULL DEFAULT '#6366F1',
-        icon         TEXT    NOT NULL DEFAULT 'wallet',
-        note_header  TEXT    NOT NULL DEFAULT '',
-        note_body    TEXT    NOT NULL DEFAULT ''
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        name            TEXT    NOT NULL,
+        balance         REAL    NOT NULL DEFAULT 0.0,
+        type            TEXT    NOT NULL,
+        category        TEXT    NOT NULL DEFAULT 'personal',
+        color_hex       TEXT    NOT NULL DEFAULT '#6366F1',
+        icon            TEXT    NOT NULL DEFAULT 'wallet',
+        note_header     TEXT    NOT NULL DEFAULT '',
+        note_body       TEXT    NOT NULL DEFAULT '',
+        theme_name      TEXT    NOT NULL DEFAULT '',
+        theme_front_img TEXT    NOT NULL DEFAULT '',
+        theme_back_img  TEXT    NOT NULL DEFAULT ''
       )
     ''');
 
@@ -146,17 +149,20 @@ class DatabaseHelper {
     /// Soft-deleted accounts. Mirrors the accounts table plus `deleted_at`.
     await db.execute('''
       CREATE TABLE trash_accounts (
-        id           INTEGER PRIMARY KEY AUTOINCREMENT,
-        orig_id      INTEGER NOT NULL,
-        name         TEXT    NOT NULL,
-        balance      REAL    NOT NULL DEFAULT 0.0,
-        type         TEXT    NOT NULL,
-        category     TEXT    NOT NULL DEFAULT 'personal',
-        color_hex    TEXT    NOT NULL DEFAULT '#6366F1',
-        icon         TEXT    NOT NULL DEFAULT 'wallet',
-        note_header  TEXT    NOT NULL DEFAULT '',
-        note_body    TEXT    NOT NULL DEFAULT '',
-        deleted_at   TEXT    NOT NULL
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        orig_id         INTEGER NOT NULL,
+        name            TEXT    NOT NULL,
+        balance         REAL    NOT NULL DEFAULT 0.0,
+        type            TEXT    NOT NULL,
+        category        TEXT    NOT NULL DEFAULT 'personal',
+        color_hex       TEXT    NOT NULL DEFAULT '#6366F1',
+        icon            TEXT    NOT NULL DEFAULT 'wallet',
+        note_header     TEXT    NOT NULL DEFAULT '',
+        note_body       TEXT    NOT NULL DEFAULT '',
+        theme_name      TEXT    NOT NULL DEFAULT '',
+        theme_front_img TEXT    NOT NULL DEFAULT '',
+        theme_back_img  TEXT    NOT NULL DEFAULT '',
+        deleted_at      TEXT    NOT NULL
       )
     ''');
 
@@ -933,6 +939,28 @@ class DatabaseHelper {
         )
       ''');
     }
+
+    if (oldVersion < 16) {
+      // Add card-theme columns to accounts and trash_accounts.
+      await db.execute(
+        "ALTER TABLE accounts ADD COLUMN theme_name      TEXT NOT NULL DEFAULT ''",
+      );
+      await db.execute(
+        "ALTER TABLE accounts ADD COLUMN theme_front_img TEXT NOT NULL DEFAULT ''",
+      );
+      await db.execute(
+        "ALTER TABLE accounts ADD COLUMN theme_back_img  TEXT NOT NULL DEFAULT ''",
+      );
+      await db.execute(
+        "ALTER TABLE trash_accounts ADD COLUMN theme_name      TEXT NOT NULL DEFAULT ''",
+      );
+      await db.execute(
+        "ALTER TABLE trash_accounts ADD COLUMN theme_front_img TEXT NOT NULL DEFAULT ''",
+      );
+      await db.execute(
+        "ALTER TABLE trash_accounts ADD COLUMN theme_back_img  TEXT NOT NULL DEFAULT ''",
+      );
+    }
   }
 
   /// Ensures any account type/category or transaction category already
@@ -1312,6 +1340,9 @@ class DatabaseHelper {
         'icon': row['icon'],
         'note_header': row['note_header'] ?? '',
         'note_body': row['note_body'] ?? '',
+        'theme_name': row['theme_name'] ?? '',
+        'theme_front_img': row['theme_front_img'] ?? '',
+        'theme_back_img': row['theme_back_img'] ?? '',
         'deleted_at': now,
       });
     }

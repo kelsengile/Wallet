@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -6,8 +7,10 @@ import 'package:intl/intl.dart';
 import '../currency.dart';
 import '../database/database_helper.dart';
 import '../models/account_model.dart';
+import '../models/card_theme_model.dart';
 import '../models/transaction_model.dart';
 import '../models/category_model.dart';
+import '../widgets/card_theme_picker.dart';
 import '../widgets/transaction_receipt_dialog.dart';
 
 // ── Number formatter ───────────────────────────────────────────────────────────
@@ -1112,6 +1115,77 @@ Widget _applyCornerClip(String cornerStyle, Widget child) {
   }
 }
 
+// ── Account card overlay painter ───────────────────────────────────────────────
+//
+// Draws the decorative pattern on top of the card gradient.  The same patterns
+// are used in card_theme_picker.dart so previews exactly match real cards.
+
+class _CardOverlayPainter extends CustomPainter {
+  final CardOverlayPattern pattern;
+  const _CardOverlayPainter(this.pattern);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = Colors.white.withValues(alpha: 0.09);
+    switch (pattern) {
+      case CardOverlayPattern.circles:
+        canvas.drawCircle(Offset(size.width + 22, -22), 50, paint);
+        canvas.drawCircle(Offset(-10, size.height + 22), 37.5,
+            Paint()..color = Colors.white.withValues(alpha: 0.06));
+        break;
+      case CardOverlayPattern.diagonalStripes:
+        final sp = Paint()
+          ..color = Colors.white.withValues(alpha: 0.06)
+          ..strokeWidth = 14
+          ..style = PaintingStyle.stroke;
+        for (double x = -size.height; x < size.width + size.height; x += 28) {
+          canvas.drawLine(
+              Offset(x, 0), Offset(x + size.height, size.height), sp);
+        }
+        break;
+      case CardOverlayPattern.grid:
+        final gp = Paint()
+          ..color = Colors.white.withValues(alpha: 0.07)
+          ..strokeWidth = 1;
+        for (double x = 0; x < size.width; x += 22) {
+          canvas.drawLine(Offset(x, 0), Offset(x, size.height), gp);
+        }
+        for (double y = 0; y < size.height; y += 22) {
+          canvas.drawLine(Offset(0, y), Offset(size.width, y), gp);
+        }
+        break;
+      case CardOverlayPattern.rings:
+        final rp = Paint()
+          ..color = Colors.white.withValues(alpha: 0.07)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1;
+        final center = Offset(size.width * 0.7, size.height * 0.3);
+        for (double r = 30; r < 160; r += 30) {
+          canvas.drawCircle(center, r, rp);
+        }
+        break;
+      case CardOverlayPattern.waves:
+        final wp = Paint()
+          ..color = Colors.white.withValues(alpha: 0.08)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5;
+        for (double y = 0; y < size.height + 24; y += 24) {
+          final path = Path()..moveTo(0, y);
+          for (double x = 0; x < size.width; x += 20) {
+            path.relativeQuadraticBezierTo(10, -12, 20, 0);
+          }
+          canvas.drawPath(path, wp);
+        }
+        break;
+      case CardOverlayPattern.none:
+        break;
+    }
+  }
+
+  @override
+  bool shouldRepaint(_CardOverlayPainter old) => old.pattern != pattern;
+}
+
 // ── Account card (inert) ───────────────────────────────────────────────────────
 //
 // Pure visual card with zero gesture handling. Used in reorder mode as the
@@ -1128,48 +1202,71 @@ class _AccountCardInert extends StatelessWidget {
     final accountColor = account.colorHex.isNotEmpty
         ? colorFromHex(account.colorHex)
         : const Color(0xFF6366F1);
-    final gradients = gradientForColor(accountColor, isDark: isDark);
     final registry = _registryNotifier.value;
     final cornerStyle = registry.typeCornerStyle(account.type);
     final br = registry.cardBorderRadius(account.type);
+
+    // ── Resolve card theme (mirrors _AccountCard) ─────────────────────────
+    final cardTheme = account.cardTheme;
+    final systemTheme = cardTheme.systemTheme;
+
+    // Gradient always derives from account color; system themes only change
+    // the overlay pattern so all cards of the same type share one color.
+    final List<Color> gradColors =
+        gradientForColor(accountColor, isDark: isDark);
+    const AlignmentGeometry gradBegin = Alignment.topLeft;
+    const AlignmentGeometry gradEnd = Alignment.bottomRight;
+    final CardOverlayPattern overlay =
+        systemTheme?.overlay ?? CardOverlayPattern.circles;
+    const Color onColor = Colors.white;
+    final String frontPhotoPath =
+        cardTheme.isCustomPhoto ? cardTheme.frontImagePath : '';
 
     Widget card = Container(
       width: 255,
       height: 155,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: gradients,
-        ),
+        gradient: frontPhotoPath.isNotEmpty
+            ? null
+            : LinearGradient(
+                begin: gradBegin, end: gradEnd, colors: gradColors),
+        color: frontPhotoPath.isNotEmpty ? Colors.black : null,
         borderRadius: isClipperCornerStyle(cornerStyle) ? null : br,
       ),
       child: Stack(
         children: [
-          Positioned(
-            right: -22,
-            top: -22,
-            child: Container(
-              width: 100,
-              height: 100,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.09),
+          if (frontPhotoPath.isNotEmpty)
+            Positioned.fill(
+              child: ClipRRect(
+                borderRadius:
+                    isClipperCornerStyle(cornerStyle) ? BorderRadius.zero : br,
+                child: Image.file(
+                  File(frontPhotoPath),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) =>
+                      Container(color: Colors.grey.shade800),
+                ),
               ),
             ),
-          ),
-          Positioned(
-            left: -10,
-            bottom: -22,
-            child: Container(
-              width: 75,
-              height: 75,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.06),
+          if (frontPhotoPath.isNotEmpty)
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.45),
+                    ],
+                  ),
+                ),
               ),
             ),
-          ),
+          if (frontPhotoPath.isEmpty)
+            Positioned.fill(
+              child: CustomPaint(painter: _CardOverlayPainter(overlay)),
+            ),
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -1180,8 +1277,8 @@ class _AccountCardInert extends StatelessWidget {
                   padding: const EdgeInsets.only(right: 8),
                   child: Text(
                     account.name,
-                    style: const TextStyle(
-                      color: Colors.white70,
+                    style: TextStyle(
+                      color: onColor.withValues(alpha: 0.7),
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
                       letterSpacing: 0.2,
@@ -1194,9 +1291,7 @@ class _AccountCardInert extends StatelessWidget {
                 Text(
                   '${currencySymbolNotifier.value} ${_fmt(account.balance)}',
                   style: TextStyle(
-                    color: account.balance >= 0
-                        ? Colors.white
-                        : Colors.red.shade200,
+                    color: account.balance >= 0 ? onColor : Colors.red.shade200,
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
                     letterSpacing: -0.5,
@@ -1207,13 +1302,13 @@ class _AccountCardInert extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
+                    color: onColor.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
                     account.category.toUpperCase(),
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: onColor,
                       fontSize: 8,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 1,
@@ -1301,50 +1396,82 @@ class _AccountCardState extends State<_AccountCard>
         ? colorFromHex(widget.account.colorHex)
         : const Color(0xFF6366F1);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final gradients = gradientForColor(accountColor, isDark: isDark);
     final registry = _registryNotifier.value;
     final cornerStyle = registry.typeCornerStyle(widget.account.type);
     final br = registry.cardBorderRadius(widget.account.type);
+
+    // ── Resolve card theme ────────────────────────────────────────────────
+    final cardTheme = widget.account.cardTheme;
+    final systemTheme = cardTheme.systemTheme;
+
+    // Gradient always derives from account color; system themes only change
+    // the overlay pattern so all cards of the same type share one color.
+    final List<Color> frontColors =
+        gradientForColor(accountColor, isDark: isDark);
+    const AlignmentGeometry frontBegin = Alignment.topLeft;
+    const AlignmentGeometry frontEnd = Alignment.bottomRight;
+
+    // Back face uses a slightly reversed direction for visual depth.
+    final List<Color> backColors =
+        gradientForColor(accountColor, isDark: isDark);
+    const AlignmentGeometry backBegin = Alignment.bottomRight;
+    const AlignmentGeometry backEnd = Alignment.topLeft;
+
+    final CardOverlayPattern overlay =
+        systemTheme?.overlay ?? CardOverlayPattern.circles;
+    const Color onColor = Colors.white;
+
+    final String frontPhotoPath =
+        cardTheme.isCustomPhoto ? cardTheme.frontImagePath : '';
+    final String backPhotoPath =
+        cardTheme.isCustomPhoto ? cardTheme.backImagePath : '';
 
     // ── Front face ────────────────────────────────────────────────────────
     Widget frontFace = Container(
       width: 255,
       height: 155,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: gradients,
-        ),
+        gradient: frontPhotoPath.isNotEmpty
+            ? null
+            : LinearGradient(
+                begin: frontBegin, end: frontEnd, colors: frontColors),
+        color: frontPhotoPath.isNotEmpty ? Colors.black : null,
         borderRadius: isClipperCornerStyle(cornerStyle) ? null : br,
       ),
       child: Stack(
         children: [
-          // Decorative circles
-          Positioned(
-            right: -22,
-            top: -22,
-            child: Container(
-              width: 100,
-              height: 100,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.09),
+          if (frontPhotoPath.isNotEmpty)
+            Positioned.fill(
+              child: ClipRRect(
+                borderRadius:
+                    isClipperCornerStyle(cornerStyle) ? BorderRadius.zero : br,
+                child: Image.file(
+                  File(frontPhotoPath),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) =>
+                      Container(color: Colors.grey.shade800),
+                ),
               ),
             ),
-          ),
-          Positioned(
-            left: -10,
-            bottom: -22,
-            child: Container(
-              width: 75,
-              height: 75,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.06),
+          if (frontPhotoPath.isNotEmpty)
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.45),
+                    ],
+                  ),
+                ),
               ),
             ),
-          ),
+          if (frontPhotoPath.isEmpty)
+            Positioned.fill(
+              child: CustomPaint(painter: _CardOverlayPainter(overlay)),
+            ),
           // Category icon (top-right corner)
           Positioned(
             top: 12,
@@ -1360,10 +1487,11 @@ class _AccountCardState extends State<_AccountCard>
                   width: 26,
                   height: 26,
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.15),
+                    color: onColor.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(7),
                   ),
-                  child: Icon(catIcon, color: Colors.white70, size: 15),
+                  child: Icon(catIcon,
+                      color: onColor.withValues(alpha: 0.7), size: 15),
                 );
               },
             ),
@@ -1379,8 +1507,8 @@ class _AccountCardState extends State<_AccountCard>
                   padding: const EdgeInsets.only(right: 36),
                   child: Text(
                     widget.account.name,
-                    style: const TextStyle(
-                      color: Colors.white70,
+                    style: TextStyle(
+                      color: onColor.withValues(alpha: 0.7),
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
                       letterSpacing: 0.2,
@@ -1394,7 +1522,7 @@ class _AccountCardState extends State<_AccountCard>
                   '${currencySymbolNotifier.value} ${_fmt(widget.account.balance)}',
                   style: TextStyle(
                     color: widget.account.balance >= 0
-                        ? Colors.white
+                        ? onColor
                         : Colors.red.shade200,
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
@@ -1406,13 +1534,13 @@ class _AccountCardState extends State<_AccountCard>
                   padding:
                       const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
+                    color: onColor.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
                     widget.account.category.toUpperCase(),
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: onColor,
                       fontSize: 8,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 1,
@@ -1431,40 +1559,47 @@ class _AccountCardState extends State<_AccountCard>
       width: 255,
       height: 155,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.bottomRight,
-          end: Alignment.topLeft,
-          colors: gradients,
-        ),
+        gradient: backPhotoPath.isNotEmpty
+            ? null
+            : LinearGradient(
+                begin: backBegin, end: backEnd, colors: backColors),
+        color: backPhotoPath.isNotEmpty ? Colors.black : null,
         borderRadius: isClipperCornerStyle(cornerStyle) ? null : br,
       ),
       child: Stack(
         children: [
-          // Decorative circles (mirrored)
-          Positioned(
-            left: -22,
-            top: -22,
-            child: Container(
-              width: 100,
-              height: 100,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.09),
+          if (backPhotoPath.isNotEmpty)
+            Positioned.fill(
+              child: ClipRRect(
+                borderRadius:
+                    isClipperCornerStyle(cornerStyle) ? BorderRadius.zero : br,
+                child: Image.file(
+                  File(backPhotoPath),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) =>
+                      Container(color: Colors.grey.shade800),
+                ),
               ),
             ),
-          ),
-          Positioned(
-            right: -10,
-            bottom: -22,
-            child: Container(
-              width: 75,
-              height: 75,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.06),
+          if (backPhotoPath.isNotEmpty)
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.45),
+                    ],
+                  ),
+                ),
               ),
             ),
-          ),
+          if (backPhotoPath.isEmpty)
+            Positioned.fill(
+              child: CustomPaint(painter: _CardOverlayPainter(overlay)),
+            ),
           // Magnetic stripe bar
           Positioned(
             top: 28,
@@ -1482,7 +1617,6 @@ class _AccountCardState extends State<_AccountCard>
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                // Note header inside the signature strip box
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1491,15 +1625,15 @@ class _AccountCardState extends State<_AccountCard>
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.15),
+                        color: onColor.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
                         (widget.account.noteHeader ?? '').isNotEmpty
                             ? widget.account.noteHeader!
                             : widget.account.name,
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: onColor,
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
                           letterSpacing: 0.3,
@@ -1513,7 +1647,7 @@ class _AccountCardState extends State<_AccountCard>
                       Text(
                         widget.account.noteBody!,
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.75),
+                          color: onColor.withValues(alpha: 0.75),
                           fontSize: 9,
                           fontWeight: FontWeight.w400,
                           height: 1.4,
@@ -1524,7 +1658,6 @@ class _AccountCardState extends State<_AccountCard>
                     ],
                   ],
                 ),
-                // Type icon + tap-to-view button
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.end,
@@ -1534,7 +1667,7 @@ class _AccountCardState extends State<_AccountCard>
                       builder: (context, registry, _) {
                         return Icon(
                           registry.typeIcon(widget.account.type),
-                          color: Colors.white70,
+                          color: onColor.withValues(alpha: 0.7),
                           size: 14,
                         );
                       },
@@ -1545,11 +1678,10 @@ class _AccountCardState extends State<_AccountCard>
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.2),
+                          color: onColor.withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Icon(Icons.open_in_new,
-                            size: 9, color: Colors.white),
+                        child: Icon(Icons.open_in_new, size: 9, color: onColor),
                       ),
                     ),
                   ],
@@ -1624,6 +1756,7 @@ class _AccountFormSheetState extends State<_AccountFormSheet> {
   late final TextEditingController _noteBodyCtrl;
   String? _selectedType;
   String? _selectedCategory;
+  late CardThemeModel _cardTheme;
 
   static const int _noteHeaderMaxChars = 30;
   static const int _noteBodyMaxChars = 120;
@@ -1646,6 +1779,7 @@ class _AccountFormSheetState extends State<_AccountFormSheet> {
     _noteBodyCtrl = TextEditingController(text: e?.noteBody ?? '');
     _selectedType = e?.type; // null = unset (new account)
     _selectedCategory = e?.category; // null = unset (new account)
+    _cardTheme = e?.cardTheme ?? const CardThemeModel();
     _loadRegistry();
   }
 
@@ -1683,6 +1817,36 @@ class _AccountFormSheetState extends State<_AccountFormSheet> {
 
   String _capitalize(String s) =>
       s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
+
+  /// Returns the color of the currently selected account type.
+  ///
+  /// When no type has been chosen yet:
+  ///   • Light mode → `colorScheme.primary` (unchanged behaviour)
+  ///   • Dark mode  → a muted dark-surface tone so the button/picker
+  ///                  doesn't blaze with an accent colour before the
+  ///                  user has actually picked a type.
+  Color _resolvedTypeColor(BuildContext context) {
+    if (!_registryLoaded || _selectedType == null) {
+      final theme = Theme.of(context);
+      if (theme.brightness == Brightness.dark) {
+        // Neutral dark fallback — visually calm, clearly tappable.
+        return const Color(0xFF5C5C6E);
+      }
+      return theme.colorScheme.primary;
+    }
+    final selType = _accountTypes.firstWhere(
+      (t) => t.name == _selectedType,
+      orElse: () => _accountTypes.isNotEmpty
+          ? _accountTypes.first
+          : WalletCategory(
+              name: _selectedType!,
+              groupType: kCategoryGroupAccountType,
+              icon: 'wallet',
+              colorHex: '#6366F1',
+            ),
+    );
+    return selType.color;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1731,7 +1895,7 @@ class _AccountFormSheetState extends State<_AccountFormSheet> {
                 : null;
             final typeIcon =
                 selType?.iconData ?? Icons.account_balance_wallet_outlined;
-            final typeColor = selType?.color ?? theme.colorScheme.primary;
+            final typeColor = _resolvedTypeColor(context);
             return Row(
               children: [
                 AnimatedContainer(
@@ -1897,6 +2061,39 @@ class _AccountFormSheetState extends State<_AccountFormSheet> {
             ),
           const SizedBox(height: 20),
 
+          // ── Card Theme ────────────────────────────────────────────────────
+          _ThemePickerRow(
+            currentTheme: _cardTheme,
+            previewAccount: Account(
+              name: _nameCtrl.text.trim().isEmpty
+                  ? 'Preview'
+                  : _nameCtrl.text.trim(),
+              balance: double.tryParse(_balanceCtrl.text.trim()) ?? 0,
+              type: _selectedType ?? (widget.existing?.type ?? ''),
+              category: _selectedCategory ??
+                  (widget.existing?.category ?? 'personal'),
+              colorHex: _selectedType != null && _accountTypes.isNotEmpty
+                  ? (_accountTypes
+                      .firstWhere(
+                        (t) => t.name == _selectedType,
+                        orElse: () => _accountTypes.first,
+                      )
+                      .colorHex)
+                  : (widget.existing?.colorHex ??
+                      // Dark mode: muted neutral so the picker row doesn't
+                      // show an accent swatch before a type is chosen.
+                      (Theme.of(context).brightness == Brightness.dark
+                          ? '#5C5C6E'
+                          : '#6366F1')),
+              icon: widget.existing?.icon ?? 'wallet',
+              themeName: _cardTheme.name,
+              themeFrontImg: _cardTheme.frontImagePath,
+              themeBackImg: _cardTheme.backImagePath,
+            ),
+            onThemeChanged: (t) => setState(() => _cardTheme = t),
+          ),
+          const SizedBox(height: 12),
+
           // ── Note section ──────────────────────────────────────────────
           _NoteBox(
             headerController: _noteHeaderCtrl,
@@ -1913,7 +2110,10 @@ class _AccountFormSheetState extends State<_AccountFormSheet> {
               icon: Icon(isEdit ? Icons.save : Icons.add),
               label: Text(isEdit ? 'Save Changes' : 'Add Account'),
               style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14)),
+                backgroundColor: _resolvedTypeColor(context),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
               onPressed: () async {
                 if (_nameCtrl.text.trim().isEmpty) return;
                 if (_selectedType == null || _selectedCategory == null) return;
@@ -1939,6 +2139,9 @@ class _AccountFormSheetState extends State<_AccountFormSheet> {
                         colorHex: typeHex,
                         noteHeader: _noteHeaderCtrl.text.trim(),
                         noteBody: _noteBodyCtrl.text.trim(),
+                        themeName: _cardTheme.name,
+                        themeFrontImg: _cardTheme.frontImagePath,
+                        themeBackImg: _cardTheme.backImagePath,
                       )
                     : Account(
                         name: _nameCtrl.text.trim(),
@@ -1950,6 +2153,9 @@ class _AccountFormSheetState extends State<_AccountFormSheet> {
                         icon: 'wallet',
                         noteHeader: _noteHeaderCtrl.text.trim(),
                         noteBody: _noteBodyCtrl.text.trim(),
+                        themeName: _cardTheme.name,
+                        themeFrontImg: _cardTheme.frontImagePath,
+                        themeBackImg: _cardTheme.backImagePath,
                       );
                 await widget.onSave(account);
               },
@@ -2903,24 +3109,48 @@ class _DetailFlipCardState extends State<_DetailFlipCard>
         ? colorFromHex(account.colorHex)
         : const Color(0xFF6366F1);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final gradients = gradientForColor(accountColor, isDark: isDark);
     final registry = _registryNotifier.value;
     final cornerStyle = registry.typeCornerStyle(account.type);
     final br = registry.cardBorderRadius(account.type);
 
-    // ── Front face (same design as _AccountCard, bigger: 350×230) ─────────
+    // ── Resolve card theme (mirrors _AccountCard exactly) ────────────────
+    final cardTheme = account.cardTheme;
+    final systemTheme = cardTheme.systemTheme;
+
+    // Gradient always derives from account color; system themes only change
+    // the overlay pattern so all cards of the same type share one color.
+    final List<Color> frontColors =
+        gradientForColor(accountColor, isDark: isDark);
+    const AlignmentGeometry frontBegin = Alignment.topLeft;
+    const AlignmentGeometry frontEnd = Alignment.bottomRight;
+
+    final List<Color> backColors =
+        gradientForColor(accountColor, isDark: isDark);
+    const AlignmentGeometry backBegin = Alignment.bottomRight;
+    const AlignmentGeometry backEnd = Alignment.topLeft;
+
+    final CardOverlayPattern overlay =
+        systemTheme?.overlay ?? CardOverlayPattern.circles;
+    const Color onColor = Colors.white;
+
+    final String frontPhotoPath =
+        cardTheme.isCustomPhoto ? cardTheme.frontImagePath : '';
+    final String backPhotoPath =
+        cardTheme.isCustomPhoto ? cardTheme.backImagePath : '';
+
     const cardW = 350.0;
     const cardH = 230.0;
 
+    // ── Front face ────────────────────────────────────────────────────────
     Widget frontFace = Container(
       width: cardW,
       height: cardH,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: gradients,
-        ),
+        gradient: frontPhotoPath.isNotEmpty
+            ? null
+            : LinearGradient(
+                begin: frontBegin, end: frontEnd, colors: frontColors),
+        color: frontPhotoPath.isNotEmpty ? Colors.black : null,
         borderRadius: isClipperCornerStyle(cornerStyle) ? null : br,
         boxShadow: [
           BoxShadow(
@@ -2932,30 +3162,39 @@ class _DetailFlipCardState extends State<_DetailFlipCard>
       ),
       child: Stack(
         children: [
-          Positioned(
-            right: -22,
-            top: -22,
-            child: Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.09),
+          if (frontPhotoPath.isNotEmpty)
+            Positioned.fill(
+              child: ClipRRect(
+                borderRadius:
+                    isClipperCornerStyle(cornerStyle) ? BorderRadius.zero : br,
+                child: Image.file(
+                  File(frontPhotoPath),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) =>
+                      Container(color: Colors.grey.shade800),
+                ),
               ),
             ),
-          ),
-          Positioned(
-            left: -10,
-            bottom: -22,
-            child: Container(
-              width: 90,
-              height: 90,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.06),
+          if (frontPhotoPath.isNotEmpty)
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.45),
+                    ],
+                  ),
+                ),
               ),
             ),
-          ),
+          if (frontPhotoPath.isEmpty)
+            Positioned.fill(
+              child: CustomPaint(painter: _CardOverlayPainter(overlay)),
+            ),
+          // Category icon (top-right corner)
           Positioned(
             top: 14,
             right: 14,
@@ -2970,14 +3209,16 @@ class _DetailFlipCardState extends State<_DetailFlipCard>
                   width: 30,
                   height: 30,
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.15),
+                    color: onColor.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Icon(catIcon, color: Colors.white70, size: 17),
+                  child: Icon(catIcon,
+                      color: onColor.withValues(alpha: 0.7), size: 17),
                 );
               },
             ),
           ),
+          // Card body
           Padding(
             padding: const EdgeInsets.all(18),
             child: Column(
@@ -2988,8 +3229,8 @@ class _DetailFlipCardState extends State<_DetailFlipCard>
                   padding: const EdgeInsets.only(right: 40),
                   child: Text(
                     account.name,
-                    style: const TextStyle(
-                      color: Colors.white70,
+                    style: TextStyle(
+                      color: onColor.withValues(alpha: 0.7),
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
                       letterSpacing: 0.2,
@@ -3004,9 +3245,8 @@ class _DetailFlipCardState extends State<_DetailFlipCard>
                   builder: (_, sym, __) => Text(
                     '$sym ${_fmt(account.balance)}',
                     style: TextStyle(
-                      color: account.balance >= 0
-                          ? Colors.white
-                          : Colors.red.shade200,
+                      color:
+                          account.balance >= 0 ? onColor : Colors.red.shade200,
                       fontSize: 26,
                       fontWeight: FontWeight.bold,
                       letterSpacing: -0.5,
@@ -3018,13 +3258,13 @@ class _DetailFlipCardState extends State<_DetailFlipCard>
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
+                    color: onColor.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
                     account.category.toUpperCase(),
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: onColor,
                       fontSize: 9,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 1,
@@ -3043,11 +3283,11 @@ class _DetailFlipCardState extends State<_DetailFlipCard>
       width: cardW,
       height: cardH,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.bottomRight,
-          end: Alignment.topLeft,
-          colors: gradients,
-        ),
+        gradient: backPhotoPath.isNotEmpty
+            ? null
+            : LinearGradient(
+                begin: backBegin, end: backEnd, colors: backColors),
+        color: backPhotoPath.isNotEmpty ? Colors.black : null,
         borderRadius: isClipperCornerStyle(cornerStyle) ? null : br,
         boxShadow: [
           BoxShadow(
@@ -3059,30 +3299,39 @@ class _DetailFlipCardState extends State<_DetailFlipCard>
       ),
       child: Stack(
         children: [
-          Positioned(
-            left: -22,
-            top: -22,
-            child: Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.09),
+          if (backPhotoPath.isNotEmpty)
+            Positioned.fill(
+              child: ClipRRect(
+                borderRadius:
+                    isClipperCornerStyle(cornerStyle) ? BorderRadius.zero : br,
+                child: Image.file(
+                  File(backPhotoPath),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) =>
+                      Container(color: Colors.grey.shade800),
+                ),
               ),
             ),
-          ),
-          Positioned(
-            right: -10,
-            bottom: -22,
-            child: Container(
-              width: 90,
-              height: 90,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.06),
+          if (backPhotoPath.isNotEmpty)
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.45),
+                    ],
+                  ),
+                ),
               ),
             ),
-          ),
+          if (backPhotoPath.isEmpty)
+            Positioned.fill(
+              child: CustomPaint(painter: _CardOverlayPainter(overlay)),
+            ),
+          // Magnetic stripe bar
           Positioned(
             top: 32,
             left: 0,
@@ -3098,7 +3347,7 @@ class _DetailFlipCardState extends State<_DetailFlipCard>
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                // Note header in the signature strip box, note body below
+                // Note header / body
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -3107,7 +3356,7 @@ class _DetailFlipCardState extends State<_DetailFlipCard>
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.15),
+                        color: onColor.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Row(
@@ -3117,8 +3366,8 @@ class _DetailFlipCardState extends State<_DetailFlipCard>
                               (account.noteHeader ?? '').isNotEmpty
                                   ? account.noteHeader!
                                   : account.name,
-                              style: const TextStyle(
-                                color: Colors.white,
+                              style: TextStyle(
+                                color: onColor,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
                                 letterSpacing: 0.3,
@@ -3129,8 +3378,7 @@ class _DetailFlipCardState extends State<_DetailFlipCard>
                           ),
                           const SizedBox(width: 8),
                           Icon(Icons.lock_outline,
-                              size: 12,
-                              color: Colors.white.withValues(alpha: 0.6)),
+                              size: 12, color: onColor.withValues(alpha: 0.6)),
                         ],
                       ),
                     ),
@@ -3139,7 +3387,7 @@ class _DetailFlipCardState extends State<_DetailFlipCard>
                       Text(
                         account.noteBody!,
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.75),
+                          color: onColor.withValues(alpha: 0.75),
                           fontSize: 10,
                           fontWeight: FontWeight.w400,
                           height: 1.4,
@@ -3157,14 +3405,14 @@ class _DetailFlipCardState extends State<_DetailFlipCard>
                       children: [
                         Icon(
                           reg.typeIcon(account.type),
-                          color: Colors.white70,
+                          color: onColor.withValues(alpha: 0.7),
                           size: 13,
                         ),
                         const SizedBox(width: 4),
                         Text(
                           reg.typeLabel(account.type).toUpperCase(),
-                          style: const TextStyle(
-                            color: Colors.white70,
+                          style: TextStyle(
+                            color: onColor.withValues(alpha: 0.7),
                             fontSize: 9,
                             fontWeight: FontWeight.bold,
                             letterSpacing: 1.2,
@@ -4880,6 +5128,103 @@ class _PeriodPickerDialogState extends State<_PeriodPickerDialog> {
                   ),
                 ),
               ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Card theme picker row ──────────────────────────────────────────────────────
+//
+// Displayed inside _AccountFormSheet between the category picker and the
+// note section.  Tapping opens the full card_theme_picker modal sheet.
+
+class _ThemePickerRow extends StatelessWidget {
+  final CardThemeModel currentTheme;
+  final Account previewAccount;
+  final void Function(CardThemeModel) onThemeChanged;
+
+  const _ThemePickerRow({
+    required this.currentTheme,
+    required this.previewAccount,
+    required this.onThemeChanged,
+  });
+
+  String _label() {
+    if (currentTheme.isCustomPhoto) return 'Custom photo';
+    return currentTheme.systemTheme?.label ?? 'Classic';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    // ignore: unused_local_variable
+    final systemTheme = currentTheme.systemTheme;
+    final accountColor = previewAccount.colorHex.isNotEmpty
+        ? colorFromHex(previewAccount.colorHex)
+        : const Color(0xFF6366F1);
+    // Gradient always comes from the account color — system themes are pattern-only.
+    final swatchColors = gradientForColor(accountColor, isDark: isDark);
+    const swatchBegin = Alignment.topLeft;
+    const swatchEnd = Alignment.bottomRight;
+    final hasPhoto =
+        currentTheme.isCustomPhoto && currentTheme.frontImagePath.isNotEmpty;
+
+    return InkWell(
+      onTap: () async {
+        final picked = await showCardThemePicker(
+          context: context,
+          account: previewAccount,
+          current: currentTheme,
+        );
+        if (picked != null) onThemeChanged(picked);
+      },
+      borderRadius: BorderRadius.circular(8),
+      child: InputDecorator(
+        decoration: const InputDecoration(
+          labelText: 'Card Theme',
+          border: OutlineInputBorder(),
+          prefixIcon: Icon(Icons.style_outlined),
+          suffixIcon: Icon(Icons.chevron_right),
+          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        ),
+        child: Row(
+          children: [
+            // Mini colour swatch / photo thumbnail
+            ClipRRect(
+              borderRadius: BorderRadius.circular(5),
+              child: SizedBox(
+                width: 38,
+                height: 22,
+                child: hasPhoto
+                    ? Image.file(
+                        File(currentTheme.frontImagePath),
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) =>
+                            Container(color: Colors.grey.shade700),
+                      )
+                    : Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: swatchBegin,
+                            end: swatchEnd,
+                            colors: swatchColors,
+                          ),
+                        ),
+                      ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                _label(),
+                style: theme.textTheme.bodyMedium,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ],
         ),

@@ -1,3 +1,5 @@
+import 'card_theme_model.dart';
+
 class Account {
   final int? id;
   final String name;
@@ -15,6 +17,20 @@ class Account {
   /// Optional longer note shown below the header on the card back (≤ 120 chars).
   final String? noteBody;
 
+  // ── Card theme ──────────────────────────────────────────────────────────────
+
+  /// Name key of the chosen card theme.
+  ///   • `''`        → default color-derived gradient
+  ///   • system id   → one of [CardThemeModel.systemThemes]
+  ///   • `'custom'`  → user-supplied photos
+  final String themeName;
+
+  /// Absolute path to the custom front-face photo (empty when unused).
+  final String themeFrontImg;
+
+  /// Absolute path to the custom back-face photo (empty when unused).
+  final String themeBackImg;
+
   Account({
     this.id,
     required this.name,
@@ -25,7 +41,17 @@ class Account {
     required this.icon,
     this.noteHeader,
     this.noteBody,
+    this.themeName = '',
+    this.themeFrontImg = '',
+    this.themeBackImg = '',
   });
+
+  /// Convenience getter — resolves the three raw columns into a [CardThemeModel].
+  CardThemeModel get cardTheme => CardThemeModel(
+        name: themeName,
+        frontImagePath: themeFrontImg,
+        backImagePath: themeBackImg,
+      );
 
   Account copyWith({
     int? id,
@@ -38,6 +64,9 @@ class Account {
     // Use Object? sentinel so callers can explicitly clear these to null.
     Object? noteHeader = _sentinel,
     Object? noteBody = _sentinel,
+    String? themeName,
+    String? themeFrontImg,
+    String? themeBackImg,
   }) {
     return Account(
       id: id ?? this.id,
@@ -50,6 +79,9 @@ class Account {
       noteHeader:
           noteHeader == _sentinel ? this.noteHeader : noteHeader as String?,
       noteBody: noteBody == _sentinel ? this.noteBody : noteBody as String?,
+      themeName: themeName ?? this.themeName,
+      themeFrontImg: themeFrontImg ?? this.themeFrontImg,
+      themeBackImg: themeBackImg ?? this.themeBackImg,
     );
   }
 
@@ -64,6 +96,9 @@ class Account {
       'icon': icon,
       'note_header': noteHeader ?? '',
       'note_body': noteBody ?? '',
+      'theme_name': themeName,
+      'theme_front_img': themeFrontImg,
+      'theme_back_img': themeBackImg,
     };
   }
 
@@ -82,6 +117,9 @@ class Account {
       noteBody: (map['note_body'] as String?)?.isEmpty == true
           ? null
           : map['note_body'] as String?,
+      themeName: (map['theme_name'] as String?) ?? '',
+      themeFrontImg: (map['theme_front_img'] as String?) ?? '',
+      themeBackImg: (map['theme_back_img'] as String?) ?? '',
     );
   }
 }
