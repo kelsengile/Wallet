@@ -103,6 +103,12 @@ class _ReminderReceiptDialogState extends State<_ReminderReceiptDialog> {
         : Colors.amber.shade50;
   }
 
+  // FAB uses a deeper amber so it reads as a button, not a neon glow.
+  Color _fabColor(ThemeData theme) {
+    if (theme.brightness != Brightness.dark) return _typeColor(theme);
+    return const Color.fromARGB(255, 180, 171, 9); // amber-700 equivalent
+  }
+
   // ── Open edit ─────────────────────────────────────────────────────────────
 
   Future<void> _openEdit() async {
@@ -134,6 +140,7 @@ class _ReminderReceiptDialogState extends State<_ReminderReceiptDialog> {
     final theme = Theme.of(context);
     final typeColor = _typeColor(theme);
     final typeBg = _typeBgColor(theme);
+    final fabColor = _fabColor(theme);
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -148,7 +155,8 @@ class _ReminderReceiptDialogState extends State<_ReminderReceiptDialog> {
               borderRadius: BorderRadius.circular(20),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.18),
+                  color: Colors.black.withValues(
+                      alpha: theme.brightness == Brightness.dark ? 0.45 : 0.18),
                   blurRadius: 32,
                   offset: const Offset(0, 12),
                 ),
@@ -210,7 +218,10 @@ class _ReminderReceiptDialogState extends State<_ReminderReceiptDialog> {
                                   size: 18),
                               label: const Text('Mark as Done'),
                               style: FilledButton.styleFrom(
-                                backgroundColor: Colors.green.shade600,
+                                backgroundColor:
+                                    theme.brightness == Brightness.dark
+                                        ? const Color(0xFF166534)
+                                        : Colors.green.shade600,
                                 foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(
                                     vertical: 12, horizontal: 16),
@@ -239,11 +250,11 @@ class _ReminderReceiptDialogState extends State<_ReminderReceiptDialog> {
                   width: 42,
                   height: 42,
                   decoration: BoxDecoration(
-                    color: typeColor,
+                    color: fabColor,
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: typeColor.withValues(alpha: 0.45),
+                        color: fabColor.withValues(alpha: 0.45),
                         blurRadius: 12,
                         offset: const Offset(0, 4),
                       ),
@@ -302,12 +313,26 @@ class _ReminderReceiptHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
 
     final cat = txCategories.cast<WalletCategory?>().firstWhere(
           (c) => c?.name == reminder.category,
           orElse: () => null,
         );
     final icon = cat?.iconData ?? Icons.notifications_active_rounded;
+
+    // Overdue chip colors
+    final overdueText =
+        isDark ? const Color(0xFFFFB74D) : Colors.orange.shade700;
+    final overdueBg = isDark
+        ? Colors.orange.withValues(alpha: 0.20)
+        : Colors.orange.withValues(alpha: 0.15);
+
+    // Done chip colors
+    final doneText = isDark ? const Color(0xFF4ADE80) : Colors.green.shade700;
+    final doneBg = isDark
+        ? Colors.green.withValues(alpha: 0.20)
+        : Colors.green.withValues(alpha: 0.15);
 
     return Container(
       width: double.infinity,
@@ -359,27 +384,26 @@ class _ReminderReceiptHeader extends StatelessWidget {
             ],
           ),
 
-          // Overdue / Done chips
           if (_isOverdue(reminder) && !reminder.isDone) ...[
             const SizedBox(height: 6),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
-                color: Colors.orange.withValues(alpha: 0.15),
+                color: overdueBg,
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.warning_amber_rounded,
-                      size: 12, color: Colors.orange.shade700),
+                      size: 12, color: overdueText),
                   const SizedBox(width: 4),
                   Text(
                     'Overdue',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: Colors.orange.shade700,
+                      color: overdueText,
                     ),
                   ),
                 ],
@@ -390,21 +414,20 @@ class _ReminderReceiptHeader extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
-                color: Colors.green.withValues(alpha: 0.15),
+                color: doneBg,
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.check_circle_rounded,
-                      size: 12, color: Colors.green.shade700),
+                  Icon(Icons.check_circle_rounded, size: 12, color: doneText),
                   const SizedBox(width: 4),
                   Text(
                     'Done',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: Colors.green.shade700,
+                      color: doneText,
                     ),
                   ),
                 ],

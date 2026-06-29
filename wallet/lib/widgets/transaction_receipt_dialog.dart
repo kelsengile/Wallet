@@ -154,15 +154,34 @@ class _TransactionReceiptDialogState extends State<_TransactionReceiptDialog> {
           );
 
   Color _typeColor(ThemeData theme) {
-    if (_isTransfer) return const Color(0xFF2563EB);
-    if (_isIncome) return Colors.green.shade600;
-    return Colors.red.shade600;
+    final isDark = theme.brightness == Brightness.dark;
+    if (_isTransfer) {
+      return isDark ? const Color(0xFF93C5FD) : const Color(0xFF2563EB);
+    }
+    if (_isIncome) {
+      return isDark ? const Color(0xFF4ADE80) : Colors.green.shade600;
+    }
+    return isDark ? const Color(0xFFF87171) : Colors.red.shade600;
   }
 
-  Color _typeBgColor() {
-    if (_isTransfer) return const Color(0xFFDBEAFE);
-    if (_isIncome) return Colors.green.shade50;
-    return Colors.red.shade50;
+  Color _typeBgColor(ThemeData theme) {
+    final isDark = theme.brightness == Brightness.dark;
+    if (_isTransfer) {
+      return isDark ? const Color(0xFF1E3A5F) : const Color(0xFFDBEAFE);
+    }
+    if (_isIncome) {
+      return isDark ? const Color(0xFF14301E) : Colors.green.shade50;
+    }
+    return isDark ? const Color(0xFF3B1212) : Colors.red.shade50;
+  }
+
+  // FAB uses the full-saturation color, not the light pastel tint.
+  Color _fabColor(ThemeData theme) {
+    final isDark = theme.brightness == Brightness.dark;
+    if (!isDark) return _typeColor(theme);
+    if (_isTransfer) return const Color(0xFF2563EB);
+    if (_isIncome) return const Color(0xFF16A34A);
+    return const Color(0xFFDC2626);
   }
 
   // ── Open edit form ────────────────────────────────────────────────────────
@@ -242,7 +261,8 @@ class _TransactionReceiptDialogState extends State<_TransactionReceiptDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final typeColor = _typeColor(theme);
-    final typeBg = _typeBgColor();
+    final typeBg = _typeBgColor(theme);
+    final fabColor = _fabColor(theme);
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -257,7 +277,8 @@ class _TransactionReceiptDialogState extends State<_TransactionReceiptDialog> {
               borderRadius: BorderRadius.circular(20),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.18),
+                  color: Colors.black.withValues(
+                      alpha: theme.brightness == Brightness.dark ? 0.45 : 0.18),
                   blurRadius: 32,
                   offset: const Offset(0, 12),
                 ),
@@ -318,11 +339,11 @@ class _TransactionReceiptDialogState extends State<_TransactionReceiptDialog> {
                   width: 42,
                   height: 42,
                   decoration: BoxDecoration(
-                    color: typeColor,
+                    color: fabColor,
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: typeColor.withValues(alpha: 0.45),
+                        color: fabColor.withValues(alpha: 0.45),
                         blurRadius: 12,
                         offset: const Offset(0, 4),
                       ),
@@ -427,7 +448,7 @@ class _ReceiptHeader extends StatelessWidget {
               transactionTitle!,
               style: theme.textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.bold,
-                color: Colors.black,
+                color: theme.colorScheme.onSurface,
               ),
               textAlign: TextAlign.center,
               maxLines: 2,
