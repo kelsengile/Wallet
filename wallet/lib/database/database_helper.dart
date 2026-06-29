@@ -2135,8 +2135,19 @@ class DatabaseHelper {
     );
   }
 
-  /// Converts a reminder into a real transaction, then deletes the reminder.
-  /// The account balance is updated via [insertTransaction].
+  /// Converts a reminder into a real transaction, then either reschedules the
+  /// reminder for its next occurrence (if [ReminderRepeat] is not [none]) or
+  /// deletes it entirely (if repeat is [none]).
+  ///
+  /// The next due date is calculated by advancing the current [dueDate] by
+  /// one repeat interval:
+  ///   - daily   → +1 day
+  ///   - weekly  → +7 days
+  ///   - monthly → +1 month (same day-of-month)
+  ///   - yearly  → +1 year  (same month and day)
+  ///
+  /// Deleting the reminder (via [deleteReminder]) always cancels the cycle
+  /// regardless of the repeat setting.
   Future<void> markReminderDoneAsTransaction(
       ReminderTransaction reminder) async {
     final tx = WalletTransaction(
@@ -2149,6 +2160,46 @@ class DatabaseHelper {
       accountId: reminder.accountId,
     );
     await insertTransaction(tx);
+
+    if (reminder.repeat == ReminderRepeat.none) {
+      // No repeat — just remove the reminder.
+      await deleteReminder(reminder);
+      return;
+    }
+
+    // Advance the due date by one repeat interval.
+    final current = DateTime.tryParse(reminder.dueDate) ?? DateTime.now();
+    final DateTime next;
+    switch (reminder.repeat) {
+      case ReminderRepeat.daily:
+        next = current.add(const Duration(days: 1));
+        break;
+      case ReminderRepeat.weekly:
+        next = current.add(const Duration(days: 7));
+        break;
+      case ReminderRepeat.monthly:
+        next = DateTime(current.year, current.month + 1, current.day,
+            current.hour, current.minute, current.second);
+        break;
+      case ReminderRepeat.yearly:
+        next = DateTime(current.year + 1, current.month, current.day,
+            current.hour, current.minute, current.second);
+        break;
+      case ReminderRepeat.none:
+        // Already handled above; unreachable.
+        await deleteReminder(reminder);
+        return;
+    }
+
+    // Insert a brand-new reminder row for the next cycle, then delete the
+    // current one (which has already been recorded as a transaction above).
+    await insertReminder(
+      reminder.copyWith(
+        id: null, // let the DB assign a fresh primary key
+        dueDate: next.toIso8601String(),
+        isDone: false,
+      ),
+    );
     await deleteReminder(reminder);
   }
 

@@ -84,7 +84,7 @@ class ReminderTransaction {
   });
 
   ReminderTransaction copyWith({
-    int? id,
+    Object? id = _sentinel,
     String? title,
     double? amount,
     String? dueDate,
@@ -96,7 +96,7 @@ class ReminderTransaction {
     bool? isDone,
   }) {
     return ReminderTransaction(
-      id: id ?? this.id,
+      id: id == _sentinel ? this.id : id as int?,
       title: title ?? this.title,
       amount: amount ?? this.amount,
       dueDate: dueDate ?? this.dueDate,
