@@ -5,6 +5,7 @@ import '../models/transaction_model.dart';
 import '../models/account_model.dart';
 import '../models/category_model.dart';
 import '../models/reminder_model.dart';
+import '../models/budget_model.dart';
 
 /// Result returned by [DatabaseHelper.insertTransfer].
 /// Named with a leading underscore to avoid colliding with the
@@ -81,7 +82,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 16, // bumped to 16 to add card-theme columns to accounts
+      version: 17, // bumped to 17 to add the budgets table
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -234,6 +235,20 @@ class DatabaseHelper {
         account_id  INTEGER,
         repeat      TEXT    NOT NULL DEFAULT 'none',
         is_done     INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+
+    // ── Budgets table ─────────────────────────────────────────────────────
+    //
+    // One row per expense category the user has set a recurring monthly
+    // spending limit for. `category` is UNIQUE — a category can only have a
+    // single active budget at a time. "Spent so far" is derived at query
+    // time from the transactions table, never stored here.
+    await db.execute('''
+      CREATE TABLE budgets (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        category      TEXT    NOT NULL UNIQUE,
+        monthly_limit REAL    NOT NULL DEFAULT 0.0
       )
     ''');
   }
@@ -961,6 +976,17 @@ class DatabaseHelper {
         "ALTER TABLE trash_accounts ADD COLUMN theme_back_img  TEXT NOT NULL DEFAULT ''",
       );
     }
+
+    if (oldVersion < 17) {
+      // Add the budgets table for existing installs.
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS budgets (
+          id            INTEGER PRIMARY KEY AUTOINCREMENT,
+          category      TEXT    NOT NULL UNIQUE,
+          monthly_limit REAL    NOT NULL DEFAULT 0.0
+        )
+      ''');
+    }
   }
 
   /// Ensures any account type/category or transaction category already
@@ -1293,6 +1319,31 @@ class DatabaseHelper {
     );
   }
 
+  /// Whether changing currency should also convert existing balances/amounts
+  /// using a live exchange rate. Defaults to false (off) if never saved.
+  Future<bool> getConvertOnCurrencyChange() async {
+    final db = await database;
+    final rows = await db.query(
+      'settings',
+      where: 'key = ?',
+      whereArgs: ['convert_on_currency_change'],
+      limit: 1,
+    );
+    if (rows.isEmpty) return false;
+    return rows.first['value'] == '1';
+  }
+
+  /// Persists the convert-on-currency-change toggle so it survives leaving
+  /// and re-entering the Settings page (and app restarts).
+  Future<void> saveConvertOnCurrencyChange(bool value) async {
+    final db = await database;
+    await db.insert(
+      'settings',
+      {'key': 'convert_on_currency_change', 'value': value ? '1' : '0'},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
   Future<Account?> getAccountById(int id) async {
     final db = await database;
     final rows = await db.query(
@@ -1313,6 +1364,26 @@ class DatabaseHelper {
       where: 'id = ?',
       whereArgs: [account.id],
     );
+  }
+
+  /// Multiplies every stored monetary value by [rate], used when the user
+  /// switches their display currency and opts in to converting existing
+  /// amounts (e.g. going from USD to PHP multiplies everything by the
+  /// USD→PHP exchange rate). Covers live accounts/transactions as well as
+  /// trashed and recurring-reminder rows so nothing is left stale.
+  Future<void> convertAllAmounts(double rate) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.rawUpdate('UPDATE accounts SET balance = balance * ?', [rate]);
+      await txn
+          .rawUpdate('UPDATE transactions SET amount = amount * ?', [rate]);
+      await txn
+          .rawUpdate('UPDATE trash_accounts SET balance = balance * ?', [rate]);
+      await txn.rawUpdate(
+          'UPDATE trash_transactions SET amount = amount * ?', [rate]);
+      await txn.rawUpdate(
+          'UPDATE reminder_transactions SET amount = amount * ?', [rate]);
+    });
   }
 
   /// Soft-deletes an account and all its transactions into the trash bin,
@@ -2103,6 +2174,7 @@ class DatabaseHelper {
     await db.delete('trash_accounts');
     await db.delete('trash_categories');
     await db.delete('reminder_transactions');
+    await db.delete('budgets');
 
     // Remove ALL categories so we can re-seed them cleanly from scratch.
     await db.delete('categories');
@@ -2253,6 +2325,77 @@ class DatabaseHelper {
       where: 'id = ?',
       whereArgs: [reminder.id],
     );
+  }
+
+  // ── Budget CRUD ────────────────────────────────────────────────────────────
+
+  /// Returns every budget, ordered by category name.
+  Future<List<Budget>> getAllBudgets() async {
+    final db = await database;
+    final rows = await db.query('budgets', orderBy: 'category ASC');
+    return rows.map(Budget.fromMap).toList();
+  }
+
+  /// Inserts a new budget and returns the assigned id. Throws if a budget
+  /// already exists for that category (enforced by the UNIQUE constraint).
+  Future<int> addBudget(Budget budget) async {
+    final db = await database;
+    final map = budget.toMap()..remove('id');
+    return db.insert('budgets', map);
+  }
+
+  /// Updates an existing budget's category and/or monthly limit.
+  Future<void> updateBudget(Budget budget) async {
+    assert(budget.id != null, 'Cannot update a budget without an id');
+    final db = await database;
+    final map = budget.toMap()..remove('id');
+    await db.update('budgets', map, where: 'id = ?', whereArgs: [budget.id]);
+  }
+
+  /// Permanently deletes a budget.
+  Future<void> deleteBudget(int id) async {
+    final db = await database;
+    await db.delete('budgets', where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// Sums all expense transactions for [category] within the given
+  /// [year]/[month], used to compute "spent so far" against a budget.
+  Future<double> getSpentForCategoryInMonth(
+    String category,
+    int year,
+    int month,
+  ) async {
+    final db = await database;
+    final prefix =
+        '${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}';
+    final result = await db.rawQuery(
+      '''
+      SELECT COALESCE(SUM(amount), 0) as total FROM transactions
+      WHERE type = 'expense' AND category = ? AND date LIKE ?
+      ''',
+      [category, '$prefix%'],
+    );
+    return (result.first['total'] as num).toDouble();
+  }
+
+  /// Sums all expense transactions for [category] within the half-open
+  /// date range [start, end), used by the budget page to compute "spent
+  /// so far" against whichever filter period (day/week/month/year/custom/
+  /// all-time) is currently active.
+  Future<double> getSpentForCategoryInRange(
+    String category,
+    DateTime start,
+    DateTime end,
+  ) async {
+    final db = await database;
+    final result = await db.rawQuery(
+      '''
+      SELECT COALESCE(SUM(amount), 0) as total FROM transactions
+      WHERE type = 'expense' AND category = ? AND date >= ? AND date < ?
+      ''',
+      [category, start.toIso8601String(), end.toIso8601String()],
+    );
+    return (result.first['total'] as num).toDouble();
   }
 
   Future<void> closeDatabase() async {

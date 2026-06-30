@@ -13,6 +13,9 @@ import 'package:wallet/pages/settings_page.dart';
 import 'package:wallet/pages/category_manager_page.dart';
 import 'package:wallet/pages/faq_page.dart';
 import 'package:wallet/pages/feedback_page.dart';
+import 'package:wallet/pages/lock_screen.dart';
+import 'package:wallet/pages/search_page.dart';
+import 'package:wallet/services/security_service.dart';
 import 'package:wallet/models/transaction_model.dart';
 import 'package:wallet/models/reminder_model.dart';
 
@@ -71,14 +74,77 @@ class MyApp extends StatelessWidget {
           // changes, so every already-mounted page re-reads
           // currencySymbolNotifier.value and shows the new symbol
           // immediately — no per-widget listeners needed.
-          home: ValueListenableBuilder<String>(
-            valueListenable: currencySymbolNotifier,
-            // ignore: prefer_const_constructors
-            builder: (context, symbol, _) => WalletHomePage(),
+          home: _AppLockGate(
+            child: ValueListenableBuilder<String>(
+              valueListenable: currencySymbolNotifier,
+              // ignore: prefer_const_constructors
+              builder: (context, symbol, _) => WalletHomePage(),
+            ),
           ),
         );
       },
     );
+  }
+}
+
+/// Sits in front of the whole app when App Lock is turned on, requiring
+/// biometrics or the user's PIN before [child] is revealed. Also re-locks
+/// whenever the app comes back from the background, so leaving the app
+/// open in the task switcher doesn't bypass the lock.
+class _AppLockGate extends StatefulWidget {
+  final Widget child;
+  const _AppLockGate({required this.child});
+
+  @override
+  State<_AppLockGate> createState() => _AppLockGateState();
+}
+
+class _AppLockGateState extends State<_AppLockGate>
+    with WidgetsBindingObserver {
+  bool? _lockRequired; // null while we're still checking the setting
+  bool _unlocked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _checkLock();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  Future<void> _checkLock() async {
+    final enabled = await SecurityService.instance.isLockEnabled();
+    if (mounted) {
+      setState(() {
+        _lockRequired = enabled;
+        _unlocked = !enabled;
+      });
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Re-lock when the app is backgrounded, so resuming always re-prompts
+    // if App Lock is on.
+    if (state == AppLifecycleState.paused && _lockRequired == true) {
+      setState(() => _unlocked = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_lockRequired == null) {
+      return const Scaffold(body: SizedBox.shrink());
+    }
+    if (!_unlocked) {
+      return LockScreen(onUnlocked: () => setState(() => _unlocked = true));
+    }
+    return widget.child;
   }
 }
 
@@ -95,7 +161,6 @@ class _WalletHomePageState extends State<WalletHomePage> {
   final _historyKey = GlobalKey<HistoryPageState>();
   final _accountsKey = GlobalKey<AccountsPageState>();
   bool _fabVisible = true;
-  bool _showCalculator = false;
   // 0.0 = fully on accounts tab, 1.0 = fully off it — drives status bar style.
   // Uses a ValueNotifier so scroll updates never trigger a full widget rebuild.
   final _pageTNotifier = ValueNotifier<double>(0.0);
@@ -204,14 +269,6 @@ class _WalletHomePageState extends State<WalletHomePage> {
       },
       child: Scaffold(
         backgroundColor: theme.colorScheme.surface,
-        endDrawer: Drawer(
-          width: double.infinity,
-          child: Scaffold(
-            body: _showCalculator
-                ? const CalculatorPage()
-                : const AnalyticsPage(),
-          ),
-        ),
         drawer: _WalletDrawer(
           selectedIndex: _selectedIndex,
           onNavigate: (index) {
@@ -225,8 +282,6 @@ class _WalletHomePageState extends State<WalletHomePage> {
           onAccountRestored: () {
             _accountsKey.currentState?.refresh();
           },
-          onOpenAnalytics: () => setState(() => _showCalculator = false),
-          onOpenCalculator: () => setState(() => _showCalculator = true),
         ),
         body: RefreshIndicator(
           onRefresh: _onRefresh,
@@ -266,7 +321,11 @@ class _WalletHomePageState extends State<WalletHomePage> {
                       child: AccountsPage(
                         key: _accountsKey,
                         onNavigateToAnalytics: () {
-                          Scaffold.of(context).openEndDrawer();
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const AnalyticsPage()),
+                          );
                         },
                       ),
                     ),
@@ -864,7 +923,12 @@ class _TopNavBarState extends State<_TopNavBar> {
             const Spacer(),
             IconButton(
               icon: Icon(Icons.search, color: iconColor),
-              onPressed: () {},
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SearchPage()),
+                );
+              },
               tooltip: 'Search',
             ),
           ],
@@ -882,8 +946,6 @@ class _WalletDrawer extends StatefulWidget {
   final VoidCallback onDataCleared;
   final VoidCallback onCategoryChanged;
   final VoidCallback onAccountRestored;
-  final VoidCallback onOpenAnalytics;
-  final VoidCallback onOpenCalculator;
 
   const _WalletDrawer({
     required this.selectedIndex,
@@ -891,8 +953,6 @@ class _WalletDrawer extends StatefulWidget {
     required this.onDataCleared,
     required this.onCategoryChanged,
     required this.onAccountRestored,
-    required this.onOpenAnalytics,
-    required this.onOpenCalculator,
   });
 
   @override
@@ -1009,15 +1069,11 @@ class _WalletDrawerState extends State<_WalletDrawer> {
                   selectedIcon: Icons.show_chart,
                   label: 'Analytics',
                   onTap: () {
-                    Navigator.pop(context); // close the left drawer first
-                    widget.onOpenAnalytics();
-                    // Small delay so the left drawer finishes closing before
-                    // the end drawer opens — avoids two drawers fighting.
-                    Future.delayed(const Duration(milliseconds: 250), () {
-                      if (context.mounted) {
-                        Scaffold.of(context).openEndDrawer();
-                      }
-                    });
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const AnalyticsPage()),
+                    );
                   },
                 ),
                 _NavTile(
@@ -1026,12 +1082,10 @@ class _WalletDrawerState extends State<_WalletDrawer> {
                   label: 'Calculator',
                   onTap: () {
                     Navigator.pop(context);
-                    widget.onOpenCalculator();
-                    Future.delayed(const Duration(milliseconds: 250), () {
-                      if (context.mounted) {
-                        Scaffold.of(context).openEndDrawer();
-                      }
-                    });
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const CalculatorPage()),
+                    );
                   },
                 ),
                 _NavTile(

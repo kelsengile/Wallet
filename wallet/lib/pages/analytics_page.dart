@@ -878,7 +878,10 @@ class AnalyticsPageState extends State<AnalyticsPage> {
     final theme = Theme.of(context);
 
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return Scaffold(
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        body: const Center(child: CircularProgressIndicator()),
+      );
     }
 
     // ignore: unused_local_variable
@@ -890,441 +893,455 @@ class AnalyticsPageState extends State<AnalyticsPage> {
     final expenses = _periodExpenses;
     final net = _periodNet;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // ── Header ──────────────────────────────────────────────────────────
-        Container(
-          width: double.infinity,
-          padding: EdgeInsets.fromLTRB(
-              16, MediaQuery.paddingOf(context).top + 12, 16, 12),
-          color: theme.colorScheme.surface,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // ── Overview title + filter button row ───────────────────────
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Analytics',
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: theme.colorScheme.onSurface,
+    return Scaffold(
+      backgroundColor: theme.colorScheme.surface,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Header ──────────────────────────────────────────────────────────
+          Container(
+            width: double.infinity,
+            padding: EdgeInsets.fromLTRB(
+                4, MediaQuery.paddingOf(context).top + 4, 16, 12),
+            color: theme.colorScheme.surface,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Back button + title + filter button row ──────────────────
+                Row(
+                  children: [
+                    IconButton(
+                      tooltip: 'Back',
+                      icon: Icon(Icons.arrow_back_rounded,
+                          color: theme.colorScheme.onSurface),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                    Expanded(
+                      child: Text(
+                        'Analytics',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: theme.colorScheme.onSurface,
+                        ),
                       ),
                     ),
-                  ),
-                  IconButton(
-                    tooltip: 'Filter',
-                    onPressed: _pickPeriod,
-                    icon: _FunnelIcon(color: theme.colorScheme.onSurface),
-                  ),
-                ],
-              ),
+                    IconButton(
+                      tooltip: 'Filter',
+                      onPressed: _pickPeriod,
+                      icon: _FunnelIcon(color: theme.colorScheme.onSurface),
+                    ),
+                  ],
+                ),
 
-              // ── Period navigator ─────────────────────────────────────────
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Opacity(
-                    opacity: (_filterMode == _FilterMode.allTime ||
-                            _filterMode == _FilterMode.custom)
-                        ? 0.0
-                        : 1.0,
-                    child: IgnorePointer(
-                      ignoring: _filterMode == _FilterMode.allTime ||
-                          _filterMode == _FilterMode.custom,
-                      child: IconButton(
-                        icon: Icon(Icons.chevron_left,
-                            color: theme.colorScheme.onSurface),
-                        onPressed: _goBack,
+                // ── Period navigator ─────────────────────────────────────────
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Opacity(
+                      opacity: (_filterMode == _FilterMode.allTime ||
+                              _filterMode == _FilterMode.custom)
+                          ? 0.0
+                          : 1.0,
+                      child: IgnorePointer(
+                        ignoring: _filterMode == _FilterMode.allTime ||
+                            _filterMode == _FilterMode.custom,
+                        child: IconButton(
+                          icon: Icon(Icons.chevron_left,
+                              color: theme.colorScheme.onSurface),
+                          onPressed: _goBack,
+                        ),
                       ),
                     ),
-                  ),
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: _pickPeriod,
-                      child: Center(
-                        child: Text(
-                          _periodLabel,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w500,
-                            color: theme.colorScheme.onSurface
-                                .withValues(alpha: 0.7),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: _pickPeriod,
+                        child: Center(
+                          child: Text(
+                            _periodLabel,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w500,
+                              color: theme.colorScheme.onSurface
+                                  .withValues(alpha: 0.7),
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  Opacity(
-                    opacity: (_filterMode == _FilterMode.allTime ||
-                            _filterMode == _FilterMode.custom)
-                        ? 0.0
-                        : 1.0,
-                    child: IgnorePointer(
-                      ignoring: _filterMode == _FilterMode.allTime ||
-                          _filterMode == _FilterMode.custom,
-                      child: IconButton(
-                        icon: Icon(
-                          Icons.chevron_right,
-                          color: _canGoForward
-                              ? theme.colorScheme.onSurface
-                              : theme.colorScheme.onSurface
-                                  .withValues(alpha: 0.25),
+                    Opacity(
+                      opacity: (_filterMode == _FilterMode.allTime ||
+                              _filterMode == _FilterMode.custom)
+                          ? 0.0
+                          : 1.0,
+                      child: IgnorePointer(
+                        ignoring: _filterMode == _FilterMode.allTime ||
+                            _filterMode == _FilterMode.custom,
+                        child: IconButton(
+                          icon: Icon(
+                            Icons.chevron_right,
+                            color: _canGoForward
+                                ? theme.colorScheme.onSurface
+                                : theme.colorScheme.onSurface
+                                    .withValues(alpha: 0.25),
+                          ),
+                          onPressed: _canGoForward ? _goForward : null,
                         ),
-                        onPressed: _canGoForward ? _goForward : null,
                       ),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
 
-              const SizedBox(height: 4),
+                const SizedBox(height: 4),
 
-              // ── Income / Expense / Net toggle buttons ────────────────────
-              Row(
-                children: [
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _showExpenses = false;
-                          _showNet = false;
-                        });
-                        _saveDisplayMode();
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 180),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: !_showExpenses && !_showNet
-                              ? const Color(0xFF4ADE80).withValues(alpha: 0.12)
-                              : theme.colorScheme.surfaceContainer,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
+                // ── Income / Expense / Net toggle buttons ────────────────────
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _showExpenses = false;
+                            _showNet = false;
+                          });
+                          _saveDisplayMode();
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 8),
+                          decoration: BoxDecoration(
                             color: !_showExpenses && !_showNet
                                 ? const Color(0xFF4ADE80)
-                                : Colors.transparent,
-                            width: 1.5,
+                                    .withValues(alpha: 0.12)
+                                : theme.colorScheme.surfaceContainer,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: !_showExpenses && !_showNet
+                                  ? const Color(0xFF4ADE80)
+                                  : Colors.transparent,
+                              width: 1.5,
+                            ),
                           ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Row(
-                              children: [
-                                const Icon(Icons.arrow_upward_rounded,
-                                    color: Color(0xFF4ADE80), size: 13),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Income',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: theme.colorScheme.onSurface
-                                        .withValues(alpha: 0.6),
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 2),
-                            FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                '${currencySymbolNotifier.value}${_fmt(income)}',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                  color: theme.colorScheme.onSurface,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _showExpenses = true;
-                          _showNet = false;
-                        });
-                        _saveDisplayMode();
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 180),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: _showExpenses && !_showNet
-                              ? const Color(0xFFF87171).withValues(alpha: 0.12)
-                              : theme.colorScheme.surfaceContainer,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: _showExpenses && !_showNet
-                                ? const Color(0xFFF87171)
-                                : Colors.transparent,
-                            width: 1.5,
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Row(
-                              children: [
-                                const Icon(Icons.arrow_downward_rounded,
-                                    color: Color(0xFFF87171), size: 13),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Expenses',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: theme.colorScheme.onSurface
-                                        .withValues(alpha: 0.6),
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 2),
-                            FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                '${currencySymbolNotifier.value}${_fmt(expenses)}',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                  color: theme.colorScheme.onSurface,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _showNet = !_showNet;
-                          if (_showNet) {
-                            // deselect income/expense highlight when viewing net
-                          }
-                        });
-                        _saveDisplayMode();
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 180),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: _showNet
-                              ? (net >= 0
-                                      ? const Color(0xFF4ADE80)
-                                      : const Color(0xFFF87171))
-                                  .withValues(alpha: 0.12)
-                              : theme.colorScheme.surfaceContainer,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: _showNet
-                                ? (net >= 0
-                                    ? const Color(0xFF4ADE80)
-                                    : const Color(0xFFF87171))
-                                : Colors.transparent,
-                            width: 1.5,
-                          ),
-                          boxShadow: _showNet
-                              ? [
-                                  BoxShadow(
-                                    color: (net >= 0
-                                            ? const Color(0xFF4ADE80)
-                                            : const Color(0xFFF87171))
-                                        .withValues(alpha: 0.30),
-                                    blurRadius: 8,
-                                    spreadRadius: 0,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ]
-                              : null,
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(Icons.account_balance_wallet_outlined,
-                                    color: net >= 0
-                                        ? const Color(0xFF4ADE80)
-                                        : const Color(0xFFF87171),
-                                    size: 13),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Net',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: theme.colorScheme.onSurface
-                                        .withValues(alpha: 0.6),
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 2),
-                            FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                '${currencySymbolNotifier.value}${_fmt(net)}',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                  color: theme.colorScheme.onSurface,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-
-        // ── Scrollable content ───────────────────────────────────────────────
-        Expanded(
-          child: ColoredBox(
-            color: theme.colorScheme.surface,
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
-              child: _showNet
-                  ? _buildNetView(theme)
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // ── Line chart section ─────────────────────────────────────
-                        _SectionCard(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              // Toggle header
                               Row(
                                 children: [
-                                  Expanded(
-                                    child: Text(
-                                      _showExpenses ? 'Expenses' : 'Income',
-                                      style:
-                                          theme.textTheme.titleMedium?.copyWith(
-                                        fontWeight: FontWeight.w600,
-                                      ),
+                                  const Icon(Icons.arrow_upward_rounded,
+                                      color: Color(0xFF4ADE80), size: 13),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Income',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: theme.colorScheme.onSurface
+                                          .withValues(alpha: 0.6),
+                                      fontWeight: FontWeight.w500,
                                     ),
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 16),
-                              chartData.isEmpty
-                                  ? const _EmptyChart()
-                                  : _LineChart(
-                                      data: chartData,
-                                      color: _showExpenses
-                                          ? const Color(0xFFF87171)
-                                          : const Color(0xFF4ADE80),
-                                    ),
+                              const SizedBox(height: 2),
+                              FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  '${currencySymbolNotifier.value}${_fmt(income)}',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: theme.colorScheme.onSurface,
+                                  ),
+                                ),
+                              ),
                             ],
                           ),
                         ),
-
-                        const SizedBox(height: 16),
-
-                        // ── By category section ────────────────────────────────────
-                        _SectionCard(
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _showExpenses = true;
+                            _showNet = false;
+                          });
+                          _saveDisplayMode();
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: _showExpenses && !_showNet
+                                ? const Color(0xFFF87171)
+                                    .withValues(alpha: 0.12)
+                                : theme.colorScheme.surfaceContainer,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: _showExpenses && !_showNet
+                                  ? const Color(0xFFF87171)
+                                  : Colors.transparent,
+                              width: 1.5,
+                            ),
+                          ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(
-                                'By Category',
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
+                              Row(
+                                children: [
+                                  const Icon(Icons.arrow_downward_rounded,
+                                      color: Color(0xFFF87171), size: 13),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Expenses',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: theme.colorScheme.onSurface
+                                          .withValues(alpha: 0.6),
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 2),
+                              FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  '${currencySymbolNotifier.value}${_fmt(expenses)}',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: theme.colorScheme.onSurface,
+                                  ),
                                 ),
                               ),
-                              const SizedBox(height: 16),
-                              Builder(builder: (_) {
-                                final categoryData = _showExpenses
-                                    ? expenseCategoryData
-                                    : incomeCategoryData;
-                                final isExpense = _showExpenses;
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _showNet = !_showNet;
+                            if (_showNet) {
+                              // deselect income/expense highlight when viewing net
+                            }
+                          });
+                          _saveDisplayMode();
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: _showNet
+                                ? (net >= 0
+                                        ? const Color(0xFF4ADE80)
+                                        : const Color(0xFFF87171))
+                                    .withValues(alpha: 0.12)
+                                : theme.colorScheme.surfaceContainer,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: _showNet
+                                  ? (net >= 0
+                                      ? const Color(0xFF4ADE80)
+                                      : const Color(0xFFF87171))
+                                  : Colors.transparent,
+                              width: 1.5,
+                            ),
+                            boxShadow: _showNet
+                                ? [
+                                    BoxShadow(
+                                      color: (net >= 0
+                                              ? const Color(0xFF4ADE80)
+                                              : const Color(0xFFF87171))
+                                          .withValues(alpha: 0.30),
+                                      blurRadius: 8,
+                                      spreadRadius: 0,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ]
+                                : null,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.account_balance_wallet_outlined,
+                                      color: net >= 0
+                                          ? const Color(0xFF4ADE80)
+                                          : const Color(0xFFF87171),
+                                      size: 13),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Net',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: theme.colorScheme.onSurface
+                                          .withValues(alpha: 0.6),
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 2),
+                              FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  '${currencySymbolNotifier.value}${_fmt(net)}',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: theme.colorScheme.onSurface,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
 
-                                if (categoryData.isEmpty) {
-                                  return Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                        vertical: 24),
-                                    child: Center(
+          // ── Scrollable content ───────────────────────────────────────────────
+          Expanded(
+            child: ColoredBox(
+              color: theme.colorScheme.surface,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+                child: _showNet
+                    ? _buildNetView(theme)
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // ── Line chart section ─────────────────────────────────────
+                          _SectionCard(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Toggle header
+                                Row(
+                                  children: [
+                                    Expanded(
                                       child: Text(
-                                        'No category data for this period.',
-                                        style: TextStyle(
-                                            color: theme.colorScheme.outline),
+                                        _showExpenses ? 'Expenses' : 'Income',
+                                        style: theme.textTheme.titleMedium
+                                            ?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                        ),
                                       ),
                                     ),
-                                  );
-                                }
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                chartData.isEmpty
+                                    ? const _EmptyChart()
+                                    : _LineChart(
+                                        data: chartData,
+                                        color: _showExpenses
+                                            ? const Color(0xFFF87171)
+                                            : const Color(0xFF4ADE80),
+                                      ),
+                              ],
+                            ),
+                          ),
 
-                                return Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          isExpense
-                                              ? Icons.arrow_downward_rounded
-                                              : Icons.arrow_upward_rounded,
-                                          color: isExpense
-                                              ? const Color(0xFFF87171)
-                                              : const Color(0xFF4ADE80),
-                                          size: 14,
+                          const SizedBox(height: 16),
+
+                          // ── By category section ────────────────────────────────────
+                          _SectionCard(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'By Category',
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                Builder(builder: (_) {
+                                  final categoryData = _showExpenses
+                                      ? expenseCategoryData
+                                      : incomeCategoryData;
+                                  final isExpense = _showExpenses;
+
+                                  if (categoryData.isEmpty) {
+                                    return Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 24),
+                                      child: Center(
+                                        child: Text(
+                                          'No category data for this period.',
+                                          style: TextStyle(
+                                              color: theme.colorScheme.outline),
                                         ),
-                                        const SizedBox(width: 6),
-                                        Text(
-                                          isExpense ? 'Expenses' : 'Income',
-                                          style: theme.textTheme.bodyMedium
-                                              ?.copyWith(
-                                            fontWeight: FontWeight.w600,
+                                      ),
+                                    );
+                                  }
+
+                                  return Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            isExpense
+                                                ? Icons.arrow_downward_rounded
+                                                : Icons.arrow_upward_rounded,
                                             color: isExpense
                                                 ? const Color(0xFFF87171)
                                                 : const Color(0xFF4ADE80),
+                                            size: 14,
                                           ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 12),
-                                    _PieChart(data: categoryData),
-                                    const SizedBox(height: 12),
-                                    ..._buildCategoryLegend(categoryData, theme,
-                                        _showExpenses ? 'expense' : 'income'),
-                                  ],
-                                );
-                              }),
-                            ],
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            isExpense ? 'Expenses' : 'Income',
+                                            style: theme.textTheme.bodyMedium
+                                                ?.copyWith(
+                                              fontWeight: FontWeight.w600,
+                                              color: isExpense
+                                                  ? const Color(0xFFF87171)
+                                                  : const Color(0xFF4ADE80),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 12),
+                                      _PieChart(data: categoryData),
+                                      const SizedBox(height: 12),
+                                      ..._buildCategoryLegend(
+                                          categoryData,
+                                          theme,
+                                          _showExpenses ? 'expense' : 'income'),
+                                    ],
+                                  );
+                                }),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -2137,7 +2154,10 @@ class _PeriodPickerDialogState extends State<_PeriodPickerDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final primary = theme.colorScheme.primary;
+    final isDark = theme.brightness == Brightness.dark;
+    // In dark mode, use a plain black & white palette instead of the
+    // app's accent color so the picker renders monochrome.
+    final primary = isDark ? Colors.white : theme.colorScheme.primary;
     final now = DateTime.now();
 
     final showCalendar =
@@ -2198,7 +2218,27 @@ class _PeriodPickerDialogState extends State<_PeriodPickerDialog> {
             const SizedBox(height: 16),
 
             if (_mode == _FilterMode.allTime) ...[
-              const Text('Showing all transactions'),
+              SizedBox(
+                height: 240,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.all_inclusive,
+                      size: 48,
+                      color: primary.withValues(alpha: 0.35),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Showing all transactions',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color:
+                            theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ] else ...[
               // Calendar month navigator (only for non-yearly)
               if (showCalendar) ...[
@@ -2415,6 +2455,11 @@ class _PeriodPickerDialogState extends State<_PeriodPickerDialog> {
               children: [
                 Expanded(
                   child: OutlinedButton(
+                    style: isDark
+                        ? OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white,
+                          )
+                        : null,
                     onPressed: () => Navigator.pop(context),
                     child: const Text('Cancel'),
                   ),
@@ -2422,6 +2467,12 @@ class _PeriodPickerDialogState extends State<_PeriodPickerDialog> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: FilledButton(
+                    style: isDark
+                        ? FilledButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor: Colors.black,
+                          )
+                        : null,
                     onPressed: () => Navigator.pop(context, (
                       mode: _mode,
                       anchor: _anchor,

@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-// ── Entry point ───────────────────────────────────────────────────────────────
-// Opens the calculator as the end-drawer (slides in from the right, full screen).
+import 'app_squircle_button.dart';
+
+// ── Entry point ──────────────────────────────────────────────────────────
+// Opens like the other tool pages (Converter, Budget, Analytics): pushed
+// as a normal full-screen route via Navigator.push.
 //
 // Usage:
-//   endDrawer: Drawer(
-//     width: double.infinity,
-//     child: Scaffold(body: _endDrawerContent),
+//   Navigator.push(
+//     context,
+//     MaterialPageRoute(builder: (_) => const CalculatorPage()),
 //   )
 
 class CalculatorPage extends StatefulWidget {
@@ -49,7 +52,7 @@ class _CalculatorPageState extends State<CalculatorPage>
     super.dispose();
   }
 
-  // ── Logic ─────────────────────────────────────────────────────────────────
+  // ── Logic ────────────────────────────────────────────────────────────
 
   void _onDigit(String digit) {
     HapticFeedback.lightImpact();
@@ -58,8 +61,9 @@ class _CalculatorPageState extends State<CalculatorPage>
         _display = digit;
         _shouldReplace = false;
       } else {
-        if (_display.replaceAll('-', '').replaceAll('.', '').length >= 12)
+        if (_display.replaceAll('-', '').replaceAll('.', '').length >= 12) {
           return;
+        }
         _display = _display + digit;
       }
       _justEvaluated = false;
@@ -209,7 +213,7 @@ class _CalculatorPageState extends State<CalculatorPage>
     return 32;
   }
 
-  // ── Build ──────────────────────────────────────────────────────────────────
+  // ── Build ────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -218,110 +222,97 @@ class _CalculatorPageState extends State<CalculatorPage>
     final topPad = MediaQuery.paddingOf(context).top;
     final bottomPad = MediaQuery.paddingOf(context).bottom;
 
-    return Column(
-      children: [
-        // ── Header ────────────────────────────────────────────────────────
-        Container(
-          width: double.infinity,
-          padding: EdgeInsets.fromLTRB(4, topPad + 12, 16, 12),
-          color: cs.surfaceContainer,
-          child: Row(
-            children: [
-              IconButton(
-                icon: Icon(Icons.close_rounded, color: cs.onSurface),
-                onPressed: () => Navigator.of(context).pop(),
-                tooltip: 'Close',
-              ),
-              Expanded(
-                child: Text(
-                  'Calculator',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: cs.onSurface,
-                  ),
-                ),
-              ),
-            ],
+    return Scaffold(
+      backgroundColor: cs.surface,
+      body: Column(
+        children: [
+          // ── Header — shared style with the converter ───────────────
+          AppPageHeader(
+            title: 'Calculator',
+            topPadding: topPad,
+            leadingIcon: Icons.arrow_back_rounded,
+            leadingTooltip: 'Back',
+            onLeadingTap: () => Navigator.of(context).pop(),
           ),
-        ),
 
-        // ── Display ───────────────────────────────────────────────────────
-        Expanded(
-          child: Container(
-            width: double.infinity,
-            color: cs.surfaceContainer,
-            padding: const EdgeInsets.symmetric(horizontal: 28),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                // Expression line
-                AnimatedOpacity(
-                  opacity: _expression.isEmpty ? 0 : 1,
-                  duration: const Duration(milliseconds: 200),
-                  child: Text(
-                    _expression,
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      color: cs.onSurface.withValues(alpha: 0.45),
-                      fontWeight: FontWeight.w500,
-                      letterSpacing: 0.5,
-                    ),
-                    textAlign: TextAlign.right,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                // Main number
-                ScaleTransition(
-                  scale: _popScale,
-                  alignment: Alignment.centerRight,
-                  child: AnimatedDefaultTextStyle(
-                    duration: const Duration(milliseconds: 120),
-                    style: TextStyle(
-                      fontSize: _displayFontSize,
-                      fontWeight: FontWeight.w300,
-                      color: cs.onSurface,
-                      letterSpacing: -1.5,
-                    ),
+          // ── Display ─────────────────────────────────────────────────
+          Expanded(
+            child: Container(
+              width: double.infinity,
+              color: cs.surfaceContainer,
+              padding: const EdgeInsets.symmetric(horizontal: 28),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  // Expression line
+                  AnimatedOpacity(
+                    opacity: _expression.isEmpty ? 0 : 1,
+                    duration: const Duration(milliseconds: 200),
                     child: Text(
-                      _formattedDisplay,
+                      _expression,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: cs.onSurfaceVariant,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: 0.5,
+                      ),
                       textAlign: TextAlign.right,
                       maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                ),
-                const SizedBox(height: 24),
-              ],
+                  const SizedBox(height: 4),
+                  // Main number
+                  ScaleTransition(
+                    scale: _popScale,
+                    alignment: Alignment.centerRight,
+                    child: AnimatedDefaultTextStyle(
+                      duration: const Duration(milliseconds: 120),
+                      style: TextStyle(
+                        fontSize: _displayFontSize,
+                        fontWeight: FontWeight.w300,
+                        color: cs.onSurface,
+                        letterSpacing: -1.5,
+                      ),
+                      child: Text(
+                        _formattedDisplay,
+                        textAlign: TextAlign.right,
+                        maxLines: 1,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                ],
+              ),
             ),
           ),
-        ),
 
-        // ── Button grid ────────────────────────────────────────────────────
-        Container(
-          color: cs.surfaceContainer,
-          padding: EdgeInsets.fromLTRB(16, 20, 16, bottomPad + 24),
-          child: _ButtonGrid(
-            scheme: cs,
-            activeOperator: _activeOperator,
-            hasInput: _display != '0' || _expression.isNotEmpty,
-            justEvaluated: _justEvaluated,
-            onDigit: _onDigit,
-            onDecimal: _onDecimal,
-            onOperator: _onOperator,
-            onEquals: _onEquals,
-            onClear: _onClear,
-            onToggleSign: _onToggleSign,
-            onPercent: _onPercent,
-            onBackspace: _onBackspace,
+          // ── Button grid ─────────────────────────────────────────────
+          Container(
+            color: cs.surfaceContainer,
+            padding: EdgeInsets.fromLTRB(16, 20, 16, bottomPad + 24),
+            child: _ButtonGrid(
+              scheme: cs,
+              activeOperator: _activeOperator,
+              hasInput: _display != '0' || _expression.isNotEmpty,
+              justEvaluated: _justEvaluated,
+              onDigit: _onDigit,
+              onDecimal: _onDecimal,
+              onOperator: _onOperator,
+              onEquals: _onEquals,
+              onClear: _onClear,
+              onToggleSign: _onToggleSign,
+              onPercent: _onPercent,
+              onBackspace: _onBackspace,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
 
-// ── Button grid ───────────────────────────────────────────────────────────────
+// ── Button grid ─────────────────────────────────────────────────────────
 
 class _ButtonGrid extends StatelessWidget {
   final ColorScheme scheme;
@@ -499,18 +490,9 @@ class _Btn {
   const _Btn(this.label, this.kind);
 }
 
-// ── Individual button ─────────────────────────────────────────────────────────
+// ── Individual button — now backed by the shared AppSquircleButton ───────
 
-/// Squircle border — Flutter's [ContinuousRectangleBorder] uses a
-/// superellipse with a curviness factor.  A factor of ~2.5–3 gives the
-/// classic "squircle" look (iOS-style, tighter corners than a rounded rect).
-// ignore: unused_element
-class _SquircleBorder extends ContinuousRectangleBorder {
-  // ignore: unused_element_parameter
-  const _SquircleBorder({super.borderRadius});
-}
-
-class _CalcButton extends StatefulWidget {
+class _CalcButton extends StatelessWidget {
   final String label;
   final double width;
   final double height;
@@ -530,123 +512,32 @@ class _CalcButton extends StatefulWidget {
   });
 
   @override
-  State<_CalcButton> createState() => _CalcButtonState();
-}
-
-class _CalcButtonState extends State<_CalcButton>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
-  late final Animation<double> _scale;
-  // Darken on press
-  bool _pressed = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 70),
-      reverseDuration: const Duration(milliseconds: 180),
-    );
-    _scale = Tween<double>(begin: 1.0, end: 0.91).animate(
-      CurvedAnimation(parent: _ctrl, curve: Curves.easeIn),
-    );
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  void _down(_) {
-    setState(() => _pressed = true);
-    _ctrl.forward();
-  }
-
-  void _up(_) {
-    setState(() => _pressed = false);
-    _ctrl.reverse();
-    widget.onTap();
-  }
-
-  void _cancel() {
-    setState(() => _pressed = false);
-    _ctrl.reverse();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final isBackspace = widget.label == '⌫';
-    final isSymbol =
-        !RegExp(r'^\d$').hasMatch(widget.label) && widget.label != '.';
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isBackspace = label == '⌫';
+    final isSymbol = !RegExp(r'^\d$').hasMatch(label) && label != '.';
 
-    // Squircle radius — roughly 36% of the shorter dimension
-    final radius = widget.height * 0.36;
-
-    // Shadow intensity mirrors the accounts_page pattern:
-    // stronger in dark mode to lift buttons off the dark surface,
-    // lighter in light mode where surface contrast already separates them.
-    final shadowAlpha1 = isDark ? 0.32 : 0.10;
-    final shadowAlpha2 = isDark ? 0.16 : 0.04;
-
-    // Slightly darken bg when pressed for tactile feel
-    final effectiveBg = _pressed
-        ? Color.alphaBlend(Colors.black.withValues(alpha: 0.06), widget.bgColor)
-        : widget.bgColor;
-
-    return GestureDetector(
-      onTapDown: _down,
-      onTapUp: _up,
-      onTapCancel: _cancel,
-      child: ScaleTransition(
-        scale: _scale,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 100),
-          width: widget.width,
-          height: widget.height,
-          decoration: ShapeDecoration(
-            color: effectiveBg,
-            shape: ContinuousRectangleBorder(
-              borderRadius: BorderRadius.circular(radius),
+    return AppSquircleButton(
+      width: width,
+      height: height,
+      bgColor: bgColor,
+      onTap: onTap,
+      alignment: isWide ? Alignment.centerLeft : Alignment.center,
+      padding: isWide ? EdgeInsets.only(left: height * 0.38) : EdgeInsets.zero,
+      child: isBackspace
+          ? Icon(
+              Icons.backspace_outlined,
+              color: fgColor,
+              size: height * 0.36,
+            )
+          : Text(
+              label,
+              style: TextStyle(
+                fontSize: isSymbol ? height * 0.38 : height * 0.42,
+                fontWeight: isSymbol ? FontWeight.w500 : FontWeight.w400,
+                color: fgColor,
+                height: 1,
+              ),
             ),
-            // Subtle shadow for depth — scales with dark/light mode
-            shadows: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: shadowAlpha1),
-                blurRadius: 8,
-                offset: const Offset(0, 3),
-              ),
-              BoxShadow(
-                color: Colors.black.withValues(alpha: shadowAlpha2),
-                blurRadius: 2,
-                offset: const Offset(0, 1),
-              ),
-            ],
-          ),
-          alignment: widget.isWide ? Alignment.centerLeft : Alignment.center,
-          padding: widget.isWide
-              ? EdgeInsets.only(left: widget.height * 0.38)
-              : EdgeInsets.zero,
-          child: isBackspace
-              ? Icon(
-                  Icons.backspace_outlined,
-                  color: widget.fgColor,
-                  size: widget.height * 0.36,
-                )
-              : Text(
-                  widget.label,
-                  style: TextStyle(
-                    fontSize:
-                        isSymbol ? widget.height * 0.38 : widget.height * 0.42,
-                    fontWeight: isSymbol ? FontWeight.w500 : FontWeight.w400,
-                    color: widget.fgColor,
-                    height: 1,
-                  ),
-                ),
-        ),
-      ),
     );
   }
 }

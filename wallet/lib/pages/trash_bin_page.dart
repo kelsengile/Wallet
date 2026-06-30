@@ -188,7 +188,13 @@ class _TrashBinPageState extends State<TrashBinPage>
     String confirmLabel = 'Delete Forever',
     bool isEmptyAll = false,
   }) async {
-    final cs = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    // The default ColorScheme.error reads as a muted, desaturated pink in
+    // dark mode. For the higher-stakes "Empty Trash" flow, use a punchier,
+    // more saturated red instead so the warning lands harder.
+    final isDark = theme.brightness == Brightness.dark;
+    final accentColor = isDark ? Colors.red.shade400 : cs.error;
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => _DangerDialog(
@@ -197,7 +203,7 @@ class _TrashBinPageState extends State<TrashBinPage>
         itemCount: itemCount,
         confirmLabel: confirmLabel,
         isEmptyAll: isEmptyAll,
-        accentColor: cs.error,
+        accentColor: accentColor,
       ),
     );
     return result ?? false;
@@ -241,7 +247,11 @@ class _TrashBinPageState extends State<TrashBinPage>
               onPressed: _emptyTrash,
               icon: const Icon(Icons.delete_sweep_outlined, size: 18),
               label: const Text('Empty'),
-              style: TextButton.styleFrom(foregroundColor: cs.error),
+              style: TextButton.styleFrom(
+                foregroundColor: theme.brightness == Brightness.dark
+                    ? Colors.red.shade400
+                    : cs.error,
+              ),
             ),
           const SizedBox(width: 4),
         ],
