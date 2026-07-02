@@ -13,3 +13,6 @@ A minimalist personal finance application designed to help users track balances,
 ## Tech Stack
 - Flutter
 - SQLite
+
+## Author
+- Kelsen Gile
