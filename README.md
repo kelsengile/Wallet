@@ -10,9 +10,4 @@ A minimalist personal finance application designed to help users track balances,
 - Identification Uploads
 - Currency Exchange Functions
 
-## Tech Stack
-- Flutter
-- SQLite
 
-## Author
-- Kelsen Gile
