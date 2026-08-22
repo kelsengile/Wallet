@@ -1,3 +1,3 @@
-# RESEARCH | Wallet
+# DOCUMENTATION | Wallet
 
 Wallet is a minimalist personal finance application built to give users a clear, distraction-free way to track balances, monitor expenses, and stay on top of their overall financial activity. This document presents the research conducted to support the app's design and development, covering the problem space of personal finance management, an overview of existing tools and their limitations, the target users and their needs, and the functional and technical considerations that shaped features such as balance tracking, expense analytics, identification uploads, and currency exchange. The goal of this research is to ensure that Wallet's final design is grounded in real user needs and sound design principles, resulting in an application that is simple, intuitive, and genuinely useful for everyday financial management.
