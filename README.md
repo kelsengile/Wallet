@@ -1,13 +1,8 @@
-# Wallet
+# Momentum
 
-A minimalist personal finance application designed to help users track balances, manage expenses, and monitor financial activity with a clean and modern interface. Simple, intuitive, and distraction-free — everything you need to stay on top of your finances in one place.
+Momentum is a minimalist personal tracking application designed to bring important areas of everyday life into one simple and organized platform. Instead of using separate applications for managing finances, schedules, and personal health, Momentum provides a centralized space where users can monitor their progress, build better habits, stay organized, and make more informed decisions about their daily lives. With a clean and straightforward interface, the application focuses on making personal tracking simple, accessible, and easy to maintain.
 
-## Features
-- Account Card Features
-- Balance Tracking
-- Expense Monitoring and Analytics
-- Simple and Clean UI
-- Identification Uploads
-- Currency Exchange Functions
-
-
+Features
+- Finance Tracker — Monitor income, expenses, savings, budgets, and overall spending habits.
+- Schedule Tracker — Organize tasks, appointments, deadlines, events, and daily activities.
+- Health Tracker — Track health-related habits, fitness activities, wellness goals, and personal progress.
