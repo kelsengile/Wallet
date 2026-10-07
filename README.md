@@ -9,6 +9,14 @@ Momentum is a minimalist personal tracking application designed to bring importa
 
 **Technologies**
 
+- Flutter — Cross-platform framework used to develop Momentum for Android, iOS, and Web.
+- Dart — Programming language used for application logic and Flutter development.
+- SQLite — Local database used for storing personal data on the user's device and supporting offline functionality.
+- PostgreSQL — Server-side database used for securely storing synchronized user data across devices and platforms.
+- REST API — Communication layer between the Flutter applications and the backend for authentication, synchronization, and data management.
+- Git — Version control system used to track changes and manage the project's development history.
+- GitHub — Repository hosting and collaboration platform used for source control, documentation, and project management.
+
 ---
 
 *Last Updated: October 2026*
