@@ -13,7 +13,9 @@ import 'features/finance/screens/accounts.dart';
 import 'features/health/screens/history.dart';
 import 'features/schedule/screens/schedule.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await AppSettings.instance.load(); // restore saved theme + text size
   runApp(const MomentumApp());
 }
 
@@ -22,13 +24,31 @@ class MomentumApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: AppConstants.appName,
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.light,
-      darkTheme: AppTheme.dark,
-      themeMode: ThemeMode.system,
-      home: const HomeShell(),
+    // Rebuilds the whole app whenever any setting changes.
+    return ListenableBuilder(
+      listenable: AppSettings.instance,
+      builder: (context, _) {
+        final settings = AppSettings.instance;
+        return MaterialApp(
+          title: AppConstants.appName,
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.light,
+          darkTheme: AppTheme.dark,
+          themeMode: settings.themeMode,
+          // Wraps the Navigator, so every page, drawer and dialog is scaled.
+          builder: (context, child) {
+            final mq = MediaQuery.of(context);
+            final systemScale = mq.textScaler.scale(14) / 14;
+            return MediaQuery(
+              data: mq.copyWith(
+                textScaler: TextScaler.linear(systemScale * settings.textScale),
+              ),
+              child: child!,
+            );
+          },
+          home: const HomeShell(),
+        );
+      },
     );
   }
 }
