@@ -80,16 +80,16 @@ class _HomeShellState extends State<HomeShell> {
       screen: AccountsScreen(),
     ),
     _Destination(
-      label: 'History',
-      icon: Icons.history_outlined,
-      selectedIcon: Icons.history,
-      screen: HistoryScreen(),
-    ),
-    _Destination(
       label: 'Schedule',
       icon: Icons.calendar_today_outlined,
       selectedIcon: Icons.calendar_today,
       screen: ScheduleScreen(),
+    ),
+    _Destination(
+      label: 'Health',
+      icon: Icons.health_and_safety_outlined,
+      selectedIcon: Icons.health_and_safety,
+      screen: HistoryScreen(),
     ),
   ];
 
