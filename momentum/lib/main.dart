@@ -1,6 +1,13 @@
 import 'package:flutter/material.dart';
 
 import 'core/constants.dart';
+import 'core/screens/categories.dart';
+import 'core/screens/faq.dart';
+import 'core/screens/feedback.dart';
+import 'core/screens/profile.dart';
+import 'core/screens/rate.dart';
+import 'core/screens/search.dart';
+import 'core/screens/settings.dart';
 import 'core/themes.dart';
 import 'features/finance/screens/accounts.dart';
 import 'features/health/screens/history.dart';
@@ -40,6 +47,21 @@ class _Destination {
   });
 }
 
+class _DrawerItem {
+  final String label;
+  final IconData icon;
+  final Widget screen;
+
+  const _DrawerItem(this.label, this.icon, this.screen);
+}
+
+class _DrawerSection {
+  final String title;
+  final List<_DrawerItem> items;
+
+  const _DrawerSection(this.title, this.items);
+}
+
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
 
@@ -71,7 +93,47 @@ class _HomeShellState extends State<HomeShell> {
     ),
   ];
 
+  static const _sections = <_DrawerSection>[
+    _DrawerSection('Preferences', [
+      _DrawerItem('Settings', Icons.settings_outlined, SettingsScreen()),
+      _DrawerItem('Categories', Icons.category_outlined, CategoriesScreen()),
+    ]),
+    _DrawerSection('Help & Support', [
+      _DrawerItem('FAQ', Icons.help_outline, FaqScreen()),
+      _DrawerItem('Rate', Icons.star_outline, RateScreen()),
+      _DrawerItem('Feedback', Icons.feedback_outlined, FeedbackScreen()),
+    ]),
+    _DrawerSection('Personal', [
+      _DrawerItem('Profile', Icons.person_outline, ProfileScreen()),
+    ]),
+  ];
+
   void _select(int index) => setState(() => _index = index);
+
+  void _openPage(Widget screen) {
+    Navigator.of(context).pop(); // close drawer
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
+  }
+
+  Widget _buildSectionHeader(BuildContext context, String title) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppConstants.spaceLg,
+        AppConstants.spaceMd,
+        AppConstants.spaceLg,
+        AppConstants.spaceXs,
+      ),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: scheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -91,16 +153,16 @@ class _HomeShellState extends State<HomeShell> {
           IconButton(
             icon: const Icon(Icons.search),
             tooltip: 'Search',
-            onPressed: () {
-              // TODO: implement search
-            },
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const SearchScreen()),
+            ),
           ),
         ],
       ),
       drawer: Drawer(
         child: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: ListView(
+            padding: EdgeInsets.zero,
             children: [
               const Padding(
                 padding: EdgeInsets.fromLTRB(
@@ -126,6 +188,17 @@ class _HomeShellState extends State<HomeShell> {
                     Navigator.of(context).pop(); // close drawer
                   },
                 ),
+              for (final section in _sections) ...[
+                const Divider(height: AppConstants.spaceLg),
+                _buildSectionHeader(context, section.title),
+                for (final item in section.items)
+                  ListTile(
+                    leading: Icon(item.icon),
+                    title: Text(item.label),
+                    onTap: () => _openPage(item.screen),
+                  ),
+              ],
+              const SizedBox(height: AppConstants.spaceMd),
             ],
           ),
         ),
