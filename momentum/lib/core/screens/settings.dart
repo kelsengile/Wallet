@@ -97,15 +97,20 @@ class SettingsScreen extends StatelessWidget {
         listenable: settings,
         builder: (context, _) {
           return ListView(
+            padding: const EdgeInsets.only(bottom: AppConstants.spaceLg),
             children: [
               const _SectionHeader('Appearance'),
-              _buildThemeTile(context, settings),
-              _buildTextSizeTile(context, settings),
-              const _SectionDivider(),
+              _SettingGroup(
+                children: [
+                  _buildThemeTile(context, settings),
+                  _buildTextSizeTile(context, settings),
+                ],
+              ),
+              const SizedBox(height: AppConstants.spaceSm),
               const _SectionHeader('Localization'),
-              const _SectionDivider(),
+              const SizedBox(height: AppConstants.spaceSm),
               const _SectionHeader('Security'),
-              const _SectionDivider(),
+              const SizedBox(height: AppConstants.spaceSm),
               const _SectionHeader('Storage'),
             ],
           );
@@ -188,6 +193,54 @@ class SettingsScreen extends StatelessWidget {
   }
 }
 
+/// One big rounded rectangle holding every setting under a header,
+/// with thin dividers between them. Darker than the page background's
+/// usual card color so it stands out clearly.
+class _SettingGroup extends StatelessWidget {
+  final List<Widget> children;
+  const _SettingGroup({required this.children});
+
+  // Darker fill and matching divider colors for each theme.
+  static const _darkFill = Color(0xFF121212);
+  static const _darkDivider = Color(0xFF2E2E2E);
+  static const _lightFill = Color(0xFFCBCBCB);
+  static const _lightDivider = Color(0xFFAFAFAF);
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final fill = isDark ? _darkFill : _lightFill;
+    final divider = isDark ? _darkDivider : _lightDivider;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppConstants.spaceMd,
+        vertical: AppConstants.spaceXs,
+      ),
+      child: Material(
+        color: fill,
+        borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+        clipBehavior: Clip.antiAlias, // keeps tap ripples inside the curves
+        child: Column(
+          children: [
+            for (var i = 0; i < children.length; i++) ...[
+              if (i > 0)
+                Divider(
+                  height: 1,
+                  thickness: 1,
+                  indent: AppConstants.spaceMd,
+                  endIndent: AppConstants.spaceMd,
+                  color: divider,
+                ),
+              children[i],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _SectionHeader extends StatelessWidget {
   final String title;
   const _SectionHeader(this.title);
@@ -195,31 +248,23 @@ class _SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     return Padding(
       padding: const EdgeInsets.fromLTRB(
+        AppConstants.spaceMd + AppConstants.spaceXs,
         AppConstants.spaceMd,
         AppConstants.spaceMd,
-        AppConstants.spaceMd,
-        AppConstants.spaceXs,
+        AppConstants.spaceSm + AppConstants.spaceXs, // more space underneath
       ),
       child: Text(
         title,
-        style: theme.textTheme.labelLarge?.copyWith(
+        // Slightly bigger than before (16 instead of 14).
+        style: theme.textTheme.titleMedium?.copyWith(
           fontWeight: FontWeight.w600,
-          color: theme.colorScheme.onSurfaceVariant,
+          // White on dark; black on light so it stays readable.
+          color: isDark ? Colors.white : Colors.black,
         ),
       ),
     );
   }
-}
-
-class _SectionDivider extends StatelessWidget {
-  const _SectionDivider();
-
-  @override
-  Widget build(BuildContext context) => const Divider(
-        height: AppConstants.spaceMd,
-        indent: AppConstants.spaceMd,
-        endIndent: AppConstants.spaceMd,
-      );
 }
