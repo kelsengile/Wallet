@@ -63,20 +63,15 @@ class AppTheme {
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
-        titleTextStyle: TextStyle(
-          color: scheme.onSurface,
-          fontSize: 22,
-          fontWeight: FontWeight.w700,
-          letterSpacing: -0.3,
-        ),
       ),
       navigationBarTheme: NavigationBarThemeData(
+        height: 56,
         backgroundColor: scheme.surfaceContainer,
         indicatorColor: scheme.primaryContainer,
-        iconTheme: WidgetStatePropertyAll(IconThemeData(color: scheme.onSurface)),
-        labelTextStyle: WidgetStatePropertyAll(
-          TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: scheme.onSurface),
+        iconTheme: WidgetStatePropertyAll(
+          IconThemeData(size: 22, color: scheme.onSurface),
         ),
+        labelPadding: const EdgeInsets.only(top: 2),
       ),
       drawerTheme: DrawerThemeData(backgroundColor: scheme.surfaceContainer),
       listTileTheme: ListTileThemeData(
