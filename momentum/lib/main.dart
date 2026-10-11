@@ -71,6 +71,14 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
+  final PageController _pageController = PageController();
+  bool _animating = false; // true while a tap-triggered page animation runs
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
 
   static const _destinations = <_Destination>[
     _Destination(
@@ -109,7 +117,17 @@ class _HomeShellState extends State<HomeShell> {
     ]),
   ];
 
-  void _select(int index) => setState(() => _index = index);
+  /// Called by the bottom nav and drawer: slides to the chosen page.
+  Future<void> _select(int index) async {
+    setState(() => _index = index);
+    _animating = true;
+    await _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeInOut,
+    );
+    _animating = false;
+  }
 
   void _openPage(Widget screen) {
     Navigator.of(context).pop(); // close drawer
@@ -287,9 +305,17 @@ class _HomeShellState extends State<HomeShell> {
           ),
         ),
       ),
-      body: IndexedStack(
-        index: _index,
-        children: [for (final d in _destinations) d.screen],
+      // Swipe between pages in the same order as the bottom nav.
+      // No looping: the first and last pages can't be swiped past.
+      body: PageView(
+        controller: _pageController,
+        physics: const PageScrollPhysics(parent: ClampingScrollPhysics()),
+        onPageChanged: (i) {
+          if (!_animating) setState(() => _index = i);
+        },
+        children: [
+          for (final d in _destinations) _KeepAlive(child: d.screen),
+        ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
@@ -304,5 +330,27 @@ class _HomeShellState extends State<HomeShell> {
         ],
       ),
     );
+  }
+}
+
+/// Keeps a page's state alive while it is off-screen in the PageView.
+class _KeepAlive extends StatefulWidget {
+  final Widget child;
+
+  const _KeepAlive({required this.child});
+
+  @override
+  State<_KeepAlive> createState() => _KeepAliveState();
+}
+
+class _KeepAliveState extends State<_KeepAlive>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
   }
 }
