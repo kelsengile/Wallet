@@ -71,6 +71,14 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
+  final PageController _pageController = PageController();
+  bool _animating = false; // true while a tap-triggered page animation runs
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
 
   static const _destinations = <_Destination>[
     _Destination(
@@ -80,18 +88,22 @@ class _HomeShellState extends State<HomeShell> {
       screen: AccountsScreen(),
     ),
     _Destination(
-      label: 'History',
-      icon: Icons.history_outlined,
-      selectedIcon: Icons.history,
-      screen: HistoryScreen(),
-    ),
-    _Destination(
       label: 'Schedule',
       icon: Icons.calendar_today_outlined,
       selectedIcon: Icons.calendar_today,
       screen: ScheduleScreen(),
     ),
+    _Destination(
+      label: 'Health',
+      icon: Icons.health_and_safety_outlined,
+      selectedIcon: Icons.health_and_safety,
+      screen: HistoryScreen(),
+    ),
   ];
+
+  // Pinned right under the "Momentum" text in the drawer.
+  static const _profileItem =
+      _DrawerItem('Profile', Icons.person_outline, ProfileScreen());
 
   static const _sections = <_DrawerSection>[
     _DrawerSection('Preferences', [
@@ -103,31 +115,102 @@ class _HomeShellState extends State<HomeShell> {
       _DrawerItem('Rate', Icons.star_outline, RateScreen()),
       _DrawerItem('Feedback', Icons.feedback_outlined, FeedbackScreen()),
     ]),
-    _DrawerSection('Personal', [
-      _DrawerItem('Profile', Icons.person_outline, ProfileScreen()),
-    ]),
   ];
 
-  void _select(int index) => setState(() => _index = index);
+  /// Called by the bottom nav and drawer: slides to the chosen page.
+  Future<void> _select(int index) async {
+    setState(() => _index = index);
+    _animating = true;
+    await _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeInOut,
+    );
+    _animating = false;
+  }
 
   void _openPage(Widget screen) {
     Navigator.of(context).pop(); // close drawer
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
   }
 
+  /// Plain section title (sits under an inset divider).
   Widget _buildSectionHeader(BuildContext context, String title) {
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppConstants.spaceLg,
-        AppConstants.spaceMd,
+        AppConstants.spaceXs,
         AppConstants.spaceLg,
         AppConstants.spaceXs,
       ),
       child: Text(
         title,
-        style: TextStyle(
-          fontSize: 13,
+        style: theme.textTheme.labelLarge?.copyWith(
+          fontWeight: FontWeight.w600,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+
+  /// Gray header at the very top of the drawer with the app name.
+  Widget _buildDrawerHeader(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      color: theme.colorScheme.outlineVariant,
+      padding: EdgeInsets.fromLTRB(
+        AppConstants.spaceLg,
+        MediaQuery.of(context).padding.top + AppConstants.spaceLg,
+        AppConstants.spaceLg,
+        AppConstants.spaceMd,
+      ),
+      child: Text(
+        AppConstants.appName,
+        style: theme.textTheme.headlineSmall?.copyWith(
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  /// Compact drawer button (tight vertical spacing).
+  Widget _buildTile({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    bool selected = false,
+  }) {
+    return ListTile(
+      dense: true,
+      visualDensity: const VisualDensity(vertical: -2),
+      minVerticalPadding: 0,
+      leading: Icon(icon),
+      title: Text(label),
+      selected: selected,
+      onTap: onTap,
+    );
+  }
+
+  Widget _buildVersionFooter(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.all(AppConstants.spaceMd),
+      padding: const EdgeInsets.symmetric(
+        vertical: AppConstants.spaceSm + 4,
+        horizontal: AppConstants.spaceMd,
+      ),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(AppConstants.radiusSm),
+      ),
+      child: Text(
+        '${AppConstants.appName} V: ${AppConstants.appVersion}',
+        textAlign: TextAlign.center,
+        style: theme.textTheme.labelMedium?.copyWith(
           fontWeight: FontWeight.w600,
           color: scheme.onSurfaceVariant,
         ),
@@ -137,6 +220,8 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
     return Scaffold(
       appBar: AppBar(
         // 3-line button: opens the drawer
@@ -148,7 +233,10 @@ class _HomeShellState extends State<HomeShell> {
           ),
         ),
         titleSpacing: 0,
-        title: const Text(AppConstants.appName),
+        title: Text(
+          AppConstants.appName,
+          style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.search),
@@ -161,51 +249,73 @@ class _HomeShellState extends State<HomeShell> {
       ),
       drawer: Drawer(
         child: SafeArea(
-          child: ListView(
-            padding: EdgeInsets.zero,
+          top: false,
+          child: Column(
             children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(
-                  AppConstants.spaceLg,
-                  AppConstants.spaceLg,
-                  AppConstants.spaceLg,
-                  AppConstants.spaceMd,
-                ),
-                child: Text(
-                  AppConstants.appName,
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
+              _buildDrawerHeader(context),
+              Expanded(
+                child: ListView(
+                  padding: EdgeInsets.zero,
+                  children: [
+                    const SizedBox(height: 10),
+                    // Profile: first item, right below the Momentum text
+                    _buildTile(
+                      icon: _profileItem.icon,
+                      label: _profileItem.label,
+                      onTap: () => _openPage(_profileItem.screen),
+                    ),
+                    const Divider(
+                      height: AppConstants.spaceMd,
+                      indent: AppConstants.spaceLg,
+                      endIndent: AppConstants.spaceLg,
+                    ),
+                    _buildSectionHeader(context, 'Pages'),
+                    for (var i = 0; i < _destinations.length; i++)
+                      _buildTile(
+                        icon: i == _index
+                            ? _destinations[i].selectedIcon
+                            : _destinations[i].icon,
+                        label: _destinations[i].label,
+                        selected: i == _index,
+                        onTap: () {
+                          _select(i);
+                          Navigator.of(context).pop(); // close drawer
+                        },
+                      ),
+                    for (final section in _sections) ...[
+                      const Divider(
+                        height: AppConstants.spaceMd,
+                        indent: AppConstants.spaceLg,
+                        endIndent: AppConstants.spaceLg,
+                      ),
+                      _buildSectionHeader(context, section.title),
+                      for (final item in section.items)
+                        _buildTile(
+                          icon: item.icon,
+                          label: item.label,
+                          onTap: () => _openPage(item.screen),
+                        ),
+                    ],
+                    const SizedBox(height: AppConstants.spaceMd),
+                  ],
                 ),
               ),
-              for (var i = 0; i < _destinations.length; i++)
-                ListTile(
-                  leading: Icon(
-                    i == _index ? _destinations[i].selectedIcon : _destinations[i].icon,
-                  ),
-                  title: Text(_destinations[i].label),
-                  selected: i == _index,
-                  onTap: () {
-                    _select(i);
-                    Navigator.of(context).pop(); // close drawer
-                  },
-                ),
-              for (final section in _sections) ...[
-                const Divider(height: AppConstants.spaceLg),
-                _buildSectionHeader(context, section.title),
-                for (final item in section.items)
-                  ListTile(
-                    leading: Icon(item.icon),
-                    title: Text(item.label),
-                    onTap: () => _openPage(item.screen),
-                  ),
-              ],
-              const SizedBox(height: AppConstants.spaceMd),
+              _buildVersionFooter(context),
             ],
           ),
         ),
       ),
-      body: IndexedStack(
-        index: _index,
-        children: [for (final d in _destinations) d.screen],
+      // Swipe between pages in the same order as the bottom nav.
+      // No looping: the first and last pages can't be swiped past.
+      body: PageView(
+        controller: _pageController,
+        physics: const PageScrollPhysics(parent: ClampingScrollPhysics()),
+        onPageChanged: (i) {
+          if (!_animating) setState(() => _index = i);
+        },
+        children: [
+          for (final d in _destinations) _KeepAlive(child: d.screen),
+        ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
@@ -220,5 +330,27 @@ class _HomeShellState extends State<HomeShell> {
         ],
       ),
     );
+  }
+}
+
+/// Keeps a page's state alive while it is off-screen in the PageView.
+class _KeepAlive extends StatefulWidget {
+  final Widget child;
+
+  const _KeepAlive({required this.child});
+
+  @override
+  State<_KeepAlive> createState() => _KeepAliveState();
+}
+
+class _KeepAliveState extends State<_KeepAlive>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
   }
 }

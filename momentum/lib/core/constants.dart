@@ -3,6 +3,7 @@ class AppConstants {
   AppConstants._();
 
   static const String appName = 'Momentum';
+  static const String appVersion = '1.0.0'; // keep in sync with pubspec.yaml
   static const String databaseName = 'momentum.db';
   static const int databaseVersion = 1;
 
