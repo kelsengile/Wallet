@@ -1,11 +1,38 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants.dart';
 
-/// App-wide user settings. Listen to it to rebuild when something changes.
+/// App-wide user settings. The root MaterialApp listens to this, so any
+/// change applies to every screen, dialog and route immediately.
 class AppSettings extends ChangeNotifier {
   AppSettings._();
   static final AppSettings instance = AppSettings._();
+
+  static const _kThemeMode = 'settings.themeMode';
+  static const _kTextSize = 'settings.textSizeIndex';
+
+  SharedPreferences? _prefs;
+
+  /// Call once before runApp so saved settings apply from the first frame.
+  Future<void> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    _prefs = prefs;
+
+    final modeIndex = prefs.getInt(_kThemeMode);
+    if (modeIndex != null &&
+        modeIndex >= 0 &&
+        modeIndex < ThemeMode.values.length) {
+      _themeMode = ThemeMode.values[modeIndex];
+    }
+
+    final sizeIndex = prefs.getInt(_kTextSize);
+    if (sizeIndex != null &&
+        sizeIndex >= 0 &&
+        sizeIndex < textSizeLabels.length) {
+      _textSizeIndex = sizeIndex;
+    }
+  }
 
   // ---- Theme ----
   ThemeMode _themeMode = ThemeMode.system;
@@ -14,6 +41,7 @@ class AppSettings extends ChangeNotifier {
   void setThemeMode(ThemeMode mode) {
     if (mode == _themeMode) return;
     _themeMode = mode;
+    _prefs?.setInt(_kThemeMode, mode.index);
     notifyListeners();
   }
 
@@ -38,6 +66,7 @@ class AppSettings extends ChangeNotifier {
   void setTextSizeIndex(int index) {
     if (index == _textSizeIndex) return;
     _textSizeIndex = index;
+    _prefs?.setInt(_kTextSize, index);
     notifyListeners();
   }
 }
