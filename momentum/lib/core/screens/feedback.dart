@@ -6,7 +6,16 @@ class FeedbackScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Feedback')),
+      appBar: AppBar(
+        title: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.feedback_outlined),
+            SizedBox(width: 8),
+            Text('Feedback'),
+          ],
+        ),
+      ),
       body: const Center(child: Text('Feedback')),
     );
   }

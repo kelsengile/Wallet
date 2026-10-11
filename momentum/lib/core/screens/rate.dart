@@ -6,7 +6,16 @@ class RateScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Rate')),
+      appBar: AppBar(
+        title: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.star_outline),
+            SizedBox(width: 8),
+            Text('Rate'),
+          ],
+        ),
+      ),
       body: const Center(child: Text('Rate')),
     );
   }
