@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants.dart';
+import '../themes.dart';
 
 /// App-wide user settings. The root MaterialApp listens to this, so any
 /// change applies to every screen, dialog and route immediately.
@@ -9,7 +10,7 @@ class AppSettings extends ChangeNotifier {
   AppSettings._();
   static final AppSettings instance = AppSettings._();
 
-  static const _kThemeMode = 'settings.themeMode';
+  static const _kTheme = 'settings.theme';
   static const _kTextSize = 'settings.textSizeIndex';
 
   SharedPreferences? _prefs;
@@ -19,11 +20,14 @@ class AppSettings extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     _prefs = prefs;
 
-    final modeIndex = prefs.getInt(_kThemeMode);
-    if (modeIndex != null &&
-        modeIndex >= 0 &&
-        modeIndex < ThemeMode.values.length) {
-      _themeMode = ThemeMode.values[modeIndex];
+    final themeName = prefs.getString(_kTheme);
+    if (themeName != null) {
+      for (final option in AppThemeOption.values) {
+        if (option.name == themeName) {
+          _themeOption = option;
+          break;
+        }
+      }
     }
 
     final sizeIndex = prefs.getInt(_kTextSize);
@@ -35,13 +39,14 @@ class AppSettings extends ChangeNotifier {
   }
 
   // ---- Theme ----
-  ThemeMode _themeMode = ThemeMode.system;
-  ThemeMode get themeMode => _themeMode;
+  /// null = follow the system (light/dark) until the user picks one.
+  AppThemeOption? _themeOption;
+  AppThemeOption? get themeOption => _themeOption;
 
-  void setThemeMode(ThemeMode mode) {
-    if (mode == _themeMode) return;
-    _themeMode = mode;
-    _prefs?.setInt(_kThemeMode, mode.index);
+  void setThemeOption(AppThemeOption option) {
+    if (option == _themeOption) return;
+    _themeOption = option;
+    _prefs?.setString(_kTheme, option.name);
     notifyListeners();
   }
 
@@ -71,21 +76,8 @@ class AppSettings extends ChangeNotifier {
   }
 }
 
-class _ThemeOption {
-  final String label;
-  final IconData icon;
-  final ThemeMode mode;
-  const _ThemeOption(this.label, this.icon, this.mode);
-}
-
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
-
-  /// Every color theme available in the app (light and dark for now).
-  static const _themeOptions = <_ThemeOption>[
-    _ThemeOption('Light', Icons.light_mode_outlined, ThemeMode.light),
-    _ThemeOption('Dark', Icons.dark_mode_outlined, ThemeMode.dark),
-  ];
 
   @override
   Widget build(BuildContext context) {
@@ -122,17 +114,16 @@ class SettingsScreen extends StatelessWidget {
   // ---------- Theme ----------
 
   /// The theme currently on screen (resolves "system" to light/dark).
-  ThemeMode _effectiveMode(BuildContext context, AppSettings settings) {
-    if (settings.themeMode != ThemeMode.system) return settings.themeMode;
+  AppThemeOption _effectiveOption(BuildContext context, AppSettings settings) {
+    final chosen = settings.themeOption;
+    if (chosen != null) return chosen;
     return Theme.of(context).brightness == Brightness.dark
-        ? ThemeMode.dark
-        : ThemeMode.light;
+        ? AppThemeOption.dark
+        : AppThemeOption.light;
   }
 
   Widget _buildThemeTile(BuildContext context, AppSettings settings) {
-    final current = _themeOptions.firstWhere(
-      (o) => o.mode == _effectiveMode(context, settings),
-    );
+    final current = _effectiveOption(context, settings);
     return ListTile(
       leading: const Icon(Icons.palette_outlined),
       title: const Text('Theme'),
@@ -148,18 +139,18 @@ class SettingsScreen extends StatelessWidget {
     return showDialog<void>(
       context: context,
       builder: (dialogContext) {
-        final selected = _effectiveMode(dialogContext, settings);
+        final selected = _effectiveOption(dialogContext, settings);
         return SimpleDialog(
           title: const Text('Theme'),
           children: [
-            for (final option in _themeOptions)
+            for (final option in AppThemeOption.values)
               ListTile(
-                leading: Icon(option.icon),
+                leading: _ThemeSwatch(option.swatch),
                 title: Text(option.label),
                 trailing:
-                    option.mode == selected ? const Icon(Icons.check) : null,
+                    option == selected ? const Icon(Icons.check) : null,
                 onTap: () {
-                  settings.setThemeMode(option.mode);
+                  settings.setThemeOption(option);
                   Navigator.of(dialogContext).pop();
                 },
               ),
@@ -187,6 +178,28 @@ class SettingsScreen extends StatelessWidget {
           divisions: maxIndex,
           label: settings.textSizeLabel,
           onChanged: (v) => settings.setTextSizeIndex(v.round()),
+        ),
+      ),
+    );
+  }
+}
+
+/// Small colored circle shown next to each theme in the picker.
+class _ThemeSwatch extends StatelessWidget {
+  final Color color;
+  const _ThemeSwatch(this.color);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 24,
+      height: 24,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outline,
+          width: 1,
         ),
       ),
     );
@@ -258,7 +271,6 @@ class _SectionHeader extends StatelessWidget {
       ),
       child: Text(
         title,
-        // Slightly bigger than before (16 instead of 14).
         style: theme.textTheme.titleMedium?.copyWith(
           fontWeight: FontWeight.w600,
           // White on dark; black on light so it stays readable.
