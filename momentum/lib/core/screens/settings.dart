@@ -207,13 +207,13 @@ class _ThemeSwatch extends StatelessWidget {
 }
 
 /// One big rounded rectangle holding every setting under a header,
-/// with thin dividers between them. Darker than the page background's
-/// usual card color so it stands out clearly.
+/// with thin dividers between them. Light/Dark use a fixed neutral
+/// fill; the color themes use their own darker shade.
 class _SettingGroup extends StatelessWidget {
   final List<Widget> children;
   const _SettingGroup({required this.children});
 
-  // Darker fill and matching divider colors for each theme.
+  // Neutral fills for the Light and Dark themes.
   static const _darkFill = Color(0xFF121212);
   static const _darkDivider = Color(0xFF2E2E2E);
   static const _lightFill = Color(0xFFCBCBCB);
@@ -221,9 +221,25 @@ class _SettingGroup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final fill = isDark ? _darkFill : _lightFill;
-    final divider = isDark ? _darkDivider : _lightDivider;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+
+    final option = AppSettings.instance.themeOption;
+    final neutral = option == null ||
+        option == AppThemeOption.light ||
+        option == AppThemeOption.dark;
+
+    final Color fill;
+    final Color divider;
+    if (neutral) {
+      fill = isDark ? _darkFill : _lightFill;
+      divider = isDark ? _darkDivider : _lightDivider;
+    } else {
+      // Color themes: darker shade of the theme's own color.
+      fill = scheme.surfaceContainerHighest;
+      divider = scheme.outlineVariant;
+    }
 
     return Padding(
       padding: const EdgeInsets.symmetric(
@@ -273,7 +289,7 @@ class _SectionHeader extends StatelessWidget {
         title,
         style: theme.textTheme.titleMedium?.copyWith(
           fontWeight: FontWeight.w600,
-          // White on dark; black on light so it stays readable.
+          // White on dark themes; black on light ones (Light, Yellow).
           color: isDark ? Colors.white : Colors.black,
         ),
       ),
