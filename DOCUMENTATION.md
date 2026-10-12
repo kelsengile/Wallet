@@ -24,7 +24,7 @@ Momentum is a minimalist personal tracking application designed to help users or
 ## Project Overview
 
 **Name:** Momentum
-**Version:** 1.0.0 (build 1)
+**Version:** 1.0.0 
 **Type:** Cross-platform mobile/web application
 **Purpose:** Replace separate apps for money, time, and health with one organized, offline-capable tracker.
 
@@ -138,39 +138,12 @@ These screens exist and are reachable, but currently display only a centered lab
 
 ```
 momentum/
-├── lib/
-│   ├── main.dart                     # Entry point, MaterialApp, HomeShell
+├── lib/          
 │   ├── core/
-│   │   ├── constants.dart            # App name, version, DB name, spacing, radii
-│   │   ├── failures.dart             # Sealed Failure types
-│   │   ├── themes.dart               # AppThemeOption + color schemes
-│   │   ├── utils.dart                # Formatting and date helpers
-│   │   └── screens/
-│   │       ├── settings.dart         # AppSettings + SettingsScreen
-│   │       ├── search.dart
-│   │       ├── profile.dart
-│   │       ├── categories.dart
-│   │       ├── faq.dart
-│   │       ├── rate.dart
-│   │       ├── feedback.dart
-│   │       └── trash.dart            # (empty)
 │   ├── database/
-│   │   ├── schema.sql                # (empty)
-│   │   └── seed.sql                  # (empty)
 │   ├── features/
-│   │   ├── finance/
-│   │   │   ├── models/transaction.dart       # (empty)
-│   │   │   └── screens/accounts.dart, history.dart
-│   │   ├── health/
-│   │   │   ├── models/record.dart            # (empty)
-│   │   │   └── screens/history.dart, records.dart
-│   │   └── schedule/
-│   │       ├── models/schedule.dart          # (empty)
-│   │       └── screens/schedule.dart, calendar.dart
-│   └── services/
-│       ├── authentication.dart       # (empty)
-│       ├── notification.dart         # (empty)
-│       └── syncronization.dart       # (empty)
+│   ├── services/
+│   └── main.dart   
 ├── pubspec.yaml
 ├── README.md
 └── DOCUMENTATION.md
