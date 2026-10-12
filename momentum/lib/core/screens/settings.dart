@@ -84,7 +84,16 @@ class SettingsScreen extends StatelessWidget {
     final settings = AppSettings.instance;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
+      appBar: AppBar(
+        title: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.settings_outlined),
+            SizedBox(width: 8),
+            Text('Settings'),
+          ],
+        ),
+      ),
       body: ListenableBuilder(
         listenable: settings,
         builder: (context, _) {
