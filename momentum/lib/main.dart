@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'core/constants.dart';
+import 'core/screens/about.dart';
 import 'core/screens/categories.dart';
 import 'core/screens/faq.dart';
 import 'core/screens/feedback.dart';
@@ -9,6 +10,7 @@ import 'core/screens/rate.dart';
 import 'core/screens/search.dart';
 import 'core/screens/settings.dart';
 import 'core/themes.dart';
+import 'database/database.dart';
 import 'features/finance/screens/accounts.dart';
 import 'features/health/screens/history.dart';
 import 'features/schedule/screens/schedule.dart';
@@ -138,7 +140,11 @@ class _HomeShellState extends State<HomeShell> {
 
   // Shown directly below Profile.
   static const _serviceItems = <_DrawerItem>[
-    _DrawerItem('Notifications', Icons.notifications_outlined, NotificationScreen(),),
+    _DrawerItem(
+      'Notifications',
+      Icons.notifications_outlined,
+      NotificationScreen(),
+    ),
     _DrawerItem('Analytics', Icons.analytics_outlined, AnalyticsScreen()),
   ];
 
@@ -146,11 +152,13 @@ class _HomeShellState extends State<HomeShell> {
     _DrawerSection('Preferences', [
       _DrawerItem('Settings', Icons.settings_outlined, SettingsScreen()),
       _DrawerItem('Categories', Icons.category_outlined, CategoriesScreen()),
+      _DrawerItem('Database', Icons.storage_outlined, DatabaseScreen()),
     ]),
     _DrawerSection('Help & Support', [
       _DrawerItem('FAQ', Icons.help_outline, FaqScreen()),
       _DrawerItem('Rate', Icons.star_outline, RateScreen()),
       _DrawerItem('Feedback', Icons.feedback_outlined, FeedbackScreen()),
+      _DrawerItem('About', Icons.info_outline, AboutScreen()),
     ]),
   ];
 
@@ -301,6 +309,7 @@ class _HomeShellState extends State<HomeShell> {
                       label: _profileItem.label,
                       onTap: () => _openPage(_profileItem.screen),
                     ),
+                    // Notifications + Analytics, directly below Profile
                     for (final item in _serviceItems)
                       _buildTile(
                         icon: item.icon,
