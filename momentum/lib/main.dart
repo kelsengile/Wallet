@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'core/constants.dart';
+import 'core/screens/about.dart';
 import 'core/screens/categories.dart';
 import 'core/screens/faq.dart';
 import 'core/screens/feedback.dart';
@@ -9,9 +10,12 @@ import 'core/screens/rate.dart';
 import 'core/screens/search.dart';
 import 'core/screens/settings.dart';
 import 'core/themes.dart';
+import 'database/database.dart';
 import 'features/finance/screens/accounts.dart';
 import 'features/health/screens/history.dart';
 import 'features/schedule/screens/schedule.dart';
+import 'services/analytics.dart';
+import 'services/notification.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -134,15 +138,27 @@ class _HomeShellState extends State<HomeShell> {
   static const _profileItem =
       _DrawerItem('Profile', Icons.person_outline, ProfileScreen());
 
+  // Shown directly below Profile.
+  static const _serviceItems = <_DrawerItem>[
+    _DrawerItem(
+      'Notifications',
+      Icons.notifications_outlined,
+      NotificationScreen(),
+    ),
+    _DrawerItem('Analytics', Icons.analytics_outlined, AnalyticsScreen()),
+  ];
+
   static const _sections = <_DrawerSection>[
     _DrawerSection('Preferences', [
       _DrawerItem('Settings', Icons.settings_outlined, SettingsScreen()),
       _DrawerItem('Categories', Icons.category_outlined, CategoriesScreen()),
+      _DrawerItem('Database', Icons.storage_outlined, DatabaseScreen()),
     ]),
     _DrawerSection('Help & Support', [
       _DrawerItem('FAQ', Icons.help_outline, FaqScreen()),
       _DrawerItem('Rate', Icons.star_outline, RateScreen()),
       _DrawerItem('Feedback', Icons.feedback_outlined, FeedbackScreen()),
+      _DrawerItem('About', Icons.info_outline, AboutScreen()),
     ]),
   ];
 
@@ -293,19 +309,24 @@ class _HomeShellState extends State<HomeShell> {
                       label: _profileItem.label,
                       onTap: () => _openPage(_profileItem.screen),
                     ),
+                    // Notifications + Analytics, directly below Profile
+                    for (final item in _serviceItems)
+                      _buildTile(
+                        icon: item.icon,
+                        label: item.label,
+                        onTap: () => _openPage(item.screen),
+                      ),
                     const Divider(
                       height: AppConstants.spaceMd,
                       indent: AppConstants.spaceLg,
                       endIndent: AppConstants.spaceLg,
                     ),
                     _buildSectionHeader(context, 'Pages'),
+                    // No active-page highlight: plain icon, no `selected`.
                     for (var i = 0; i < _destinations.length; i++)
                       _buildTile(
-                        icon: i == _index
-                            ? _destinations[i].selectedIcon
-                            : _destinations[i].icon,
+                        icon: _destinations[i].icon,
                         label: _destinations[i].label,
-                        selected: i == _index,
                         onTap: () {
                           _select(i);
                           Navigator.of(context).pop(); // close drawer
