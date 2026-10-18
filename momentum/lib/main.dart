@@ -301,11 +301,8 @@ class _HomeShellState extends State<HomeShell> {
                     _buildSectionHeader(context, 'Pages'),
                     for (var i = 0; i < _destinations.length; i++)
                       _buildTile(
-                        icon: i == _index
-                            ? _destinations[i].selectedIcon
-                            : _destinations[i].icon,
+                        icon: _destinations[i].icon,
                         label: _destinations[i].label,
-                        selected: i == _index,
                         onTap: () {
                           _select(i);
                           Navigator.of(context).pop(); // close drawer
