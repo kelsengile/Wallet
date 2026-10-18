@@ -12,6 +12,8 @@ import 'core/themes.dart';
 import 'features/finance/screens/accounts.dart';
 import 'features/health/screens/history.dart';
 import 'features/schedule/screens/schedule.dart';
+import 'services/analytics.dart';
+import 'services/notification.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -133,6 +135,12 @@ class _HomeShellState extends State<HomeShell> {
   // Pinned right under the "Momentum" text in the drawer.
   static const _profileItem =
       _DrawerItem('Profile', Icons.person_outline, ProfileScreen());
+
+  // Shown directly below Profile.
+  static const _serviceItems = <_DrawerItem>[
+    _DrawerItem('Notifications', Icons.notifications_outlined, NotificationScreen(),),
+    _DrawerItem('Analytics', Icons.analytics_outlined, AnalyticsScreen()),
+  ];
 
   static const _sections = <_DrawerSection>[
     _DrawerSection('Preferences', [
@@ -293,12 +301,19 @@ class _HomeShellState extends State<HomeShell> {
                       label: _profileItem.label,
                       onTap: () => _openPage(_profileItem.screen),
                     ),
+                    for (final item in _serviceItems)
+                      _buildTile(
+                        icon: item.icon,
+                        label: item.label,
+                        onTap: () => _openPage(item.screen),
+                      ),
                     const Divider(
                       height: AppConstants.spaceMd,
                       indent: AppConstants.spaceLg,
                       endIndent: AppConstants.spaceLg,
                     ),
                     _buildSectionHeader(context, 'Pages'),
+                    // No active-page highlight: plain icon, no `selected`.
                     for (var i = 0; i < _destinations.length; i++)
                       _buildTile(
                         icon: _destinations[i].icon,
