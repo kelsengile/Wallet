@@ -109,10 +109,40 @@ class SettingsScreen extends StatelessWidget {
               ),
               const SizedBox(height: AppConstants.spaceSm),
               const _SectionHeader('Localization'),
+              const _SettingGroup(
+                children: [
+                  _PlaceholderToggle(
+                    icon: Icons.attach_money,
+                    title: 'Currency',
+                  ),
+                  _PlaceholderToggle(
+                    icon: Icons.location_on_outlined,
+                    title: 'Location',
+                  ),
+                  _PlaceholderToggle(
+                    icon: Icons.language,
+                    title: 'Language',
+                  ),
+                ],
+              ),
               const SizedBox(height: AppConstants.spaceSm),
               const _SectionHeader('Security'),
-              const SizedBox(height: AppConstants.spaceSm),
-              const _SectionHeader('Storage'),
+              const _SettingGroup(
+                children: [
+                  _PlaceholderToggle(
+                    icon: Icons.pin_outlined,
+                    title: 'PIN',
+                  ),
+                  _PlaceholderToggle(
+                    icon: Icons.fingerprint,
+                    title: 'Touch ID',
+                  ),
+                  _PlaceholderToggle(
+                    icon: Icons.face_outlined,
+                    title: 'Face ID',
+                  ),
+                ],
+              ),
             ],
           );
         },
@@ -275,6 +305,31 @@ class _SettingGroup extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Placeholder setting: a switch that flips visually but does nothing yet.
+/// Replace with a real setting (stored in AppSettings) when it's wired up.
+class _PlaceholderToggle extends StatefulWidget {
+  final IconData icon;
+  final String title;
+  const _PlaceholderToggle({required this.icon, required this.title});
+
+  @override
+  State<_PlaceholderToggle> createState() => _PlaceholderToggleState();
+}
+
+class _PlaceholderToggleState extends State<_PlaceholderToggle> {
+  bool _value = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return SwitchListTile(
+      secondary: Icon(widget.icon),
+      title: Text(widget.title),
+      value: _value,
+      onChanged: (v) => setState(() => _value = v),
     );
   }
 }
