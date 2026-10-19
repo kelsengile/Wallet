@@ -111,8 +111,6 @@ class SettingsScreen extends StatelessWidget {
               const _SectionHeader('Localization'),
               const SizedBox(height: AppConstants.spaceSm),
               const _SectionHeader('Security'),
-              const SizedBox(height: AppConstants.spaceSm),
-              const _SectionHeader('Storage'),
             ],
           );
         },
