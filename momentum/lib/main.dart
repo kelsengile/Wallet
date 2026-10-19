@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import 'core/constants.dart';
 import 'core/screens/about.dart';
+import 'core/screens/calculator.dart';
 import 'core/screens/categories.dart';
+import 'core/screens/converter.dart';
 import 'core/screens/faq.dart';
 import 'core/screens/feedback.dart';
 import 'core/screens/profile.dart';
@@ -135,17 +137,20 @@ class _HomeShellState extends State<HomeShell> {
   ];
 
   // Pinned right under the "Momentum" text in the drawer.
-  static const _profileItem =
-      _DrawerItem('Profile', Icons.person_outline, ProfileScreen());
-
-  // Shown directly below Profile.
-  static const _serviceItems = <_DrawerItem>[
+  static const _profileItem = <_DrawerItem>[
+    _DrawerItem('Profile', Icons.person_outline, ProfileScreen()),
     _DrawerItem(
       'Notifications',
       Icons.notifications_outlined,
       NotificationScreen(),
     ),
+  ];
+
+  // Shown in its own "Tools" section below Profile / Notifications.
+  static const _toolsItem = <_DrawerItem>[
     _DrawerItem('Analytics', Icons.analytics_outlined, AnalyticsScreen()),
+    _DrawerItem('Calculator', Icons.calculate_outlined, CalculatorScreen()),
+    _DrawerItem('Converter', Icons.compare_arrows_outlined, ConverterScreen()),
   ];
 
   static const _sections = <_DrawerSection>[
@@ -303,14 +308,19 @@ class _HomeShellState extends State<HomeShell> {
                   padding: EdgeInsets.zero,
                   children: [
                     const SizedBox(height: 10),
-                    // Profile: first item, right below the Momentum text
-                    _buildTile(
-                      icon: _profileItem.icon,
-                      label: _profileItem.label,
-                      onTap: () => _openPage(_profileItem.screen),
+                    for (final item in _profileItem)
+                      _buildTile(
+                        icon: item.icon,
+                        label: item.label,
+                        onTap: () => _openPage(item.screen),
+                      ),
+                    const Divider(
+                      height: AppConstants.spaceMd,
+                      indent: AppConstants.spaceLg,
+                      endIndent: AppConstants.spaceLg,
                     ),
-                    // Notifications + Analytics, directly below Profile
-                    for (final item in _serviceItems)
+                    _buildSectionHeader(context, 'Tools'),
+                    for (final item in _toolsItem)
                       _buildTile(
                         icon: item.icon,
                         label: item.label,
