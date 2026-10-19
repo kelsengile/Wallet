@@ -253,7 +253,7 @@ class _HomeShellState extends State<HomeShell> {
         borderRadius: BorderRadius.circular(AppConstants.radiusSm),
       ),
       child: Text(
-        '${AppConstants.appName} V: ${AppConstants.appVersion}',
+        'Version: ${AppConstants.appVersion}',
         textAlign: TextAlign.center,
         style: theme.textTheme.labelMedium?.copyWith(
           fontWeight: FontWeight.w600,
