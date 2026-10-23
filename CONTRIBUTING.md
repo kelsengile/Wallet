@@ -24,7 +24,7 @@ By participating, you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 1. **Fork** the repository on GitHub.
 2. **Clone** your fork locally:
 ```bash
-   git clone https://github.com/<your-username>/momentum.git
+   git clone https://github.com/kelsengile/Momentum.git
    cd momentum
 ```
 3. **Install dependencies:**
