@@ -461,7 +461,7 @@ class _FontConfigDialog extends StatelessWidget {
         ],
       ),
       content: SizedBox(
-        width: double.maxFinite,
+        width: 300, // narrower popup (was double.maxFinite)
         child: ListenableBuilder(
           listenable: settings,
           builder: (context, _) {
@@ -488,8 +488,6 @@ class _FontConfigDialog extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     child: Row(
                       children: [
-                        // Colored explicitly: a bare Icon ignores the theme's
-                        // listTile icon color and would stay fixed black/white.
                         Icon(
                           Icons.format_size,
                           color: theme.colorScheme.onSurfaceVariant,
@@ -513,9 +511,9 @@ class _FontConfigDialog extends StatelessWidget {
                             ],
                           ),
                         ),
-                        // Fixed short width, pinned to the right side.
+                        // Shorter slider so the narrower popup still fits.
                         SizedBox(
-                          width: 150,
+                          width: 110,
                           child: Slider(
                             value: settings.textSizeIndex.toDouble(),
                             min: 0,
