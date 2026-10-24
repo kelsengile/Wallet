@@ -36,20 +36,31 @@ class MomentumApp extends StatelessWidget {
       builder: (context, _) {
         final settings = AppSettings.instance;
         final option = settings.themeOption;
+        final custom = settings.customColor;
 
-        // No choice yet: follow the system light/dark setting.
-        // A chosen theme is used for both slots so it always applies.
-        final ThemeData lightTheme =
-            option == null ? AppTheme.light : AppTheme.byOption(option);
-        final ThemeData darkTheme =
-            option == null ? AppTheme.dark : AppTheme.byOption(option);
+        final ThemeData lightTheme;
+        final ThemeData darkTheme;
+        if (custom != null) {
+          lightTheme = darkTheme = AppTheme.fromColor(
+            custom,
+            accent: settings.accentColor,
+            text: settings.textColor,
+          );
+        } else if (option != null) {
+          lightTheme = darkTheme = AppTheme.byOption(option);
+        } else {
+          // No choice yet: follow the system light/dark setting.
+          lightTheme = AppTheme.light;
+          darkTheme = AppTheme.dark;
+        }
+        final followSystem = custom == null && option == null;
 
         return MaterialApp(
           title: AppConstants.appName,
           debugShowCheckedModeBanner: false,
           theme: lightTheme,
           darkTheme: darkTheme,
-          themeMode: option == null ? ThemeMode.system : ThemeMode.light,
+          themeMode: followSystem ? ThemeMode.system : ThemeMode.light,
           // Wraps the Navigator, so every page, drawer and dialog is scaled.
           builder: (context, child) {
             final mq = MediaQuery.of(context);

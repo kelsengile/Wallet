@@ -2,22 +2,14 @@ import 'package:flutter/material.dart';
 
 import 'constants.dart';
 
-/// Every theme the user can pick in Settings.
+/// Built-in themes. Everything else comes from the color picker.
 enum AppThemeOption {
   light('Light', Color(0xFFF2F2F2)),
-  dark('Dark', Color(0xFF000000)),
-  red('Red', Color(0xFFA5413A)),
-  yellow('Yellow', Color(0xFFD8B24A)),
-  orange('Orange', Color(0xFFA8531A)),
-  brown('Brown', Color(0xFF5C4033)),
-  blue('Blue', Color(0xFF3F6683)),
-  green('Green', Color(0xFF56704A)),
-  violet('Violet', Color(0xFF6E5078)),
-  pink('Pink', Color(0xFF9E4F63));
+  dark('Dark', Color(0xFF000000));
 
   final String label;
 
-  /// Color shown in the theme picker.
+  /// Color shown in the picker.
   final Color swatch;
 
   const AppThemeOption(this.label, this.swatch);
@@ -25,6 +17,10 @@ enum AppThemeOption {
 
 class AppTheme {
   AppTheme._();
+
+  // Only used for the error colors on custom themes.
+  static const _cream = Color(0xFFF3E7CE);
+  static const _ink = Color(0xFF2B2108);
 
   // Dark: black and gray
   static const _darkScheme = ColorScheme(
@@ -70,209 +66,128 @@ class AppTheme {
     outlineVariant: Color(0xFFCFCFCF),
   );
 
-  // Red (vintage): faded brick red, cream text
-  static const _redScheme = ColorScheme(
-    brightness: Brightness.dark,
-    primary: Color(0xFFF3E7CE),
-    onPrimary: Color(0xFFA5413A),
-    primaryContainer: Color(0xFF6E2823),
-    onPrimaryContainer: Color(0xFFF3E7CE),
-    secondary: Color(0xFFE8C4B0),
-    onSecondary: Color(0xFF6E2823),
-    secondaryContainer: Color(0xFFBF6A5E),
-    onSecondaryContainer: Color(0xFFF3E7CE),
-    error: Color(0xFFE8C872),
-    onError: Color(0xFF2B2108),
-    surface: Color(0xFFA5413A),
-    onSurface: Color(0xFFF3E7CE),
-    onSurfaceVariant: Color(0xFFE3C8B8),
-    surfaceContainer: Color(0xFF93372F),
-    surfaceContainerHighest: Color(0xFF7A2C26),
-    outline: Color(0xFFD9A08F),
-    outlineVariant: Color(0xFFBF6A5E),
-  );
-
-  // Yellow (vintage): mustard, dark brown text
-  static const _yellowScheme = ColorScheme(
-    brightness: Brightness.light,
-    primary: Color(0xFF2B2108),
-    onPrimary: Color(0xFFD8B24A),
-    primaryContainer: Color(0xFFA98625),
-    onPrimaryContainer: Color(0xFF2B2108),
-    secondary: Color(0xFF5A4614),
-    onSecondary: Color(0xFFF3E7CE),
-    secondaryContainer: Color(0xFFC9A23A),
-    onSecondaryContainer: Color(0xFF2B2108),
-    error: Color(0xFF8E2A1F),
-    onError: Color(0xFFF3E7CE),
-    surface: Color(0xFFD8B24A),
-    onSurface: Color(0xFF2B2108),
-    onSurfaceVariant: Color(0xFF5A4614),
-    surfaceContainer: Color(0xFFCBA640),
-    surfaceContainerHighest: Color(0xFFB8932F),
-    outline: Color(0xFF7A6220),
-    outlineVariant: Color(0xFFA98625),
-  );
-
-  // Orange (vintage): rust orange, cream text
-  static const _orangeScheme = ColorScheme(
-    brightness: Brightness.dark,
-    primary: Color(0xFFF3E7CE),
-    onPrimary: Color(0xFFA8531A),
-    primaryContainer: Color(0xFF6F3410),
-    onPrimaryContainer: Color(0xFFF3E7CE),
-    secondary: Color(0xFFEBC9A0),
-    onSecondary: Color(0xFF6F3410),
-    secondaryContainer: Color(0xFFC97A3E),
-    onSecondaryContainer: Color(0xFFF3E7CE),
-    error: Color(0xFFE8D27A),
-    onError: Color(0xFF2B2108),
-    surface: Color(0xFFA8531A),
-    onSurface: Color(0xFFF3E7CE),
-    onSurfaceVariant: Color(0xFFEDD3B5),
-    surfaceContainer: Color(0xFF964A16),
-    surfaceContainerHighest: Color(0xFF7C3D12),
-    outline: Color(0xFFE0A877),
-    outlineVariant: Color(0xFFC97A3E),
-  );
-
-    // Brown (vintage): coffee brown, cream text
-  static const _brownScheme = ColorScheme(
-    brightness: Brightness.dark,
-    primary: Color(0xFFF3E7CE),
-    onPrimary: Color(0xFF5C4033),
-    primaryContainer: Color(0xFF3B281F),
-    onPrimaryContainer: Color(0xFFF3E7CE),
-    secondary: Color(0xFFD8BFA8),
-    onSecondary: Color(0xFF3B281F),
-    secondaryContainer: Color(0xFF85644F),
-    onSecondaryContainer: Color(0xFFF3E7CE),
-    error: Color(0xFFE8C872),
-    onError: Color(0xFF2B2108),
-    surface: Color(0xFF5C4033),
-    onSurface: Color(0xFFF3E7CE),
-    onSurfaceVariant: Color(0xFFDCC9B6),
-    surfaceContainer: Color(0xFF523829),
-    surfaceContainerHighest: Color(0xFF402C20),
-    outline: Color(0xFFB08F76),
-    outlineVariant: Color(0xFF85644F),
-  );
-
-  // Blue (vintage): dusty denim blue, cream text
-  static const _blueScheme = ColorScheme(
-    brightness: Brightness.dark,
-    primary: Color(0xFFF3E7CE),
-    onPrimary: Color(0xFF3F6683),
-    primaryContainer: Color(0xFF27425A),
-    onPrimaryContainer: Color(0xFFF3E7CE),
-    secondary: Color(0xFFBCD0DC),
-    onSecondary: Color(0xFF27425A),
-    secondaryContainer: Color(0xFF6288A5),
-    onSecondaryContainer: Color(0xFFF3E7CE),
-    error: Color(0xFFE8C872),
-    onError: Color(0xFF2B2108),
-    surface: Color(0xFF3F6683),
-    onSurface: Color(0xFFF3E7CE),
-    onSurfaceVariant: Color(0xFFD2DEE3),
-    surfaceContainer: Color(0xFF365B76),
-    surfaceContainerHighest: Color(0xFF2B4A60),
-    outline: Color(0xFF9DB8CA),
-    outlineVariant: Color(0xFF5F829C),
-  );
-
-  // Green (vintage): sage / olive green, cream text
-  static const _greenScheme = ColorScheme(
-    brightness: Brightness.dark,
-    primary: Color(0xFFF3E7CE),
-    onPrimary: Color(0xFF56704A),
-    primaryContainer: Color(0xFF36482E),
-    onPrimaryContainer: Color(0xFFF3E7CE),
-    secondary: Color(0xFFCBD8B8),
-    onSecondary: Color(0xFF36482E),
-    secondaryContainer: Color(0xFF7C9670),
-    onSecondaryContainer: Color(0xFFF3E7CE),
-    error: Color(0xFFE8C872),
-    onError: Color(0xFF2B2108),
-    surface: Color(0xFF56704A),
-    onSurface: Color(0xFFF3E7CE),
-    onSurfaceVariant: Color(0xFFDAE3C9),
-    surfaceContainer: Color(0xFF4D6642),
-    surfaceContainerHighest: Color(0xFF3D5234),
-    outline: Color(0xFFA9C09A),
-    outlineVariant: Color(0xFF7C9670),
-  );
-
-  // Violet (vintage): dusty plum, cream text
-  static const _violetScheme = ColorScheme(
-    brightness: Brightness.dark,
-    primary: Color(0xFFF3E7CE),
-    onPrimary: Color(0xFF6E5078),
-    primaryContainer: Color(0xFF47304F),
-    onPrimaryContainer: Color(0xFFF3E7CE),
-    secondary: Color(0xFFD8C4DC),
-    onSecondary: Color(0xFF47304F),
-    secondaryContainer: Color(0xFF947299),
-    onSecondaryContainer: Color(0xFFF3E7CE),
-    error: Color(0xFFE8C872),
-    onError: Color(0xFF2B2108),
-    surface: Color(0xFF6E5078),
-    onSurface: Color(0xFFF3E7CE),
-    onSurfaceVariant: Color(0xFFE3D3E3),
-    surfaceContainer: Color(0xFF62466B),
-    surfaceContainerHighest: Color(0xFF4F3858),
-    outline: Color(0xFFBC9FC3),
-    outlineVariant: Color(0xFF947299),
-  );
-
-  // Pink (vintage): dusty rose, cream text
-  static const _pinkScheme = ColorScheme(
-    brightness: Brightness.dark,
-    primary: Color(0xFFF3E7CE),
-    onPrimary: Color(0xFF9E4F63),
-    primaryContainer: Color(0xFF66303F),
-    onPrimaryContainer: Color(0xFFF3E7CE),
-    secondary: Color(0xFFEBC3CC),
-    onSecondary: Color(0xFF66303F),
-    secondaryContainer: Color(0xFFBA7487),
-    onSecondaryContainer: Color(0xFFF3E7CE),
-    error: Color(0xFFE8C872),
-    onError: Color(0xFF2B2108),
-    surface: Color(0xFF9E4F63),
-    onSurface: Color(0xFFF3E7CE),
-    onSurfaceVariant: Color(0xFFEDD0D6),
-    surfaceContainer: Color(0xFF8E4558),
-    surfaceContainerHighest: Color(0xFF763848),
-    outline: Color(0xFFD9A0AE),
-    outlineVariant: Color(0xFFBA7487),
-  );
-
   static ThemeData get light => _build(_lightScheme);
   static ThemeData get dark => _build(_darkScheme);
 
-  /// The theme for a picker choice.
+  /// The theme for a built-in choice.
   static ThemeData byOption(AppThemeOption option) {
     switch (option) {
       case AppThemeOption.light:
         return _build(_lightScheme);
       case AppThemeOption.dark:
         return _build(_darkScheme);
-      case AppThemeOption.red:
-        return _build(_redScheme);
-      case AppThemeOption.yellow:
-        return _build(_yellowScheme);
-      case AppThemeOption.orange:
-        return _build(_orangeScheme);
-      case AppThemeOption.brown:
-        return _build(_brownScheme);
-      case AppThemeOption.blue:
-        return _build(_blueScheme);
-      case AppThemeOption.green:
-        return _build(_greenScheme);
-      case AppThemeOption.violet:
-        return _build(_violetScheme);
-      case AppThemeOption.pink:
-        return _build(_pinkScheme);
     }
+  }
+
+  // ---------- Custom color ----------
+
+  static double _contrast(Color a, Color b) {
+    final l1 = a.computeLuminance();
+    final l2 = b.computeLuminance();
+    final hi = l1 > l2 ? l1 : l2;
+    final lo = l1 > l2 ? l2 : l1;
+    return (hi + 0.05) / (lo + 0.05);
+  }
+
+  /// True when light content reads better than dark content on [bg].
+  static bool _isDarkBackground(Color bg) =>
+      _contrast(bg, Colors.white) >= _contrast(bg, Colors.black);
+
+  /// A color with the same hue as [seed], starting at [lightness] and
+  /// pushed lighter/darker until it has [minContrast] against [bg].
+  /// Grays stay gray (no tint) so neutral picks don't turn red.
+  static Color _tone(
+    Color seed, {
+    required double saturation,
+    required double lightness,
+    required Color bg,
+    required double minContrast,
+    required bool lighten,
+  }) {
+    final hue = HSLColor.fromColor(seed).hue;
+    final sat = HSLColor.fromColor(seed).saturation < 0.08 ? 0.0 : saturation;
+    var l = lightness;
+    var color = HSLColor.fromAHSL(1, hue, sat, l).toColor();
+    for (var i = 0; i < 60 && _contrast(color, bg) < minContrast; i++) {
+      l = (l + (lighten ? 0.02 : -0.02)).clamp(0.0, 1.0);
+      color = HSLColor.fromAHSL(1, hue, sat, l).toColor();
+    }
+    return color;
+  }
+
+  /// Readable text color for a given background: a soft tint of the
+  /// background's own hue instead of one fixed color.
+  static Color onColor(Color background) {
+    final dark = _isDarkBackground(background);
+    final s = HSLColor.fromColor(background).saturation;
+    return _tone(
+      background,
+      saturation: (s * 0.6).clamp(0.15, 0.4),
+      lightness: dark ? 0.92 : 0.10,
+      bg: background,
+      minContrast: 7,
+      lighten: dark,
+    );
+  }
+
+  /// Accent color (buttons, sliders, highlights): the same hue as the
+  /// background but stronger, kept readable against it.
+  static Color accentFor(Color background) {
+    final dark = _isDarkBackground(background);
+    final s = HSLColor.fromColor(background).saturation;
+    return _tone(
+      background,
+      saturation: (s * 1.1).clamp(0.45, 0.9),
+      lightness: dark ? 0.75 : 0.22,
+      bg: background,
+      minContrast: 4.5,
+      lighten: dark,
+    );
+  }
+
+  static Color _shift(Color c, double amount) {
+    final hsl = HSLColor.fromColor(c);
+    return hsl
+        .withLightness((hsl.lightness + amount).clamp(0.0, 1.0))
+        .toColor();
+  }
+
+  /// Picks whichever of [a] or [b] reads better on top of [on].
+  static Color _readableOn(Color on, Color a, Color b) =>
+      _contrast(on, a) >= _contrast(on, b) ? a : b;
+
+  /// Builds a complete theme from the colors the user picks.
+  ///
+  /// [seed] is the background / main color. [accent] (complementary color:
+  /// buttons, sliders, highlights) and [text] (fonts and icons) are optional;
+  /// when null they are derived from [seed].
+  static ThemeData fromColor(Color seed, {Color? accent, Color? text}) {
+    final fg = text ?? onColor(seed);
+    final acc = accent ?? accentFor(seed);
+    final darkBackground = _isDarkBackground(seed);
+    final secondary = Color.lerp(seed, acc, 0.8)!;
+
+    final scheme = ColorScheme(
+      brightness: darkBackground ? Brightness.dark : Brightness.light,
+      primary: acc,
+      onPrimary: _readableOn(acc, seed, fg),
+      primaryContainer: _shift(seed, darkBackground ? 0.14 : -0.14),
+      onPrimaryContainer: fg,
+      secondary: secondary,
+      onSecondary: _readableOn(secondary, seed, fg),
+      secondaryContainer: _shift(seed, darkBackground ? 0.10 : -0.04),
+      onSecondaryContainer: fg,
+      error: darkBackground ? const Color(0xFFE8C872) : const Color(0xFF8E2A1F),
+      onError: darkBackground ? _ink : _cream,
+      surface: seed,
+      onSurface: fg,
+      onSurfaceVariant: Color.lerp(seed, fg, 0.85)!,
+      surfaceContainer: _shift(seed, darkBackground ? -0.04 : -0.03),
+      surfaceContainerHighest: _shift(seed, darkBackground ? -0.09 : -0.07),
+      outline: Color.lerp(seed, fg, 0.5)!,
+      outlineVariant: _shift(seed, darkBackground ? 0.10 : -0.10),
+    );
+    return _build(scheme);
   }
 
   static ThemeData _build(ColorScheme scheme) {
