@@ -67,11 +67,12 @@ class AppSettings extends ChangeNotifier {
   Color? _customColor;
   Color? get customColor => _customColor;
 
-  /// Complementary (accent) color. null = derived from [customColor].
+  /// Accent color (nav bar, drawer header, version box, settings sections).
+  /// null = derived from [customColor].
   Color? _accentColor;
   Color? get accentColor => _accentColor;
 
-  /// Font and icon color. null = derived from [customColor].
+  /// Glyph color: fonts, icons and buttons. null = derived from [customColor].
   Color? _textColor;
   Color? get textColor => _textColor;
 
@@ -319,64 +320,57 @@ class _ThemeSwatch extends StatelessWidget {
 }
 
 /// One big rounded rectangle holding every setting under a header,
-/// with thin dividers between them. Light/Dark use a fixed neutral
-/// fill; custom colors use their own darker shade.
+/// with thin dividers between them. It is filled with the theme's
+/// Accent color, and the text/icons inside use the accent's readable color.
 class _SettingGroup extends StatelessWidget {
   final List<Widget> children;
   const _SettingGroup({required this.children});
 
-  // Neutral fills for the Light and Dark themes.
-  static const _darkFill = Color(0xFF121212);
-  static const _darkDivider = Color(0xFF2E2E2E);
-  static const _lightFill = Color(0xFFCBCBCB);
-  static const _lightDivider = Color(0xFFAFAFAF);
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
+    final accent = AppTheme.accentOf(context);
+    final divider = Color.lerp(accent.background, accent.foreground, 0.18)!;
 
-    final option = AppSettings.instance.themeOption;
-    final neutral = AppSettings.instance.customColor == null &&
-        (option == null ||
-            option == AppThemeOption.light ||
-            option == AppThemeOption.dark);
-
-    final Color fill;
-    final Color divider;
-    if (neutral) {
-      fill = isDark ? _darkFill : _lightFill;
-      divider = isDark ? _darkDivider : _lightDivider;
-    } else {
-      // Custom colors: darker shade of the theme's own color.
-      fill = scheme.surfaceContainerHighest;
-      divider = scheme.outlineVariant;
-    }
+    // Tiles inside the group read their colors from the theme, so point
+    // them at the accent's readable color.
+    final groupTheme = theme.copyWith(
+      colorScheme: theme.colorScheme.copyWith(
+        onSurface: accent.foreground,
+        onSurfaceVariant: accent.foreground.withValues(alpha: 0.7),
+      ),
+      listTileTheme: theme.listTileTheme.copyWith(
+        iconColor: accent.foreground,
+        textColor: accent.foreground,
+      ),
+    );
 
     return Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: AppConstants.spaceMd,
         vertical: AppConstants.spaceXs,
       ),
-      child: Material(
-        color: fill,
-        borderRadius: BorderRadius.circular(AppConstants.radiusMd),
-        clipBehavior: Clip.antiAlias, // keeps tap ripples inside the curves
-        child: Column(
-          children: [
-            for (var i = 0; i < children.length; i++) ...[
-              if (i > 0)
-                Divider(
-                  height: 1,
-                  thickness: 1,
-                  indent: AppConstants.spaceMd,
-                  endIndent: AppConstants.spaceMd,
-                  color: divider,
-                ),
-              children[i],
+      child: Theme(
+        data: groupTheme,
+        child: Material(
+          color: accent.background,
+          borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+          clipBehavior: Clip.antiAlias, // keeps tap ripples inside the curves
+          child: Column(
+            children: [
+              for (var i = 0; i < children.length; i++) ...[
+                if (i > 0)
+                  Divider(
+                    height: 1,
+                    thickness: 1,
+                    indent: AppConstants.spaceMd,
+                    endIndent: AppConstants.spaceMd,
+                    color: divider,
+                  ),
+                children[i],
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -440,6 +434,7 @@ class _SectionHeader extends StatelessWidget {
 ///  - Bold text (switch)
 /// Size and bold apply live, so there is only a Close button.
 /// Font style is applied from its own pop-up with an Apply button.
+/// Buttons, slider and switch here follow the Glyph color.
 class _FontConfigDialog extends StatelessWidget {
   final AppSettings settings;
   const _FontConfigDialog({required this.settings});
@@ -493,7 +488,12 @@ class _FontConfigDialog extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     child: Row(
                       children: [
-                        const Icon(Icons.format_size),
+                        // Colored explicitly: a bare Icon ignores the theme's
+                        // listTile icon color and would stay fixed black/white.
+                        Icon(
+                          Icons.format_size,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
                         const SizedBox(width: AppConstants.spaceMd),
                         Expanded(
                           child: Column(
@@ -627,9 +627,13 @@ class _FontStyleDialogState extends State<_FontStyleDialog> {
   }
 }
 
-/// Pop-up with three parts: Main (background), Accent (complementary)
-/// and Text (fonts and icons). The popup itself is the live sample: it is
-/// drawn with the colors being picked.
+/// Pop-up with three parts:
+///  - Main: background
+///  - Accent: plain color for nav bar, drawer header, version box and
+///    settings sections (does not affect buttons)
+///  - Glyph: fonts, icons and buttons
+/// The popup itself is the live sample: it is drawn with the colors being
+/// picked, so Cancel / Apply follow the Glyph color.
 class _ColorPickerDialog extends StatefulWidget {
   final Color initial;
   final AppSettings settings;
@@ -648,7 +652,7 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
   bool _accentAuto = true;
   bool _textAuto = true;
 
-  int _tab = 0; // 0 = Main, 1 = Accent, 2 = Text
+  int _tab = 0; // 0 = Main, 1 = Accent, 2 = Glyph
   late final TextEditingController _hexController;
 
   @override
@@ -688,7 +692,7 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
 
   HSVColor get _current => _tab == 0 ? _bg : (_tab == 1 ? _accent : _text);
 
-  /// Re-derives Accent / Text from Main for the ones still on auto.
+  /// Re-derives Accent / Glyph from Main for the ones still on auto.
   void _syncAuto() {
     final bg = _bg.toColor();
     if (_accentAuto) _accent = HSVColor.fromColor(AppTheme.accentFor(bg));
@@ -775,7 +779,7 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Three parts: Main | Accent | Text
+              // Three parts: Main | Accent | Glyph
               SizedBox(
                 width: double.infinity,
                 child: SegmentedButton<int>(

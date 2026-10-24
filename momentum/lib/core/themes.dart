@@ -15,12 +15,48 @@ enum AppThemeOption {
   const AppThemeOption(this.label, this.swatch);
 }
 
+/// The Accent color as a plain color. It is not used by buttons (those
+/// follow Glyph). It is applied only where the app asks for it:
+/// bottom nav bar, drawer header, version box and settings sections.
+///
+/// [foreground] is the Glyph color, so text and icons drawn on the accent
+/// change whenever the Glyph color changes.
+@immutable
+class AppAccent extends ThemeExtension<AppAccent> {
+  /// The accent color itself (used as a background).
+  final Color background;
+
+  /// Glyph color to draw on top of [background].
+  final Color foreground;
+
+  const AppAccent({required this.background, required this.foreground});
+
+  @override
+  AppAccent copyWith({Color? background, Color? foreground}) => AppAccent(
+        background: background ?? this.background,
+        foreground: foreground ?? this.foreground,
+      );
+
+  @override
+  AppAccent lerp(ThemeExtension<AppAccent>? other, double t) {
+    if (other is! AppAccent) return this;
+    return AppAccent(
+      background: Color.lerp(background, other.background, t)!,
+      foreground: Color.lerp(foreground, other.foreground, t)!,
+    );
+  }
+}
+
 class AppTheme {
   AppTheme._();
 
   // Only used for the error colors on custom themes.
   static const _cream = Color(0xFFF3E7CE);
   static const _ink = Color(0xFF2B2108);
+
+  // Accent colors for the built-in themes.
+  static const _darkAccent = Color(0xFF1E1E1E);
+  static const _lightAccent = Color(0xFFCBCBCB);
 
   // Dark: black and gray
   static const _darkScheme = ColorScheme(
@@ -66,18 +102,22 @@ class AppTheme {
     outlineVariant: Color(0xFFCFCFCF),
   );
 
-  static ThemeData get light => _build(_lightScheme);
-  static ThemeData get dark => _build(_darkScheme);
+  static ThemeData get light => _build(_lightScheme, _lightAccent);
+  static ThemeData get dark => _build(_darkScheme, _darkAccent);
 
   /// The theme for a built-in choice.
   static ThemeData byOption(AppThemeOption option) {
     switch (option) {
       case AppThemeOption.light:
-        return _build(_lightScheme);
+        return light;
       case AppThemeOption.dark:
-        return _build(_darkScheme);
+        return dark;
     }
   }
+
+  /// The accent (background + glyph foreground) of the active theme.
+  static AppAccent accentOf(BuildContext context) =>
+      Theme.of(context).extension<AppAccent>()!;
 
   // ---------- Custom color ----------
 
@@ -115,8 +155,8 @@ class AppTheme {
     return color;
   }
 
-  /// Readable text color for a given background: a soft tint of the
-  /// background's own hue instead of one fixed color.
+  /// Readable glyph (text + icon + button) color for a given background:
+  /// a soft tint of the background's own hue instead of one fixed color.
   static Color onColor(Color background) {
     final dark = _isDarkBackground(background);
     final s = HSLColor.fromColor(background).saturation;
@@ -130,19 +170,17 @@ class AppTheme {
     );
   }
 
-  /// Accent color (buttons, sliders, highlights): the same hue as the
-  /// background but stronger, kept readable against it.
+  /// Default accent when the user hasn't picked one: a slightly lighter
+  /// (dark themes) or darker (light themes) shade of the main color, so it
+  /// works as a bar / panel background.
   static Color accentFor(Color background) {
     final dark = _isDarkBackground(background);
-    final s = HSLColor.fromColor(background).saturation;
-    return _tone(
-      background,
-      saturation: (s * 1.1).clamp(0.45, 0.9),
-      lightness: dark ? 0.75 : 0.22,
-      bg: background,
-      minContrast: 4.5,
-      lighten: dark,
-    );
+    final hsl = HSLColor.fromColor(background);
+    final l = (hsl.lightness + (dark ? 0.12 : -0.10)).clamp(0.0, 1.0);
+    final s = hsl.saturation < 0.08
+        ? hsl.saturation
+        : (hsl.saturation * 1.1).clamp(0.0, 1.0);
+    return hsl.withLightness(l).withSaturation(s).toColor();
   }
 
   static Color _shift(Color c, double amount) {
@@ -158,19 +196,23 @@ class AppTheme {
 
   /// Builds a complete theme from the colors the user picks.
   ///
-  /// [seed] is the background / main color. [accent] (complementary color:
-  /// buttons, sliders, highlights) and [text] (fonts and icons) are optional;
-  /// when null they are derived from [seed].
+  /// [seed] is the background / main color.
+  /// [accent] is a plain color used only for the nav bar, drawer header,
+  /// version box and settings sections.
+  /// [text] (glyph) is the color of fonts, icons AND buttons. It is also
+  /// the text/icon color drawn on the accent color.
+  /// When [accent] or [text] is null it is derived from [seed].
   static ThemeData fromColor(Color seed, {Color? accent, Color? text}) {
     final fg = text ?? onColor(seed);
     final acc = accent ?? accentFor(seed);
     final darkBackground = _isDarkBackground(seed);
-    final secondary = Color.lerp(seed, acc, 0.8)!;
+    final secondary = Color.lerp(seed, fg, 0.7)!;
 
     final scheme = ColorScheme(
       brightness: darkBackground ? Brightness.dark : Brightness.light,
-      primary: acc,
-      onPrimary: _readableOn(acc, seed, fg),
+      // Buttons, sliders and switches follow the glyph color.
+      primary: fg,
+      onPrimary: _readableOn(fg, seed, acc),
       primaryContainer: _shift(seed, darkBackground ? 0.14 : -0.14),
       onPrimaryContainer: fg,
       secondary: secondary,
@@ -187,14 +229,20 @@ class AppTheme {
       outline: Color.lerp(seed, fg, 0.5)!,
       outlineVariant: _shift(seed, darkBackground ? 0.10 : -0.10),
     );
-    return _build(scheme);
+    return _build(scheme, acc);
   }
 
-  static ThemeData _build(ColorScheme scheme) {
+  static ThemeData _build(ColorScheme scheme, Color accent) {
+    // Text/icons drawn on top of the accent color: always the Glyph color
+    // (onSurface), so changing Glyph changes the nav bar, drawer header,
+    // version box and settings sections.
+    final onAccent = scheme.onSurface;
+
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
       scaffoldBackgroundColor: scheme.surface,
+      extensions: [AppAccent(background: accent, foreground: onAccent)],
       appBarTheme: AppBarTheme(
         backgroundColor: scheme.surface,
         foregroundColor: scheme.onSurface,
@@ -202,15 +250,19 @@ class AppTheme {
         scrolledUnderElevation: 0,
         centerTitle: false,
       ),
+      // Main nav bar: accent background. Label colors are set where the bar
+      // is built (main.dart) so the chosen font is kept.
       navigationBarTheme: NavigationBarThemeData(
         height: 56,
-        backgroundColor: scheme.surfaceContainer,
-        indicatorColor: scheme.primaryContainer,
+        backgroundColor: accent,
+        surfaceTintColor: Colors.transparent,
+        indicatorColor: onAccent.withValues(alpha: 0.18),
         iconTheme: WidgetStatePropertyAll(
-          IconThemeData(size: 22, color: scheme.onSurface),
+          IconThemeData(size: 22, color: onAccent),
         ),
         labelPadding: const EdgeInsets.only(top: 2),
       ),
+      // Side panel: main, dulled.
       drawerTheme: DrawerThemeData(backgroundColor: scheme.surfaceContainer),
       listTileTheme: ListTileThemeData(
         selectedColor: scheme.onSurface,

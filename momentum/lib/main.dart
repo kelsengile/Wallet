@@ -221,12 +221,13 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 
-  /// Gray header at the very top of the drawer with the app name.
+  /// Header at the very top of the drawer with the app name (accent color).
   Widget _buildDrawerHeader(BuildContext context) {
     final theme = Theme.of(context);
+    final accent = AppTheme.accentOf(context);
     return Container(
       width: double.infinity,
-      color: theme.colorScheme.outlineVariant,
+      color: accent.background,
       padding: EdgeInsets.fromLTRB(
         AppConstants.spaceLg,
         MediaQuery.of(context).padding.top + AppConstants.spaceLg,
@@ -237,6 +238,7 @@ class _HomeShellState extends State<HomeShell> {
         AppConstants.appName,
         style: theme.textTheme.headlineSmall?.copyWith(
           fontWeight: FontWeight.w700,
+          color: accent.foreground,
         ),
       ),
     );
@@ -260,9 +262,10 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 
+  /// Version box at the bottom of the drawer (accent color).
   Widget _buildVersionFooter(BuildContext context) {
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
+    final accent = AppTheme.accentOf(context);
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.all(AppConstants.spaceMd),
@@ -271,7 +274,7 @@ class _HomeShellState extends State<HomeShell> {
         horizontal: AppConstants.spaceMd,
       ),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
+        color: accent.background,
         borderRadius: BorderRadius.circular(AppConstants.radiusSm),
       ),
       child: Text(
@@ -279,7 +282,7 @@ class _HomeShellState extends State<HomeShell> {
         textAlign: TextAlign.center,
         style: theme.textTheme.labelMedium?.copyWith(
           fontWeight: FontWeight.w600,
-          color: scheme.onSurfaceVariant,
+          color: accent.foreground,
         ),
       ),
     );
@@ -287,7 +290,19 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    final accent = AppTheme.accentOf(context);
+
+    // The nav bar labels read onSurface / onSurfaceVariant from the theme.
+    // Re-point those at the accent's readable color for the bar only, so
+    // the labels keep the chosen font.
+    final navTheme = theme.copyWith(
+      colorScheme: theme.colorScheme.copyWith(
+        onSurface: accent.foreground,
+        onSurfaceVariant: accent.foreground.withValues(alpha: 0.7),
+      ),
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -394,17 +409,20 @@ class _HomeShellState extends State<HomeShell> {
           for (final d in _destinations) _KeepAlive(child: d.screen),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: _select,
-        destinations: [
-          for (final d in _destinations)
-            NavigationDestination(
-              icon: Icon(d.icon),
-              selectedIcon: Icon(d.selectedIcon),
-              label: d.label,
-            ),
-        ],
+      bottomNavigationBar: Theme(
+        data: navTheme,
+        child: NavigationBar(
+          selectedIndex: _index,
+          onDestinationSelected: _select,
+          destinations: [
+            for (final d in _destinations)
+              NavigationDestination(
+                icon: Icon(d.icon),
+                selectedIcon: Icon(d.selectedIcon),
+                label: d.label,
+              ),
+          ],
+        ),
       ),
     );
   }
