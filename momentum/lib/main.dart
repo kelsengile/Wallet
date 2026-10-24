@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'core/constants.dart';
+import 'core/font.dart';
 import 'core/screens/about.dart';
 import 'core/screens/calculator.dart';
 import 'core/screens/categories.dart';
@@ -21,7 +22,7 @@ import 'services/notification.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await AppSettings.instance.load(); // restore saved theme + text size
+  await AppSettings.instance.load(); // restore saved theme, font + text size
   runApp(const MomentumApp());
 }
 
@@ -55,11 +56,14 @@ class MomentumApp extends StatelessWidget {
         }
         final followSystem = custom == null && option == null;
 
+        // Chosen font style, applied on top of whichever theme is active.
+        final fontFamily = settings.fontFamily;
+
         return MaterialApp(
           title: AppConstants.appName,
           debugShowCheckedModeBanner: false,
-          theme: lightTheme,
-          darkTheme: darkTheme,
+          theme: AppFonts.apply(lightTheme, fontFamily),
+          darkTheme: AppFonts.apply(darkTheme, fontFamily),
           themeMode: followSystem ? ThemeMode.system : ThemeMode.light,
           // Wraps the Navigator, so every page, drawer and dialog is scaled.
           builder: (context, child) {
@@ -68,6 +72,8 @@ class MomentumApp extends StatelessWidget {
             return MediaQuery(
               data: mq.copyWith(
                 textScaler: TextScaler.linear(systemScale * settings.textScale),
+                // Bold text: on if either the app setting or system is on.
+                boldText: settings.boldText || mq.boldText,
               ),
               child: child!,
             );

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants.dart';
+import '../font.dart';
 import '../themes.dart';
 
 /// App-wide user settings. The root MaterialApp listens to this, so any
@@ -16,6 +17,8 @@ class AppSettings extends ChangeNotifier {
   static const _kAccent = 'settings.accentColor';
   static const _kText = 'settings.textColor';
   static const _kTextSize = 'settings.textSizeIndex';
+  static const _kFontStyle = 'settings.fontStyle';
+  static const _kBoldText = 'settings.boldText';
 
   SharedPreferences? _prefs;
 
@@ -49,6 +52,9 @@ class AppSettings extends ChangeNotifier {
 
     final textValue = prefs.getInt(_kText);
     if (textValue != null) _textColor = Color(textValue);
+
+    _fontStyle = AppFonts.byLabel(prefs.getString(_kFontStyle));
+    _boldText = prefs.getBool(_kBoldText) ?? false;
   }
 
   // ---- Theme ----
@@ -108,7 +114,32 @@ class AppSettings extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ---- Text size ----
+  // ---- Font style ----
+  AppFont _fontStyle = AppFonts.defaultFont;
+  AppFont get fontStyle => _fontStyle;
+
+  /// Font family passed to the theme. null = platform default.
+  String? get fontFamily => _fontStyle.family;
+
+  void setFontStyle(AppFont font) {
+    if (font.label == _fontStyle.label) return;
+    _fontStyle = font;
+    _prefs?.setString(_kFontStyle, font.label);
+    notifyListeners();
+  }
+
+  // ---- Bold text ----
+  bool _boldText = false;
+  bool get boldText => _boldText;
+
+  void setBoldText(bool value) {
+    if (value == _boldText) return;
+    _boldText = value;
+    _prefs?.setBool(_kBoldText, value);
+    notifyListeners();
+  }
+
+  // ---- Font size ----
   static const textSizeLabels = [
     'Smallest',
     'Small',
@@ -162,7 +193,7 @@ class SettingsScreen extends StatelessWidget {
               _SettingGroup(
                 children: [
                   _buildThemeTile(context, settings),
-                  _buildTextSizeTile(context, settings),
+                  _buildFontTile(context, settings),
                 ],
               ),
               const SizedBox(height: AppConstants.spaceSm),
@@ -236,26 +267,31 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  // ---------- Text size ----------
+  // ---------- Font ----------
 
-  Widget _buildTextSizeTile(BuildContext context, AppSettings settings) {
-    final maxIndex = AppSettings.textSizeLabels.length - 1;
+  /// Subtitle: "Font style | Font size", plus "| Bold" when bold is on.
+  String _fontSummary(AppSettings settings) {
+    final parts = <String>[
+      settings.fontStyle.label,
+      settings.textSizeLabel,
+      if (settings.boldText) 'Bold',
+    ];
+    return parts.join(' | ');
+  }
+
+  Widget _buildFontTile(BuildContext context, AppSettings settings) {
     return ListTile(
       leading: const Icon(Icons.text_fields),
-      title: const Text('Text Size'),
-      subtitle: Text(settings.textSizeLabel),
-      // Gauge bar sits at the side of the tile.
-      trailing: SizedBox(
-        width: 170,
-        child: Slider(
-          value: settings.textSizeIndex.toDouble(),
-          min: 0,
-          max: maxIndex.toDouble(),
-          divisions: maxIndex,
-          label: settings.textSizeLabel,
-          onChanged: (v) => settings.setTextSizeIndex(v.round()),
-        ),
-      ),
+      title: const Text('Font'),
+      subtitle: Text(_fontSummary(settings)),
+      onTap: () => _showFontConfig(context, settings),
+    );
+  }
+
+  Future<void> _showFontConfig(BuildContext context, AppSettings settings) {
+    return showDialog<void>(
+      context: context,
+      builder: (_) => _FontConfigDialog(settings: settings),
     );
   }
 }
@@ -398,6 +434,199 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
+/// Pop-up for everything font related:
+///  - Font style (opens a second pop-up with the list of fonts)
+///  - Font size (short slider at the right side of the text)
+///  - Bold text (switch)
+/// Size and bold apply live, so there is only a Close button.
+/// Font style is applied from its own pop-up with an Apply button.
+class _FontConfigDialog extends StatelessWidget {
+  final AppSettings settings;
+  const _FontConfigDialog({required this.settings});
+
+  @override
+  Widget build(BuildContext context) {
+    final maxIndex = AppSettings.textSizeLabels.length - 1;
+    final theme = Theme.of(context);
+
+    return AlertDialog(
+      surfaceTintColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(
+        horizontal: AppConstants.spaceMd,
+        vertical: 24,
+      ),
+      contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+      title: const Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Font Configuration:'),
+          SizedBox(height: AppConstants.spaceSm),
+          Divider(height: 1),
+        ],
+      ),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: ListenableBuilder(
+          listenable: settings,
+          builder: (context, _) {
+            return SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ---- Font style ----
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.font_download_outlined),
+                    title: const Text('Font style'),
+                    subtitle: Text(settings.fontStyle.label),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => showDialog<void>(
+                      context: context,
+                      builder: (_) => _FontStyleDialog(settings: settings),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  // ---- Font size: text on the left, short slider on the right ----
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.format_size),
+                        const SizedBox(width: AppConstants.spaceMd),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Font size',
+                                style: theme.textTheme.bodyLarge,
+                              ),
+                              Text(
+                                settings.textSizeLabel,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        // Fixed short width, pinned to the right side.
+                        SizedBox(
+                          width: 150,
+                          child: Slider(
+                            value: settings.textSizeIndex.toDouble(),
+                            min: 0,
+                            max: maxIndex.toDouble(),
+                            divisions: maxIndex,
+                            label: settings.textSizeLabel,
+                            onChanged: (v) =>
+                                settings.setTextSizeIndex(v.round()),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  // ---- Bold text ----
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    secondary: const Icon(Icons.format_bold),
+                    title: const Text('Bold text'),
+                    value: settings.boldText,
+                    onChanged: settings.setBoldText,
+                  ),
+                  // Space between the Bold switch and the Close button.
+                  const SizedBox(height: AppConstants.spaceMd),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Close'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Second pop-up: list of fonts. Each name is shown in its own font.
+/// Tapping a font only highlights it; nothing changes in the app until
+/// Apply is pressed.
+class _FontStyleDialog extends StatefulWidget {
+  final AppSettings settings;
+  const _FontStyleDialog({required this.settings});
+
+  @override
+  State<_FontStyleDialog> createState() => _FontStyleDialogState();
+}
+
+class _FontStyleDialogState extends State<_FontStyleDialog> {
+  late AppFont _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = widget.settings.fontStyle;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      surfaceTintColor: Colors.transparent,
+      title: const Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Font Style:'),
+          SizedBox(height: AppConstants.spaceSm),
+          Divider(height: 1),
+        ],
+      ),
+      contentPadding: const EdgeInsets.symmetric(vertical: AppConstants.spaceSm),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: ListView.builder(
+          shrinkWrap: true,
+          itemCount: AppFonts.all.length,
+          itemBuilder: (context, i) {
+            final font = AppFonts.all[i];
+            final selected = font.label == _selected.label;
+            return ListTile(
+              title: Text(
+                font.label,
+                style: TextStyle(fontFamily: font.family),
+              ),
+              trailing: selected ? const Icon(Icons.check) : null,
+              selected: selected,
+              onTap: () => setState(() => _selected = font),
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () {
+            widget.settings.setFontStyle(_selected);
+            Navigator.of(context).pop();
+          },
+          child: const Text('Apply'),
+        ),
+      ],
+    );
+  }
+}
+
 /// Pop-up with three parts: Main (background), Accent (complementary)
 /// and Text (fonts and icons). The popup itself is the live sample: it is
 /// drawn with the colors being picked.
@@ -515,12 +744,16 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
     final color = hsv.toColor();
     final hexTextColor = AppTheme.onColor(color);
 
-    // The whole popup is drawn with the colors being picked.
+    // The whole popup is drawn with the colors being picked
+    // (and the chosen font, so the preview matches the real app).
     final bgColor = _bg.toColor();
-    final previewTheme = AppTheme.fromColor(
-      bgColor,
-      accent: _accent.toColor(),
-      text: _text.toColor(),
+    final previewTheme = AppFonts.apply(
+      AppTheme.fromColor(
+        bgColor,
+        accent: _accent.toColor(),
+        text: _text.toColor(),
+      ),
+      widget.settings.fontFamily,
     );
 
     return Theme(
