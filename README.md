@@ -15,12 +15,6 @@
   <a href="https://www.sqlite.org/" target="_blank">
     <img src="https://img.shields.io/badge/SQLite-111111?style=flat-square&logo=sqlite&logoColor=003B57" alt="SQLite">
   </a>
-  <a href="https://www.postgresql.org/" target="_blank">
-    <img src="https://img.shields.io/badge/PostgreSQL-111111?style=flat-square&logo=postgresql&logoColor=4169E1" alt="PostgreSQL">
-  </a>
-  <a href="https://fastapi.tiangolo.com/" target="_blank">
-    <img src="https://img.shields.io/badge/REST_API-111111?style=flat-square&logo=fastapi&logoColor=009688" alt="REST API">
-  </a>
   <a href="https://git-scm.com/" target="_blank">
     <img src="https://img.shields.io/badge/Git-111111?style=flat-square&logo=git&logoColor=F05032" alt="Git">
   </a>
