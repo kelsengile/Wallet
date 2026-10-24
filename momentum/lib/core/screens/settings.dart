@@ -765,7 +765,7 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Choose a Theme:'),
+            Text('Theme Configuration:'),
             SizedBox(height: AppConstants.spaceSm),
             Divider(height: 1),
           ],
