@@ -50,7 +50,6 @@ Momentum is a minimalist personal tracking application designed to bring importa
 - Finance Tracker — Monitor income, expenses, savings, budgets, and overall spending habits.
 - Schedule Tracker — Organize tasks, appointments, deadlines, events, and daily activities.
 - Health Tracker — Track health-related habits, fitness activities, wellness goals, and personal progress.
-- Cross Platform — Supports multiple platforms, including Android, iOS, and Web, using a single codebase.
 
 ---
 
