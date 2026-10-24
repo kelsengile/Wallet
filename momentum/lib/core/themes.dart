@@ -2,29 +2,61 @@ import 'package:flutter/material.dart';
 
 import 'constants.dart';
 
-/// Every theme the user can pick in Settings.
+/// Built-in themes. Everything else comes from the color picker.
 enum AppThemeOption {
   light('Light', Color(0xFFF2F2F2)),
-  dark('Dark', Color(0xFF000000)),
-  red('Red', Color(0xFFA5413A)),
-  yellow('Yellow', Color(0xFFD8B24A)),
-  orange('Orange', Color(0xFFA8531A)),
-  brown('Brown', Color(0xFF5C4033)),
-  blue('Blue', Color(0xFF3F6683)),
-  green('Green', Color(0xFF56704A)),
-  violet('Violet', Color(0xFF6E5078)),
-  pink('Pink', Color(0xFF9E4F63));
+  dark('Dark', Color(0xFF000000));
 
   final String label;
 
-  /// Color shown in the theme picker.
+  /// Color shown in the picker.
   final Color swatch;
 
   const AppThemeOption(this.label, this.swatch);
 }
 
+/// The Accent color as a plain color. It is not used by buttons (those
+/// follow Glyph). It is applied only where the app asks for it:
+/// bottom nav bar, drawer header, version box and settings sections.
+///
+/// [foreground] is the Glyph color, so text and icons drawn on the accent
+/// change whenever the Glyph color changes.
+@immutable
+class AppAccent extends ThemeExtension<AppAccent> {
+  /// The accent color itself (used as a background).
+  final Color background;
+
+  /// Glyph color to draw on top of [background].
+  final Color foreground;
+
+  const AppAccent({required this.background, required this.foreground});
+
+  @override
+  AppAccent copyWith({Color? background, Color? foreground}) => AppAccent(
+        background: background ?? this.background,
+        foreground: foreground ?? this.foreground,
+      );
+
+  @override
+  AppAccent lerp(ThemeExtension<AppAccent>? other, double t) {
+    if (other is! AppAccent) return this;
+    return AppAccent(
+      background: Color.lerp(background, other.background, t)!,
+      foreground: Color.lerp(foreground, other.foreground, t)!,
+    );
+  }
+}
+
 class AppTheme {
   AppTheme._();
+
+  // Only used for the error colors on custom themes.
+  static const _cream = Color(0xFFF3E7CE);
+  static const _ink = Color(0xFF2B2108);
+
+  // Accent colors for the built-in themes.
+  static const _darkAccent = Color(0xFF1E1E1E);
+  static const _lightAccent = Color(0xFFCBCBCB);
 
   // Dark: black and gray
   static const _darkScheme = ColorScheme(
@@ -70,216 +102,147 @@ class AppTheme {
     outlineVariant: Color(0xFFCFCFCF),
   );
 
-  // Red (vintage): faded brick red, cream text
-  static const _redScheme = ColorScheme(
-    brightness: Brightness.dark,
-    primary: Color(0xFFF3E7CE),
-    onPrimary: Color(0xFFA5413A),
-    primaryContainer: Color(0xFF6E2823),
-    onPrimaryContainer: Color(0xFFF3E7CE),
-    secondary: Color(0xFFE8C4B0),
-    onSecondary: Color(0xFF6E2823),
-    secondaryContainer: Color(0xFFBF6A5E),
-    onSecondaryContainer: Color(0xFFF3E7CE),
-    error: Color(0xFFE8C872),
-    onError: Color(0xFF2B2108),
-    surface: Color(0xFFA5413A),
-    onSurface: Color(0xFFF3E7CE),
-    onSurfaceVariant: Color(0xFFE3C8B8),
-    surfaceContainer: Color(0xFF93372F),
-    surfaceContainerHighest: Color(0xFF7A2C26),
-    outline: Color(0xFFD9A08F),
-    outlineVariant: Color(0xFFBF6A5E),
-  );
+  static ThemeData get light => _build(_lightScheme, _lightAccent);
+  static ThemeData get dark => _build(_darkScheme, _darkAccent);
 
-  // Yellow (vintage): mustard, dark brown text
-  static const _yellowScheme = ColorScheme(
-    brightness: Brightness.light,
-    primary: Color(0xFF2B2108),
-    onPrimary: Color(0xFFD8B24A),
-    primaryContainer: Color(0xFFA98625),
-    onPrimaryContainer: Color(0xFF2B2108),
-    secondary: Color(0xFF5A4614),
-    onSecondary: Color(0xFFF3E7CE),
-    secondaryContainer: Color(0xFFC9A23A),
-    onSecondaryContainer: Color(0xFF2B2108),
-    error: Color(0xFF8E2A1F),
-    onError: Color(0xFFF3E7CE),
-    surface: Color(0xFFD8B24A),
-    onSurface: Color(0xFF2B2108),
-    onSurfaceVariant: Color(0xFF5A4614),
-    surfaceContainer: Color(0xFFCBA640),
-    surfaceContainerHighest: Color(0xFFB8932F),
-    outline: Color(0xFF7A6220),
-    outlineVariant: Color(0xFFA98625),
-  );
-
-  // Orange (vintage): rust orange, cream text
-  static const _orangeScheme = ColorScheme(
-    brightness: Brightness.dark,
-    primary: Color(0xFFF3E7CE),
-    onPrimary: Color(0xFFA8531A),
-    primaryContainer: Color(0xFF6F3410),
-    onPrimaryContainer: Color(0xFFF3E7CE),
-    secondary: Color(0xFFEBC9A0),
-    onSecondary: Color(0xFF6F3410),
-    secondaryContainer: Color(0xFFC97A3E),
-    onSecondaryContainer: Color(0xFFF3E7CE),
-    error: Color(0xFFE8D27A),
-    onError: Color(0xFF2B2108),
-    surface: Color(0xFFA8531A),
-    onSurface: Color(0xFFF3E7CE),
-    onSurfaceVariant: Color(0xFFEDD3B5),
-    surfaceContainer: Color(0xFF964A16),
-    surfaceContainerHighest: Color(0xFF7C3D12),
-    outline: Color(0xFFE0A877),
-    outlineVariant: Color(0xFFC97A3E),
-  );
-
-    // Brown (vintage): coffee brown, cream text
-  static const _brownScheme = ColorScheme(
-    brightness: Brightness.dark,
-    primary: Color(0xFFF3E7CE),
-    onPrimary: Color(0xFF5C4033),
-    primaryContainer: Color(0xFF3B281F),
-    onPrimaryContainer: Color(0xFFF3E7CE),
-    secondary: Color(0xFFD8BFA8),
-    onSecondary: Color(0xFF3B281F),
-    secondaryContainer: Color(0xFF85644F),
-    onSecondaryContainer: Color(0xFFF3E7CE),
-    error: Color(0xFFE8C872),
-    onError: Color(0xFF2B2108),
-    surface: Color(0xFF5C4033),
-    onSurface: Color(0xFFF3E7CE),
-    onSurfaceVariant: Color(0xFFDCC9B6),
-    surfaceContainer: Color(0xFF523829),
-    surfaceContainerHighest: Color(0xFF402C20),
-    outline: Color(0xFFB08F76),
-    outlineVariant: Color(0xFF85644F),
-  );
-
-  // Blue (vintage): dusty denim blue, cream text
-  static const _blueScheme = ColorScheme(
-    brightness: Brightness.dark,
-    primary: Color(0xFFF3E7CE),
-    onPrimary: Color(0xFF3F6683),
-    primaryContainer: Color(0xFF27425A),
-    onPrimaryContainer: Color(0xFFF3E7CE),
-    secondary: Color(0xFFBCD0DC),
-    onSecondary: Color(0xFF27425A),
-    secondaryContainer: Color(0xFF6288A5),
-    onSecondaryContainer: Color(0xFFF3E7CE),
-    error: Color(0xFFE8C872),
-    onError: Color(0xFF2B2108),
-    surface: Color(0xFF3F6683),
-    onSurface: Color(0xFFF3E7CE),
-    onSurfaceVariant: Color(0xFFD2DEE3),
-    surfaceContainer: Color(0xFF365B76),
-    surfaceContainerHighest: Color(0xFF2B4A60),
-    outline: Color(0xFF9DB8CA),
-    outlineVariant: Color(0xFF5F829C),
-  );
-
-  // Green (vintage): sage / olive green, cream text
-  static const _greenScheme = ColorScheme(
-    brightness: Brightness.dark,
-    primary: Color(0xFFF3E7CE),
-    onPrimary: Color(0xFF56704A),
-    primaryContainer: Color(0xFF36482E),
-    onPrimaryContainer: Color(0xFFF3E7CE),
-    secondary: Color(0xFFCBD8B8),
-    onSecondary: Color(0xFF36482E),
-    secondaryContainer: Color(0xFF7C9670),
-    onSecondaryContainer: Color(0xFFF3E7CE),
-    error: Color(0xFFE8C872),
-    onError: Color(0xFF2B2108),
-    surface: Color(0xFF56704A),
-    onSurface: Color(0xFFF3E7CE),
-    onSurfaceVariant: Color(0xFFDAE3C9),
-    surfaceContainer: Color(0xFF4D6642),
-    surfaceContainerHighest: Color(0xFF3D5234),
-    outline: Color(0xFFA9C09A),
-    outlineVariant: Color(0xFF7C9670),
-  );
-
-  // Violet (vintage): dusty plum, cream text
-  static const _violetScheme = ColorScheme(
-    brightness: Brightness.dark,
-    primary: Color(0xFFF3E7CE),
-    onPrimary: Color(0xFF6E5078),
-    primaryContainer: Color(0xFF47304F),
-    onPrimaryContainer: Color(0xFFF3E7CE),
-    secondary: Color(0xFFD8C4DC),
-    onSecondary: Color(0xFF47304F),
-    secondaryContainer: Color(0xFF947299),
-    onSecondaryContainer: Color(0xFFF3E7CE),
-    error: Color(0xFFE8C872),
-    onError: Color(0xFF2B2108),
-    surface: Color(0xFF6E5078),
-    onSurface: Color(0xFFF3E7CE),
-    onSurfaceVariant: Color(0xFFE3D3E3),
-    surfaceContainer: Color(0xFF62466B),
-    surfaceContainerHighest: Color(0xFF4F3858),
-    outline: Color(0xFFBC9FC3),
-    outlineVariant: Color(0xFF947299),
-  );
-
-  // Pink (vintage): dusty rose, cream text
-  static const _pinkScheme = ColorScheme(
-    brightness: Brightness.dark,
-    primary: Color(0xFFF3E7CE),
-    onPrimary: Color(0xFF9E4F63),
-    primaryContainer: Color(0xFF66303F),
-    onPrimaryContainer: Color(0xFFF3E7CE),
-    secondary: Color(0xFFEBC3CC),
-    onSecondary: Color(0xFF66303F),
-    secondaryContainer: Color(0xFFBA7487),
-    onSecondaryContainer: Color(0xFFF3E7CE),
-    error: Color(0xFFE8C872),
-    onError: Color(0xFF2B2108),
-    surface: Color(0xFF9E4F63),
-    onSurface: Color(0xFFF3E7CE),
-    onSurfaceVariant: Color(0xFFEDD0D6),
-    surfaceContainer: Color(0xFF8E4558),
-    surfaceContainerHighest: Color(0xFF763848),
-    outline: Color(0xFFD9A0AE),
-    outlineVariant: Color(0xFFBA7487),
-  );
-
-  static ThemeData get light => _build(_lightScheme);
-  static ThemeData get dark => _build(_darkScheme);
-
-  /// The theme for a picker choice.
+  /// The theme for a built-in choice.
   static ThemeData byOption(AppThemeOption option) {
     switch (option) {
       case AppThemeOption.light:
-        return _build(_lightScheme);
+        return light;
       case AppThemeOption.dark:
-        return _build(_darkScheme);
-      case AppThemeOption.red:
-        return _build(_redScheme);
-      case AppThemeOption.yellow:
-        return _build(_yellowScheme);
-      case AppThemeOption.orange:
-        return _build(_orangeScheme);
-      case AppThemeOption.brown:
-        return _build(_brownScheme);
-      case AppThemeOption.blue:
-        return _build(_blueScheme);
-      case AppThemeOption.green:
-        return _build(_greenScheme);
-      case AppThemeOption.violet:
-        return _build(_violetScheme);
-      case AppThemeOption.pink:
-        return _build(_pinkScheme);
+        return dark;
     }
   }
 
-  static ThemeData _build(ColorScheme scheme) {
+  /// The accent (background + glyph foreground) of the active theme.
+  static AppAccent accentOf(BuildContext context) =>
+      Theme.of(context).extension<AppAccent>()!;
+
+  // ---------- Custom color ----------
+
+  static double _contrast(Color a, Color b) {
+    final l1 = a.computeLuminance();
+    final l2 = b.computeLuminance();
+    final hi = l1 > l2 ? l1 : l2;
+    final lo = l1 > l2 ? l2 : l1;
+    return (hi + 0.05) / (lo + 0.05);
+  }
+
+  /// True when light content reads better than dark content on [bg].
+  static bool _isDarkBackground(Color bg) =>
+      _contrast(bg, Colors.white) >= _contrast(bg, Colors.black);
+
+  /// A color with the same hue as [seed], starting at [lightness] and
+  /// pushed lighter/darker until it has [minContrast] against [bg].
+  /// Grays stay gray (no tint) so neutral picks don't turn red.
+  static Color _tone(
+    Color seed, {
+    required double saturation,
+    required double lightness,
+    required Color bg,
+    required double minContrast,
+    required bool lighten,
+  }) {
+    final hue = HSLColor.fromColor(seed).hue;
+    final sat = HSLColor.fromColor(seed).saturation < 0.08 ? 0.0 : saturation;
+    var l = lightness;
+    var color = HSLColor.fromAHSL(1, hue, sat, l).toColor();
+    for (var i = 0; i < 60 && _contrast(color, bg) < minContrast; i++) {
+      l = (l + (lighten ? 0.02 : -0.02)).clamp(0.0, 1.0);
+      color = HSLColor.fromAHSL(1, hue, sat, l).toColor();
+    }
+    return color;
+  }
+
+  /// Readable glyph (text + icon + button) color for a given background:
+  /// a soft tint of the background's own hue instead of one fixed color.
+  static Color onColor(Color background) {
+    final dark = _isDarkBackground(background);
+    final s = HSLColor.fromColor(background).saturation;
+    return _tone(
+      background,
+      saturation: (s * 0.6).clamp(0.15, 0.4),
+      lightness: dark ? 0.92 : 0.10,
+      bg: background,
+      minContrast: 7,
+      lighten: dark,
+    );
+  }
+
+  /// Default accent when the user hasn't picked one: a slightly lighter
+  /// (dark themes) or darker (light themes) shade of the main color, so it
+  /// works as a bar / panel background.
+  static Color accentFor(Color background) {
+    final dark = _isDarkBackground(background);
+    final hsl = HSLColor.fromColor(background);
+    final l = (hsl.lightness + (dark ? 0.12 : -0.10)).clamp(0.0, 1.0);
+    final s = hsl.saturation < 0.08
+        ? hsl.saturation
+        : (hsl.saturation * 1.1).clamp(0.0, 1.0);
+    return hsl.withLightness(l).withSaturation(s).toColor();
+  }
+
+  static Color _shift(Color c, double amount) {
+    final hsl = HSLColor.fromColor(c);
+    return hsl
+        .withLightness((hsl.lightness + amount).clamp(0.0, 1.0))
+        .toColor();
+  }
+
+  /// Picks whichever of [a] or [b] reads better on top of [on].
+  static Color _readableOn(Color on, Color a, Color b) =>
+      _contrast(on, a) >= _contrast(on, b) ? a : b;
+
+  /// Builds a complete theme from the colors the user picks.
+  ///
+  /// [seed] is the background / main color.
+  /// [accent] is a plain color used only for the nav bar, drawer header,
+  /// version box and settings sections.
+  /// [text] (glyph) is the color of fonts, icons AND buttons. It is also
+  /// the text/icon color drawn on the accent color.
+  /// When [accent] or [text] is null it is derived from [seed].
+  static ThemeData fromColor(Color seed, {Color? accent, Color? text}) {
+    final fg = text ?? onColor(seed);
+    final acc = accent ?? accentFor(seed);
+    final darkBackground = _isDarkBackground(seed);
+    final secondary = Color.lerp(seed, fg, 0.7)!;
+
+    final scheme = ColorScheme(
+      brightness: darkBackground ? Brightness.dark : Brightness.light,
+      // Buttons, sliders and switches follow the glyph color.
+      primary: fg,
+      onPrimary: _readableOn(fg, seed, acc),
+      primaryContainer: _shift(seed, darkBackground ? 0.14 : -0.14),
+      onPrimaryContainer: fg,
+      secondary: secondary,
+      onSecondary: _readableOn(secondary, seed, fg),
+      secondaryContainer: _shift(seed, darkBackground ? 0.10 : -0.04),
+      onSecondaryContainer: fg,
+      error: darkBackground ? const Color(0xFFE8C872) : const Color(0xFF8E2A1F),
+      onError: darkBackground ? _ink : _cream,
+      surface: seed,
+      onSurface: fg,
+      onSurfaceVariant: Color.lerp(seed, fg, 0.85)!,
+      surfaceContainer: _shift(seed, darkBackground ? -0.04 : -0.03),
+      surfaceContainerHighest: _shift(seed, darkBackground ? -0.09 : -0.07),
+      outline: Color.lerp(seed, fg, 0.5)!,
+      outlineVariant: _shift(seed, darkBackground ? 0.10 : -0.10),
+    );
+    return _build(scheme, acc);
+  }
+
+  static ThemeData _build(ColorScheme scheme, Color accent) {
+    // Text/icons drawn on top of the accent color: always the Glyph color
+    // (onSurface), so changing Glyph changes the nav bar, drawer header,
+    // version box and settings sections.
+    final onAccent = scheme.onSurface;
+
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
       scaffoldBackgroundColor: scheme.surface,
+      extensions: [AppAccent(background: accent, foreground: onAccent)],
       appBarTheme: AppBarTheme(
         backgroundColor: scheme.surface,
         foregroundColor: scheme.onSurface,
@@ -287,15 +250,19 @@ class AppTheme {
         scrolledUnderElevation: 0,
         centerTitle: false,
       ),
+      // Main nav bar: accent background. Label colors are set where the bar
+      // is built (main.dart) so the chosen font is kept.
       navigationBarTheme: NavigationBarThemeData(
         height: 56,
-        backgroundColor: scheme.surfaceContainer,
-        indicatorColor: scheme.primaryContainer,
+        backgroundColor: accent,
+        surfaceTintColor: Colors.transparent,
+        indicatorColor: onAccent.withValues(alpha: 0.18),
         iconTheme: WidgetStatePropertyAll(
-          IconThemeData(size: 22, color: scheme.onSurface),
+          IconThemeData(size: 22, color: onAccent),
         ),
         labelPadding: const EdgeInsets.only(top: 2),
       ),
+      // Side panel: main, dulled.
       drawerTheme: DrawerThemeData(backgroundColor: scheme.surfaceContainer),
       listTileTheme: ListTileThemeData(
         selectedColor: scheme.onSurface,
