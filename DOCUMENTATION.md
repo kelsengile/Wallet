@@ -2,8 +2,6 @@
 
 Momentum is a minimalist personal tracking application designed to help users organize and manage important aspects of their daily lives in one centralized platform. The application combines finance, scheduling, and health tracking into a simple and intuitive system, allowing users to monitor their progress, manage daily responsibilities, and maintain better personal habits. This documentation provides an overview of Momentum, including its purpose, features, system structure, functionality, and other important information needed to understand and use the application.
 
-> **Status:** Momentum is in early development (v1.0.0, build 1). The app shell, navigation, theming, and settings are implemented. The finance, schedule, and health screens, the database layer, and the backend services are scaffolded but not yet built. Sections below mark each item as **Implemented**, **Scaffolded** (file exists, empty or placeholder), or **Planned**.
-
 ---
 
 ## Table of Contents

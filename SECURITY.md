@@ -2,19 +2,6 @@
 
 Momentum is designed to hold personal finance, schedule, and health information, so protecting user data is a core priority. This policy explains how to report vulnerabilities and what you can expect from us in response.
 
-> **Status:** Momentum is in early development (v1.0.0). Currently the app only stores two non-sensitive UI preferences (theme and text size) locally. The database, authentication, and sync features are planned, and this policy covers them as they are introduced.
-
----
-
-### Supported Versions
-
-Security updates are provided for the latest released version of the app and the current main branch.
-
-| Version | Supported |
-| ------- | --------- |
-| Latest release | ✅ |
-| Older releases | ❌ |
-
 ---
 
 ### Scope
