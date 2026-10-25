@@ -29,9 +29,14 @@ environment:
 # versions available, run `flutter pub outdated`.
 dependencies:
   shared_preferences: ^2.3.2
+  sqflite: ^2.4.1
+  path: ^1.9.0
 
   flutter:
     sdk: flutter
+    assets:
+      - lib/database/schema.sql
+      - lib/database/seed.sql
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
