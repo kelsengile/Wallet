@@ -1,35 +1,52 @@
 import 'package:flutter/material.dart';
 
 import '../../core/constants.dart';
+import '../../core/failures.dart';
 import '../../core/themes.dart';
 import '../../core/utils.dart';
+import '../../database/helper.dart';
 
-/// Numbers shown on the total balance card.
-class AccountsSummary {
-  final double totalBalance;
-  final int accountCount;
-  final double income;
-  final double expense;
-
-  const AccountsSummary({
-    required this.totalBalance,
-    required this.accountCount,
-    required this.income,
-    required this.expense,
-  });
-}
-
-class AccountsScreen extends StatelessWidget {
+class AccountsScreen extends StatefulWidget {
   const AccountsScreen({super.key});
 
-  // TODO: replace with real data from the database once the finance
-  // repository is built (use the account_balances view).
-  static const _summary = AccountsSummary(
-    totalBalance: 26752.26,
-    accountCount: 11,
-    income: 187670.96,
-    expense: 175046.21,
-  );
+  @override
+  State<AccountsScreen> createState() => _AccountsScreenState();
+}
+
+class _AccountsScreenState extends State<AccountsScreen> {
+  AccountsSummary _summary = AccountsSummary.empty;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    // Reload whenever the database reports a change.
+    DatabaseHelper.instance.changes.addListener(_load);
+  }
+
+  @override
+  void dispose() {
+    DatabaseHelper.instance.changes.removeListener(_load);
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final summary = await DatabaseHelper.instance.getAccountsSummary();
+      if (!mounted) return;
+      setState(() {
+        _summary = summary;
+        _error = null;
+      });
+    } on Failure catch (f) {
+      if (!mounted) return;
+      setState(() => _error = f.message);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _error = const UnknownFailure().message);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -40,7 +57,17 @@ class AccountsScreen extends StatelessWidget {
     return ListView(
       padding: EdgeInsets.zero,
       children: [
-        const TotalBalanceCard(summary: _summary),
+        TotalBalanceCard(summary: _summary),
+        if (_error != null)
+          Padding(
+            padding: const EdgeInsets.all(AppConstants.spaceMd),
+            child: Text(
+              _error!,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ),
         Padding(
           padding: const EdgeInsets.fromLTRB(
             AppConstants.spaceMd + AppConstants.spaceXs,
@@ -75,7 +102,7 @@ class AccountsScreen extends StatelessWidget {
   }
 }
 
-/// Debit/credit card shaped panel at the top of the Accounts page.
+/// Panel at the top of the Accounts page.
 /// It draws behind the status bar and the (transparent) app bar.
 class TotalBalanceCard extends StatelessWidget {
   final AccountsSummary summary;
@@ -83,6 +110,35 @@ class TotalBalanceCard extends StatelessWidget {
 
   /// ISO/IEC 7810 ID-1 card size: 85.60 mm x 53.98 mm.
   static const double cardRatio = 85.60 / 53.98;
+
+  // ------------------------------------------------------------------
+  // true  = card keeps the exact debit/credit card ratio (taller, text
+  //         is centered inside, so there is more empty space).
+  // false = card is only as tall as its content (less empty space).
+  // ------------------------------------------------------------------
+  static const bool useCardRatio = false;
+
+  // ------------------------------------------------------------------
+  // CHANGE THESE to set the space above and below the text.
+  // textTopMargin    = space between the app bar and "Total Balance".
+  // textBottomMargin = space between the green | red row and the
+  //                    bottom edge of the card.
+  // Smaller number -> less space.
+  // ------------------------------------------------------------------
+  static const double textTopMargin = 60;
+  static const double textBottomMargin = 35;
+  static const double textSideMargin =
+      AppConstants.spaceLg - AppConstants.spaceXs;
+
+  // ------------------------------------------------------------------
+  // CHANGE THESE to set the space between the labels.
+  // Smaller number -> labels sit closer together.
+  // ------------------------------------------------------------------
+  /// Space between "Total Balance" and the big balance.
+  static const double labelToBalanceGap = 10;
+
+  /// Space between the big balance and the green | red row.
+  static const double balanceToAnalyticsGap = 2;
 
   static const double _bottomRadius = 28;
   static const Color _incomeColor = Color(0xFF4CAF50);
@@ -100,113 +156,105 @@ class TotalBalanceCard extends StatelessWidget {
     // Space taken by the status bar + app bar, so content starts below them.
     final topInset = MediaQuery.viewPaddingOf(context).top + kToolbarHeight;
 
-    return AspectRatio(
-      aspectRatio: cardRatio,
-      child: Container(
-        width: double.infinity,
-        padding: EdgeInsets.fromLTRB(
-          AppConstants.spaceLg - AppConstants.spaceXs,
-          topInset,
-          AppConstants.spaceLg - AppConstants.spaceXs,
-          AppConstants.spaceMd,
-        ),
-        decoration: BoxDecoration(
-          color: accent.background,
-          borderRadius: const BorderRadius.vertical(
-            bottom: Radius.circular(_bottomRadius),
-          ),
-        ),
-        child: Column(
-          children: [
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // "Total Balance" on the left, account count on the right
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Total Balance',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: muted,
-                        ),
-                      ),
-                      Text(
-                        '${summary.accountCount} accounts',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: muted,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppConstants.spaceXs),
-                  // Big balance on the left
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      Utils.formatCurrency(
-                        summary.totalBalance,
-                        symbol: '₱ ',
-                      ),
-                      style: theme.textTheme.headlineLarge?.copyWith(
-                        fontSize: 38,
-                        fontWeight: FontWeight.w700,
-                        color: fg,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: AppConstants.spaceSm),
-                  // Analytics: green = income | red = expense (right side)
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.arrow_upward,
-                          size: 11,
-                          color: _incomeColor,
-                        ),
-                        const SizedBox(width: 2),
-                        Text(
-                          _plain(summary.income),
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: _incomeColor,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(width: AppConstants.spaceSm),
-                        Container(
-                          width: 1,
-                          height: 12,
-                          color: fg.withValues(alpha: 0.3),
-                        ),
-                        const SizedBox(width: AppConstants.spaceSm),
-                        const Icon(
-                          Icons.arrow_downward,
-                          size: 11,
-                          color: _expenseColor,
-                        ),
-                        const SizedBox(width: 2),
-                        Text(
-                          _plain(summary.expense),
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: _expenseColor,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+    final card = Container(
+      width: double.infinity,
+      padding: EdgeInsets.fromLTRB(
+        textSideMargin,
+        topInset + textTopMargin,
+        textSideMargin,
+        textBottomMargin,
+      ),
+      decoration: BoxDecoration(
+        color: accent.background,
+        borderRadius: const BorderRadius.vertical(
+          bottom: Radius.circular(_bottomRadius),
         ),
       ),
+      child: Column(
+        // Shrinks to the content when the ratio is off.
+        mainAxisSize: useCardRatio ? MainAxisSize.max : MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // "Total Balance" on the left, account count on the right
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Total Balance',
+                style: theme.textTheme.bodyMedium?.copyWith(color: muted),
+              ),
+              Text(
+                '${summary.accountCount} '
+                '${summary.accountCount == 1 ? 'account' : 'accounts'}',
+                style: theme.textTheme.bodySmall?.copyWith(color: muted),
+              ),
+            ],
+          ),
+          const SizedBox(height: labelToBalanceGap),
+          // Big balance on the left
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              Utils.formatCurrency(summary.totalBalance, symbol: '₱ '),
+              style: theme.textTheme.headlineLarge?.copyWith(
+                fontSize: 38,
+                fontWeight: FontWeight.w700,
+                color: fg,
+                height: 1.0, // removes the font's extra line spacing
+              ),
+            ),
+          ),
+          const SizedBox(height: balanceToAnalyticsGap),
+          // Analytics: green = income | red = expense (right side)
+          Align(
+            alignment: Alignment.centerRight,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.arrow_upward,
+                  size: 11,
+                  color: _incomeColor,
+                ),
+                const SizedBox(width: 2),
+                Text(
+                  _plain(summary.income),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: _incomeColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: AppConstants.spaceSm),
+                Container(
+                  width: 1,
+                  height: 12,
+                  color: fg.withValues(alpha: 0.3),
+                ),
+                const SizedBox(width: AppConstants.spaceSm),
+                const Icon(
+                  Icons.arrow_downward,
+                  size: 11,
+                  color: _expenseColor,
+                ),
+                const SizedBox(width: 2),
+                Text(
+                  _plain(summary.expense),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: _expenseColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
+
+    return useCardRatio
+        ? AspectRatio(aspectRatio: cardRatio, child: card)
+        : card;
   }
 }

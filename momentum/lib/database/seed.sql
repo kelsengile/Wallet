@@ -6,6 +6,10 @@ INSERT INTO account_categories (name, sort_order) VALUES
   ('Investments', 2),
   ('Debt', 3);
 
+-- The first account the user sees. Starts at zero.
+INSERT INTO accounts (name, type, category_id, initial_balance) VALUES 
+  ('Cash', 'cash', (SELECT id FROM account_categories WHERE name = 'Everyday'), 0 );
+
 INSERT INTO categories (name, kind) VALUES
   ('Food & Dining', 'expense'),
   ('Groceries', 'expense'),
