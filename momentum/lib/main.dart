@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 
 import 'core/constants.dart';
 import 'core/font.dart';
@@ -14,14 +17,15 @@ import 'core/screens/search.dart';
 import 'core/screens/settings.dart';
 import 'core/themes.dart';
 import 'database/database.dart';
-import 'features/finance/screens/accounts.dart';
-import 'features/health/screens/history.dart';
-import 'features/schedule/screens/schedule.dart';
+import 'features/finance/accounts.dart';
+import 'features/health/health.dart';
+import 'features/schedule/schedule.dart';
 import 'services/analytics.dart';
 import 'services/notification.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (kIsWeb) databaseFactory = databaseFactoryFfiWeb;
   await AppSettings.instance.load(); // restore saved theme, font + text size
   runApp(const MomentumApp());
 }
@@ -85,17 +89,23 @@ class MomentumApp extends StatelessWidget {
   }
 }
 
+// CHANGED: title and subtitle removed, only headerCard kept
 class _Destination {
   final String label;
   final IconData icon;
   final IconData selectedIcon;
   final Widget screen;
 
+  /// True when the page starts with a colored card behind the top bar
+  /// (the bar's icons and text then use the accent's readable color).
+  final bool headerCard;
+
   const _Destination({
     required this.label,
     required this.icon,
     required this.selectedIcon,
     required this.screen,
+    this.headerCard = false,
   });
 }
 
@@ -138,6 +148,7 @@ class _HomeShellState extends State<HomeShell> {
       icon: Icons.account_balance_wallet_outlined,
       selectedIcon: Icons.account_balance_wallet,
       screen: AccountsScreen(),
+      headerCard: true,
     ),
     _Destination(
       label: 'Schedule',
@@ -293,6 +304,12 @@ class _HomeShellState extends State<HomeShell> {
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
     final accent = AppTheme.accentOf(context);
+    final current = _destinations[_index];
+
+    // CHANGED: the top bar has no background. On pages that start with a
+    // card it uses the accent's readable color, otherwise the normal one.
+    final barColor =
+        current.headerCard ? accent.foreground : theme.colorScheme.onSurface;
 
     // The nav bar labels read onSurface / onSurfaceVariant from the theme.
     // Re-point those at the accent's readable color for the bar only, so
@@ -305,7 +322,16 @@ class _HomeShellState extends State<HomeShell> {
     );
 
     return Scaffold(
+      // CHANGED: pages draw behind the (transparent) top bar.
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
+        // CHANGED: no background, so the page design shows through.
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        foregroundColor: barColor,
         // 3-line button: opens the drawer
         leading: Builder(
           builder: (context) => IconButton(
@@ -315,9 +341,13 @@ class _HomeShellState extends State<HomeShell> {
           ),
         ),
         titleSpacing: 0,
+        // CHANGED: back to only "Momentum"
         title: Text(
           AppConstants.appName,
-          style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+          style: textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w700,
+            color: barColor,
+          ),
         ),
         actions: [
           IconButton(
