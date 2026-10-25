@@ -17,9 +17,9 @@ import 'core/screens/search.dart';
 import 'core/screens/settings.dart';
 import 'core/themes.dart';
 import 'database/database.dart';
-import 'features/finance/screens/accounts.dart';
-import 'features/health/screens/history.dart';
-import 'features/schedule/screens/schedule.dart';
+import 'features/finance/accounts.dart';
+import 'features/health/health.dart';
+import 'features/schedule/schedule.dart';
 import 'services/analytics.dart';
 import 'services/notification.dart';
 
