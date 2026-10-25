@@ -89,17 +89,29 @@ class MomentumApp extends StatelessWidget {
   }
 }
 
+// CHANGED: added title, subtitle and headerCard
 class _Destination {
   final String label;
   final IconData icon;
   final IconData selectedIcon;
   final Widget screen;
 
+  /// Shown in the top bar while this page is open.
+  final String title;
+  final String subtitle;
+
+  /// True when the page starts with a colored card behind the top bar
+  /// (the bar's icons and text then use the accent's readable color).
+  final bool headerCard;
+
   const _Destination({
     required this.label,
     required this.icon,
     required this.selectedIcon,
     required this.screen,
+    required this.title,
+    required this.subtitle,
+    this.headerCard = false,
   });
 }
 
@@ -136,24 +148,32 @@ class _HomeShellState extends State<HomeShell> {
     super.dispose();
   }
 
+  // CHANGED: each destination now has its own top bar title/subtitle
   static const _destinations = <_Destination>[
     _Destination(
       label: 'Accounts',
       icon: Icons.account_balance_wallet_outlined,
       selectedIcon: Icons.account_balance_wallet,
       screen: AccountsScreen(),
+      title: 'Wallet',
+      subtitle: 'Manage your money',
+      headerCard: true,
     ),
     _Destination(
       label: 'Schedule',
       icon: Icons.calendar_today_outlined,
       selectedIcon: Icons.calendar_today,
       screen: ScheduleScreen(),
+      title: 'Schedule',
+      subtitle: 'Plan your time',
     ),
     _Destination(
       label: 'Health',
       icon: Icons.health_and_safety_outlined,
       selectedIcon: Icons.health_and_safety,
       screen: HistoryScreen(),
+      title: 'Health',
+      subtitle: 'Track your wellness',
     ),
   ];
 
@@ -292,11 +312,55 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 
+  // CHANGED: new. Icon circle + title + subtitle shown in the top bar.
+  Widget _buildBarTitle(BuildContext context, _Destination d, Color color) {
+    final textTheme = Theme.of(context).textTheme;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: color.withValues(alpha: 0.18),
+          ),
+          child: Icon(d.icon, size: 20, color: color),
+        ),
+        const SizedBox(width: AppConstants.spaceSm + 2),
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              d.title,
+              style: textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+            ),
+            Text(
+              d.subtitle,
+              style: textTheme.labelSmall?.copyWith(
+                color: color.withValues(alpha: 0.7),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final textTheme = theme.textTheme;
     final accent = AppTheme.accentOf(context);
+    final current = _destinations[_index];
+
+    // CHANGED: the top bar has no background. On pages that start with a
+    // card it uses the accent's readable color, otherwise the normal one.
+    final barColor =
+        current.headerCard ? accent.foreground : theme.colorScheme.onSurface;
 
     // The nav bar labels read onSurface / onSurfaceVariant from the theme.
     // Re-point those at the accent's readable color for the bar only, so
@@ -309,7 +373,16 @@ class _HomeShellState extends State<HomeShell> {
     );
 
     return Scaffold(
+      // CHANGED: pages draw behind the (transparent) top bar.
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
+        // CHANGED: no background, so the page design shows through.
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        foregroundColor: barColor,
         // 3-line button: opens the drawer
         leading: Builder(
           builder: (context) => IconButton(
@@ -319,10 +392,8 @@ class _HomeShellState extends State<HomeShell> {
           ),
         ),
         titleSpacing: 0,
-        title: Text(
-          AppConstants.appName,
-          style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-        ),
+        // CHANGED: per-page icon + title + subtitle
+        title: _buildBarTitle(context, current, barColor),
         actions: [
           IconButton(
             icon: const Icon(Icons.search),
