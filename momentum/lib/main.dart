@@ -1,7 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:sqflite/sqflite.dart';
-import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 
 import 'core/constants.dart';
 import 'core/font.dart';
@@ -25,7 +22,6 @@ import 'services/notification.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  if (kIsWeb) databaseFactory = databaseFactoryFfiWeb;
   await AppSettings.instance.load(); // restore saved theme, font + text size
   runApp(const MomentumApp());
 }
