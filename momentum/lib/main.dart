@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; 
 
 import 'core/constants.dart';
 import 'core/font.dart';
@@ -22,6 +23,12 @@ import 'services/notification.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // NEW: lock the app to portrait (upright only, no landscape).
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+  ]);
+
   await AppSettings.instance.load(); // restore saved theme, font + text size
   runApp(const MomentumApp());
 }
