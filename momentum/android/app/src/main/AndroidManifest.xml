@@ -3,8 +3,16 @@
         android:label="momentum"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+
+        <!-- NEW: lets the portrait lock still work on tablets and foldables
+             (screens 600dp wide or more) when targeting Android 16 (API 36). -->
+        <property
+            android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY"
+            android:value="true" />
+
         <activity
             android:name=".MainActivity"
+            android:screenOrientation="portrait"
             android:exported="true"
             android:launchMode="singleTop"
             android:taskAffinity=""
