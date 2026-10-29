@@ -6,14 +6,14 @@ import '../../core/themes.dart';
 import '../../core/utils.dart';
 import '../../database/helper.dart';
 
-class FinancesScreen extends StatefulWidget {
-  const FinancesScreen({super.key});
+class FinanceScreen extends StatefulWidget {
+  const FinanceScreen({super.key});
 
   @override
-  State<FinancesScreen> createState() => _FinancesScreenState();
+  State<FinanceScreen> createState() => _FinanceScreenState();
 }
 
-class _FinancesScreenState extends State<FinancesScreen> {
+class _FinanceScreenState extends State<FinanceScreen> {
   AccountsSummary _summary = AccountsSummary.empty;
   String? _error;
 
@@ -115,7 +115,7 @@ class _FinancesScreenState extends State<FinancesScreen> {
   }
 }
 
-/// Panel at the top of the Finances page.
+/// Panel at the top of the Finance page.
 /// It draws behind the status bar and the (transparent) app bar.
 class TotalBalanceCard extends StatelessWidget {
   final AccountsSummary summary;

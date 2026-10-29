@@ -147,10 +147,10 @@ class _HomeShellState extends State<HomeShell> {
 
   static const _destinations = <_Destination>[
     _Destination(
-      label: 'Finances',
+      label: 'Finance',
       icon: Icons.account_balance_wallet_outlined,
       selectedIcon: Icons.account_balance_wallet,
-      screen: FinancesScreen(),
+      screen: FinanceScreen(),
       headerCard: true,
     ),
     _Destination(
