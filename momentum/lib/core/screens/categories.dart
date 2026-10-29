@@ -1,15 +1,209 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../database/helper.dart';
 import '../constants.dart';
 import '../failures.dart';
 import '../themes.dart';
 
+/// Darker dim behind every pop-up, so the pop-up colors stand out more.
+const Color _popupBarrier = Color(0xCC000000);
+
+/// The icons a category can use, and the default icon of each seed item.
+/// The key is what gets saved in the database.
+class _CategoryIcons {
+  _CategoryIcons._();
+
+  /// Shown in this order in the picker (8 per row).
+  static const Map<String, IconData> all = {
+    'wallet': Icons.account_balance_wallet_outlined,
+    'cash': Icons.payments_outlined,
+    'bank': Icons.account_balance,
+    'phone': Icons.smartphone,
+    'card': Icons.credit_card,
+    'handshake': Icons.handshake_outlined,
+    'trending': Icons.trending_up,
+    'savings': Icons.savings_outlined,
+    'food': Icons.restaurant,
+    'car': Icons.directions_car,
+    'shopping': Icons.shopping_bag,
+    'receipt': Icons.receipt_long,
+    'heart': Icons.favorite,
+    'movie': Icons.movie,
+    'work': Icons.work,
+    'swap': Icons.swap_horiz,
+    'home': Icons.home,
+    'gift': Icons.card_giftcard,
+    'pets': Icons.pets,
+    'school': Icons.school,
+    'fitness': Icons.fitness_center,
+    'flight': Icons.flight,
+    'family': Icons.family_restroom,
+    'business': Icons.business_center,
+    'flag': Icons.flag,
+    'medical': Icons.medical_services,
+    'star': Icons.star,
+    'shapes': Icons.category,
+    'label': Icons.label_outline,
+  };
+
+  static const String fallback = 'label';
+
+  /// Used for new items and for anything not listed below.
+  static const Map<CategoryGroup, String> _groupDefault = {
+    CategoryGroup.accountType: 'wallet',
+    CategoryGroup.accountCategory: 'label',
+    CategoryGroup.income: 'cash',
+    CategoryGroup.expense: 'shopping',
+    CategoryGroup.transfer: 'swap',
+  };
+
+  /// Default icon of each seed item, by name.
+  static const Map<CategoryGroup, Map<String, String>> _nameDefaults = {
+    CategoryGroup.accountType: {
+      'Cash': 'cash',
+      'Bank': 'bank',
+      'Digital Bank': 'phone',
+      'Credit': 'card',
+      'E-Wallet': 'wallet',
+      'Investment': 'trending',
+      'Assets': 'home',
+      'Debt': 'handshake',
+      'Business': 'business',
+    },
+    CategoryGroup.accountCategory: {
+      'Personal': 'star',
+      'Family': 'family',
+      'Savings': 'savings',
+      'Future': 'flag',
+      'Work': 'work',
+      'Travel': 'flight',
+      'Health': 'medical',
+      'Investment': 'trending',
+      'Debt': 'card',
+      'Emergency': 'heart',
+      'Spending': 'shopping',
+    },
+    CategoryGroup.income: {
+      'Salary': 'cash',
+      'Bonus': 'gift',
+      'Commission': 'handshake',
+      'Allowance': 'wallet',
+      'Freelance': 'work',
+      'Business': 'business',
+      'Investment': 'trending',
+      'Gift': 'gift',
+      'Scholarship': 'school',
+      'Refund': 'receipt',
+      'Loan': 'bank',
+      'Miscellaneous': 'shapes',
+    },
+    CategoryGroup.expense: {
+      'Food': 'food',
+      'Transportation': 'car',
+      'Shopping': 'shopping',
+      'Bills': 'receipt',
+      'Health': 'medical',
+      'Education': 'school',
+      'Entertainment': 'movie',
+      'Tax': 'bank',
+      'Debt': 'card',
+      'Gift': 'gift',
+      'Travel': 'flight',
+      'Sports': 'fitness',
+      'Miscellaneous': 'shapes',
+    },
+    CategoryGroup.transfer: {'Transfer': 'swap'},
+  };
+
+  static String defaultKey(CategoryGroup group, String name) =>
+      _nameDefaults[group]?[name] ?? _groupDefault[group] ?? fallback;
+
+  /// The saved icon key, or the default one when nothing is saved.
+  static String keyOf(CategoryGroup group, CategoryItem item) {
+    final saved = item.icon;
+    if (saved != null && all.containsKey(saved)) return saved;
+    return defaultKey(group, item.name);
+  }
+
+  static IconData of(String key) => all[key] ?? all[fallback]!;
+}
+
+/// Colors a pop-up: [background] behind, [foreground] for text, buttons and
+/// fields. Both default to the theme's accent colors.
+ThemeData _popupTheme(
+  BuildContext context, {
+  Color? background,
+  Color? foreground,
+}) {
+  final theme = Theme.of(context);
+  final accent = AppTheme.accentOf(context);
+  final bg = background ?? accent.background;
+  final fg = foreground ?? accent.foreground;
+  return theme.copyWith(
+    colorScheme: theme.colorScheme.copyWith(
+      primary: fg,
+      onPrimary: bg,
+      onSurface: fg,
+      onSurfaceVariant: fg.withValues(alpha: 0.7),
+    ),
+  );
+}
+
+/// The one pop-up design used by the edit and the delete pop-ups:
+/// same corners, same spacing, same buttons.
+/// [background] / [foreground] default to the accent colors.
+/// [compact] makes it shorter (used by the delete pop-up).
+Widget _accentDialog(
+  BuildContext context, {
+  required String title,
+  required Widget content,
+  required List<Widget> actions,
+  Color? background,
+  Color? foreground,
+  bool compact = false,
+}) {
+  final accent = AppTheme.accentOf(context);
+  final bg = background ?? accent.background;
+  final fg = foreground ?? accent.foreground;
+  final theme = _popupTheme(context, background: bg, foreground: fg);
+
+  return Theme(
+    data: theme,
+    child: AlertDialog(
+      backgroundColor: bg,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+      titlePadding: compact
+          ? const EdgeInsets.fromLTRB(20, 14, 20, 0)
+          : const EdgeInsets.fromLTRB(20, 18, 20, 0),
+      contentPadding: compact
+          ? const EdgeInsets.fromLTRB(20, 6, 20, 0)
+          : const EdgeInsets.fromLTRB(20, 12, 20, 4),
+      actionsPadding: compact
+          ? const EdgeInsets.fromLTRB(12, 0, 12, 6)
+          : const EdgeInsets.fromLTRB(12, 0, 12, 10),
+      titleTextStyle: compact
+          ? theme.textTheme.titleLarge?.copyWith(
+              color: fg,
+              fontWeight: FontWeight.w600,
+            )
+          : null,
+      title: Text(title),
+      content: SizedBox(width: double.maxFinite, child: content),
+      actions: actions,
+    ),
+  );
+}
+
 /// Categories, split into sections: Finance | Schedule | Health.
 /// Only Finance is built for now. It has two headers:
 ///  - Accounts: Types and Categories
 ///  - Transactions: Income, Expense and Transfer
-/// Tap an item to rename or delete it. Use + to add one.
+/// Tap the pen (or the bar) to rename it or change its icon. Swipe a bar
+/// left to delete it. Drag the 3-line handle to change the order.
+/// Use + to add one.
 class CategoriesScreen extends StatefulWidget {
   const CategoriesScreen({super.key});
 
@@ -36,16 +230,43 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     super.dispose();
   }
 
+  // ---------- Saved order ----------
+
+  /// The order is saved on the phone (per list) as a list of item ids.
+  String _orderKey(CategoryGroup g) => 'category_order_${g.name}';
+
+  /// Sorts [items] by the saved order. Items that aren't in the saved
+  /// order yet (new ones) go to the end, in their normal (id) order.
+  List<CategoryItem> _applySavedOrder(
+    SharedPreferences prefs,
+    CategoryGroup group,
+    List<CategoryItem> items,
+  ) {
+    final saved = prefs.getStringList(_orderKey(group)) ?? const <String>[];
+    if (saved.isEmpty) return items;
+    final rank = {for (var i = 0; i < saved.length; i++) saved[i]: i};
+    const last = 1 << 30;
+    final sorted = [...items];
+    sorted.sort((a, b) {
+      final ra = rank['${a.id}'] ?? last;
+      final rb = rank['${b.id}'] ?? last;
+      if (ra != rb) return ra.compareTo(rb);
+      return a.id.compareTo(b.id);
+    });
+    return sorted;
+  }
+
   Future<void> _load() async {
     try {
       final groups = CategoryGroup.values;
+      final prefs = await SharedPreferences.getInstance();
       final results = await Future.wait(
         groups.map(DatabaseHelper.instance.getCategoryItems),
       );
       if (!mounted) return;
       setState(() {
         for (var i = 0; i < groups.length; i++) {
-          _items[groups[i]] = results[i];
+          _items[groups[i]] = _applySavedOrder(prefs, groups[i], results[i]);
         }
         _error = null;
       });
@@ -55,6 +276,25 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _error = const UnknownFailure().message);
+    }
+  }
+
+  /// Moves one bar to a new place and saves the new order.
+  Future<void> _reorder(CategoryGroup group, int oldIndex, int newIndex) async {
+    if (newIndex > oldIndex) newIndex -= 1;
+    if (newIndex == oldIndex) return;
+    final list = [...(_items[group] ?? const <CategoryItem>[])];
+    final moved = list.removeAt(oldIndex);
+    list.insert(newIndex, moved);
+    setState(() => _items[group] = list);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(
+        _orderKey(group),
+        [for (final item in list) '${item.id}'],
+      );
+    } catch (_) {
+      _snack('Couldn\'t save the new order.');
     }
   }
 
@@ -81,50 +321,82 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
   }
 
   /// Asks the person to confirm before an item is removed.
+  /// Same pop-up design as the edit pop-up, but red and shorter.
   Future<bool> _confirmDelete(CategoryGroup group, CategoryItem item) async {
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        surfaceTintColor: Colors.transparent,
-        title: Text('Delete ${_singular(group)}?'),
-        content: Text('"${item.name}" will be removed.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
+      barrierColor: _popupBarrier,
+      builder: (ctx) {
+        const fg = Colors.white;
+        return _accentDialog(
+          ctx,
+          title: 'Delete ${_singular(group)}?',
+          background: Colors.red,
+          foreground: fg,
+          compact: true,
+          content: const Text(
+            'This will be removed.',
+            style: TextStyle(color: fg),
           ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
     );
     return ok ?? false;
   }
 
+  /// Called when a bar is swiped. Confirms, deletes the category and returns
+  /// true only when it was really deleted (so the bar slides away).
+  Future<bool> _deleteItem(CategoryGroup group, CategoryItem item) async {
+    if (!await _confirmDelete(group, item)) return false;
+    try {
+      await DatabaseHelper.instance.deleteCategoryItem(group, item.id);
+      return true;
+    } on Failure catch (f) {
+      _snack(f.message);
+    } catch (_) {
+      _snack(const UnknownFailure().message);
+    }
+    return false;
+  }
+
   Future<void> _openEditor(CategoryGroup group, {CategoryItem? item}) async {
+    final startIcon = item == null
+        ? _CategoryIcons.defaultKey(group, '')
+        : _CategoryIcons.keyOf(group, item);
     final result = await showDialog<_NameResult>(
       context: context,
+      barrierColor: _popupBarrier,
       builder: (_) => _NameDialog(
         title: item == null
             ? 'Add ${_singular(group)}'
             : 'Edit ${_singular(group)}',
         initial: item?.name ?? '',
-        canDelete: item != null,
+        initialIcon: startIcon,
       ),
     );
     if (result == null || !mounted) return;
 
     final db = DatabaseHelper.instance;
     try {
-      if (result.delete) {
-        if (!await _confirmDelete(group, item!)) return;
-        await db.deleteCategoryItem(group, item.id);
-      } else if (item == null) {
-        await db.addCategoryItem(group, result.name);
-      } else if (result.name != item.name) {
-        await db.renameCategoryItem(group, item.id, result.name);
+      if (item == null) {
+        await db.addCategoryItem(group, result.name, icon: result.icon);
+      } else if (result.name != item.name || result.icon != startIcon) {
+        await db.renameCategoryItem(
+          group,
+          item.id,
+          result.name,
+          icon: result.icon,
+        );
       }
     } on Failure catch (f) {
       _snack(f.message);
@@ -138,8 +410,17 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
       title: title,
       items: _items[group] ?? const [],
       editable: editable,
+      iconFor: (item) => _CategoryIcons.of(_CategoryIcons.keyOf(group, item)),
       onAdd: () => _openEditor(group),
       onTapItem: (item) => _openEditor(group, item: item),
+      onDeleteItem: (item) => _deleteItem(group, item),
+      onDeleted: (item) => setState(() {
+        _items[group] = [
+          for (final i in _items[group] ?? const <CategoryItem>[])
+            if (i.id != item.id) i,
+        ];
+      }),
+      onReorder: (oldIndex, newIndex) => _reorder(group, oldIndex, newIndex),
     );
   }
 
@@ -207,6 +488,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
   }
 }
 
+/// Biggest text on the screen: "Accounts" and "Transactions".
 class _SectionHeader extends StatelessWidget {
   final String title;
   const _SectionHeader(this.title);
@@ -223,8 +505,8 @@ class _SectionHeader extends StatelessWidget {
       ),
       child: Text(
         title,
-        style: theme.textTheme.titleMedium?.copyWith(
-          fontWeight: FontWeight.w600,
+        style: theme.textTheme.headlineSmall?.copyWith(
+          fontWeight: FontWeight.w700,
           color: theme.colorScheme.onSurface,
         ),
       ),
@@ -232,36 +514,189 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-/// A rounded card (accent color) with a title, a + button and its items.
+/// A rounded card (accent color) with a title, a + button, a divider line
+/// and its items. Each item is its own rounded bar (a lighter shade of the
+/// accent) with its icon, name, a pen button and a 3-line drag handle.
+/// Tap the pen to edit, swipe a bar left to delete, drag the handle to
+/// change the order.
+///
+/// Text sizes, big to small: section header > card title > category name.
 class _CategoryGroupCard extends StatelessWidget {
+  static const double _barRadius = 16;
+
   final String title;
   final List<CategoryItem> items;
   final bool editable;
+  final IconData Function(CategoryItem item) iconFor;
   final VoidCallback onAdd;
   final ValueChanged<CategoryItem> onTapItem;
+  final Future<bool> Function(CategoryItem item) onDeleteItem;
+  final ValueChanged<CategoryItem> onDeleted;
+  final void Function(int oldIndex, int newIndex) onReorder;
 
   const _CategoryGroupCard({
     required this.title,
     required this.items,
     required this.editable,
+    required this.iconFor,
     required this.onAdd,
     required this.onTapItem,
+    required this.onDeleteItem,
+    required this.onDeleted,
+    required this.onReorder,
   });
+
+  /// One category as a bar. Swipe right-to-left to delete.
+  /// [index] is its place in the list (used by the drag handle).
+  Widget _bar(
+    BuildContext context,
+    CategoryItem item,
+    int index,
+    Color fg,
+    Color barColor,
+  ) {
+    final theme = Theme.of(context);
+
+    final bar = Material(
+      color: barColor,
+      borderRadius: BorderRadius.circular(_barRadius),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: editable ? () => onTapItem(item) : null,
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: AppConstants.spaceSm + 4,
+            right: editable ? AppConstants.spaceXs : AppConstants.spaceSm + 4,
+            top: AppConstants.spaceSm,
+            bottom: AppConstants.spaceSm,
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: fg.withValues(alpha: 0.12),
+                ),
+                child: Icon(iconFor(item), size: 22, color: fg),
+              ),
+              const SizedBox(width: AppConstants.spaceMd),
+              Expanded(
+                child: Text(
+                  item.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: fg,
+                  ),
+                ),
+              ),
+              if (editable) ...[
+                // Pen: edit name and icon.
+                IconButton(
+                  icon: Icon(
+                    Icons.edit_outlined,
+                    size: 22,
+                    color: fg.withValues(alpha: 0.7),
+                  ),
+                  tooltip: 'Edit',
+                  onPressed: () => onTapItem(item),
+                ),
+                // 3 lines: press and drag to change the order.
+                ReorderableDragStartListener(
+                  index: index,
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppConstants.spaceSm),
+                    child: Icon(
+                      Icons.drag_handle,
+                      size: 24,
+                      color: fg.withValues(alpha: 0.7),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+
+    // The locked Transfer category can't be deleted, so no swiping.
+    if (!editable) return bar;
+
+    return Dismissible(
+      key: ValueKey('$title-${item.id}'),
+      direction: DismissDirection.endToStart,
+      confirmDismiss: (_) => onDeleteItem(item),
+      onDismissed: (_) => onDeleted(item),
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: AppConstants.spaceLg),
+        decoration: BoxDecoration(
+          color: Colors.red,
+          borderRadius: BorderRadius.circular(_barRadius),
+        ),
+        child: Icon(Icons.delete_outline, color: fg),
+      ),
+      child: bar,
+    );
+  }
+
+  /// Space around a bar (also the gap between two bars).
+  Widget _spaced(Widget child, {Key? key}) {
+    return Padding(
+      key: key,
+      padding: const EdgeInsets.fromLTRB(
+        AppConstants.spaceSm + 4,
+        0,
+        AppConstants.spaceSm + 4,
+        AppConstants.spaceSm,
+      ),
+      child: child,
+    );
+  }
+
+  Widget _bars(BuildContext context, Color fg, Color barColor) {
+    // Locked list (Transfer): plain bars, nothing to drag.
+    if (!editable) {
+      return Column(
+        children: [
+          for (var i = 0; i < items.length; i++)
+            _spaced(_bar(context, items[i], i, fg, barColor)),
+        ],
+      );
+    }
+
+    return ReorderableListView(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      buildDefaultDragHandles: false,
+      onReorder: onReorder,
+      // While dragging: no background box or shadow behind the bar, so only
+      // the bar itself is seen moving over the card.
+      proxyDecorator: (child, index, animation) => Material(
+        type: MaterialType.transparency,
+        child: child,
+      ),
+      children: [
+        for (var i = 0; i < items.length; i++)
+          _spaced(
+            _bar(context, items[i], i, fg, barColor),
+            key: ValueKey('row-$title-${items[i].id}'),
+          ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final accent = AppTheme.accentOf(context);
     final fg = accent.foreground;
-    final divider = Color.lerp(accent.background, fg, 0.18)!;
-
-    Widget dividerLine() => Divider(
-          height: 1,
-          thickness: 1,
-          indent: AppConstants.spaceMd,
-          endIndent: AppConstants.spaceMd,
-          color: divider,
-        );
+    // A lighter version of the accent color for the category bars.
+    final barColor = Color.lerp(accent.background, Colors.white, 0.15)!;
 
     return Padding(
       padding: const EdgeInsets.symmetric(
@@ -288,7 +723,7 @@ class _CategoryGroupCard extends StatelessWidget {
                     Expanded(
                       child: Text(
                         title,
-                        style: theme.textTheme.titleSmall?.copyWith(
+                        style: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w700,
                           color: fg,
                         ),
@@ -313,8 +748,16 @@ class _CategoryGroupCard extends StatelessWidget {
                 ),
               ),
             ),
-            if (items.isEmpty && editable) ...[
-              dividerLine(),
+            // Line between the header and the categories.
+            Divider(
+              height: 1,
+              thickness: 1,
+              indent: AppConstants.spaceMd,
+              endIndent: AppConstants.spaceMd,
+              color: fg.withValues(alpha: 0.25),
+            ),
+            const SizedBox(height: AppConstants.spaceSm),
+            if (items.isEmpty && editable)
               ListTile(
                 dense: true,
                 title: Text(
@@ -322,22 +765,8 @@ class _CategoryGroupCard extends StatelessWidget {
                   style: TextStyle(color: fg.withValues(alpha: 0.7)),
                 ),
               ),
-            ],
-            for (final item in items) ...[
-              dividerLine(),
-              ListTile(
-                dense: true,
-                title: Text(item.name, style: TextStyle(color: fg)),
-                trailing: editable
-                    ? Icon(
-                        Icons.edit_outlined,
-                        size: 18,
-                        color: fg.withValues(alpha: 0.7),
-                      )
-                    : null,
-                onTap: editable ? () => onTapItem(item) : null,
-              ),
-            ],
+            _bars(context, fg, barColor),
+            const SizedBox(height: AppConstants.spaceXs),
           ],
         ),
       ),
@@ -347,20 +776,22 @@ class _CategoryGroupCard extends StatelessWidget {
 
 class _NameResult {
   final String name;
-  final bool delete;
-  const _NameResult(this.name, {this.delete = false});
+  final String icon;
+  const _NameResult(this.name, this.icon);
 }
 
-/// Small pop-up to add, rename or delete one item.
+/// Pop-up to add or edit one item: a Name field and an icon grid.
+/// Drawn on the accent color, with Glyph-colored text and buttons.
+/// (Deleting is done by swiping the bar, not here.)
 class _NameDialog extends StatefulWidget {
   final String title;
   final String initial;
-  final bool canDelete;
+  final String initialIcon;
 
   const _NameDialog({
     required this.title,
     required this.initial,
-    required this.canDelete,
+    required this.initialIcon,
   });
 
   @override
@@ -368,13 +799,18 @@ class _NameDialog extends StatefulWidget {
 }
 
 class _NameDialogState extends State<_NameDialog> {
+  static const int _columns = 8;
+  static const double _gap = 4;
+
   late final TextEditingController _controller;
+  late String _icon;
   String? _errorText;
 
   @override
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.initial);
+    _icon = widget.initialIcon;
   }
 
   @override
@@ -389,35 +825,108 @@ class _NameDialogState extends State<_NameDialog> {
       setState(() => _errorText = 'Enter a name');
       return;
     }
-    Navigator.of(context).pop(_NameResult(name));
+    Navigator.of(context).pop(_NameResult(name, _icon));
+  }
+
+  Widget _iconTile(String key, IconData icon, Color fg) {
+    final selected = key == _icon;
+    return AspectRatio(
+      aspectRatio: 1,
+      child: Material(
+        color: fg.withValues(alpha: selected ? 0.28 : 0.10),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: selected
+              ? BorderSide(color: fg, width: 2)
+              : BorderSide.none,
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => setState(() => _icon = key),
+          child: Center(child: Icon(icon, size: 18, color: fg)),
+        ),
+      ),
+    );
+  }
+
+  /// The icon grid: rows of [_columns] tiles.
+  Widget _iconGrid(Color fg) {
+    final entries = _CategoryIcons.all.entries.toList();
+    final rows = <Widget>[];
+    for (var start = 0; start < entries.length; start += _columns) {
+      final cells = <Widget>[];
+      for (var i = 0; i < _columns; i++) {
+        if (i > 0) cells.add(const SizedBox(width: _gap));
+        final index = start + i;
+        cells.add(
+          Expanded(
+            child: index < entries.length
+                ? _iconTile(entries[index].key, entries[index].value, fg)
+                : const SizedBox.shrink(),
+          ),
+        );
+      }
+      if (start > 0) rows.add(const SizedBox(height: _gap));
+      rows.add(Row(children: cells));
+    }
+    return Column(children: rows);
   }
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      surfaceTintColor: Colors.transparent,
-      title: Text(widget.title),
-      content: TextField(
-        controller: _controller,
-        autofocus: true,
-        textCapitalization: TextCapitalization.words,
-        decoration: InputDecoration(hintText: 'Name', errorText: _errorText),
-        onChanged: (_) {
-          if (_errorText != null) setState(() => _errorText = null);
-        },
-        onSubmitted: (_) => _save(),
+    final accent = AppTheme.accentOf(context);
+    final fg = accent.foreground;
+    final popupTheme = _popupTheme(context);
+
+    OutlineInputBorder border(Color color, double width) => OutlineInputBorder(
+          borderRadius: BorderRadius.circular(AppConstants.radiusSm),
+          borderSide: BorderSide(color: color, width: width),
+        );
+
+    return _accentDialog(
+      context,
+      title: widget.title,
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _controller,
+              autofocus: true,
+              cursorColor: fg,
+              style: TextStyle(color: fg),
+              textCapitalization: TextCapitalization.words,
+              decoration: InputDecoration(
+                labelText: 'Name',
+                labelStyle: TextStyle(color: fg.withValues(alpha: 0.7)),
+                floatingLabelStyle: TextStyle(color: fg),
+                errorText: _errorText,
+                isDense: true,
+                border: border(fg.withValues(alpha: 0.5), 1),
+                enabledBorder: border(fg.withValues(alpha: 0.5), 1),
+                focusedBorder: border(fg, 2),
+              ),
+              onChanged: (_) {
+                if (_errorText != null) setState(() => _errorText = null);
+              },
+              onSubmitted: (_) => _save(),
+            ),
+            const SizedBox(height: AppConstants.spaceMd),
+            Text(
+              'Icon',
+              style: popupTheme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: fg,
+              ),
+            ),
+            const SizedBox(height: AppConstants.spaceSm),
+            _iconGrid(fg),
+            const SizedBox(height: AppConstants.spaceSm),
+          ],
+        ),
       ),
       actions: [
-        if (widget.canDelete)
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(
-              const _NameResult('', delete: true),
-            ),
-            child: Text(
-              'Delete',
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-          ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Cancel'),

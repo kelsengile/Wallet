@@ -32,10 +32,12 @@ class AccountsSummary {
 enum CategoryGroup { accountType, accountCategory, income, expense, transfer }
 
 /// One row of a category list.
+/// [icon] is the saved icon key. null = the screen picks a default.
 class CategoryItem {
   final int id;
   final String name;
-  const CategoryItem(this.id, this.name);
+  final String? icon;
+  const CategoryItem(this.id, this.name, [this.icon]);
 }
 
 /// Opens the local SQLite database and holds every database function.
@@ -65,8 +67,8 @@ class DatabaseHelper {
     }
   }
 
-  // CHANGED: no onCreate. A brand new file has no tables, so the check in
-  // onOpen builds everything. One code path for new, broken and old files.
+  // No onCreate. A brand new file has no tables, so the check in onOpen
+  // builds everything. One code path for new, broken and old files.
   Future<Database> _open() async {
     final dir = await getDatabasesPath();
     final path = p.join(dir, AppConstants.databaseName);
@@ -80,10 +82,17 @@ class DatabaseHelper {
 
   // ---------- Self-repair ----------
 
+  /// Tables that have an `icon` column.
+  static const _iconTables = [
+    'account_types',
+    'account_categories',
+    'categories',
+  ];
+
   /// Columns every table must have for the app's queries to work.
   static const _requiredColumns = <String, Set<String>>{
-    'account_types': {'id', 'name'},
-    'account_categories': {'id', 'name', 'sort_order'},
+    'account_types': {'id', 'name', 'icon'},
+    'account_categories': {'id', 'name', 'sort_order', 'icon'},
     'accounts': {
       'id',
       'name',
@@ -92,18 +101,29 @@ class DatabaseHelper {
       'initial_balance',
       'deleted_at',
     },
-    'categories': {'id', 'name', 'kind'},
+    'categories': {'id', 'name', 'kind', 'icon'},
     'transactions': {'id', 'type', 'amount', 'deleted_at'},
   };
 
-  /// Runs every time the database opens. Rebuilds it when the tables are
-  /// missing or different from schema.sql, or when the default data
-  /// (seed.sql) was never fully inserted.
+  /// Runs every time the database opens. Adds the icon columns to older
+  /// files, then rebuilds the database only when the tables are missing or
+  /// different from schema.sql, or when the default data was never inserted.
   Future<void> _ensureReady(Database db) async {
+    await _addMissingIconColumns(db);
     final ready = await _schemaIsValid(db) && await _isSeeded(db);
     if (ready) return;
     debugPrint('Database is missing tables or default data. Rebuilding.');
     await _rebuild(db);
+  }
+
+  /// NEW: older databases get the `icon` column without losing any data.
+  Future<void> _addMissingIconColumns(Database db) async {
+    for (final table in _iconTables) {
+      final columns = await _columnsOf(db, table);
+      if (columns.isNotEmpty && !columns.contains('icon')) {
+        await db.execute('ALTER TABLE $table ADD COLUMN icon TEXT');
+      }
+    }
   }
 
   Future<Set<String>> _columnsOf(Database db, String table) async {
@@ -275,25 +295,34 @@ class DatabaseHelper {
       final kind = _kindOf(group);
       final rows = await db.query(
         _tableOf(group),
-        columns: ['id', 'name'],
+        columns: ['id', 'name', 'icon'],
         where: kind == null ? null : 'kind = ?',
         whereArgs: kind == null ? null : [kind],
         orderBy: 'id',
       );
       return [
         for (final row in rows)
-          CategoryItem((row['id'] as num).toInt(), row['name'] as String),
+          CategoryItem(
+            (row['id'] as num).toInt(),
+            row['name'] as String,
+            row['icon'] as String?,
+          ),
       ];
     });
   }
 
-  Future<void> addCategoryItem(CategoryGroup group, String name) {
+  Future<void> addCategoryItem(
+    CategoryGroup group,
+    String name, {
+    String? icon,
+  }) {
     return _guard(() async {
       _checkEditable(group);
       final db = await database;
       final kind = _kindOf(group);
       await db.insert(_tableOf(group), {
         'name': _cleanName(name),
+        'icon': icon,
         // ignore: use_null_aware_elements
         if (kind != null) 'kind': kind,
       });
@@ -301,13 +330,18 @@ class DatabaseHelper {
     });
   }
 
-  Future<void> renameCategoryItem(CategoryGroup group, int id, String name) {
+  Future<void> renameCategoryItem(
+    CategoryGroup group,
+    int id,
+    String name, {
+    String? icon,
+  }) {
     return _guard(() async {
       _checkEditable(group);
       final db = await database;
       await db.update(
         _tableOf(group),
-        {'name': _cleanName(name)},
+        {'name': _cleanName(name), 'icon': icon},
         where: 'id = ?',
         whereArgs: [id],
       );

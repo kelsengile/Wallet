@@ -3,13 +3,15 @@
 
 CREATE TABLE IF NOT EXISTS account_types (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL UNIQUE
+  name TEXT NOT NULL UNIQUE,
+  icon TEXT
 );
 
 CREATE TABLE IF NOT EXISTS account_categories (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL UNIQUE,
-  sort_order INTEGER NOT NULL DEFAULT 0
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  icon TEXT
 );
 
 CREATE TABLE IF NOT EXISTS accounts (
@@ -26,6 +28,7 @@ CREATE TABLE IF NOT EXISTS categories (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   kind TEXT NOT NULL CHECK (kind IN ('income', 'expense', 'transfer')),
+  icon TEXT,
   UNIQUE (name, kind)
 );
 
