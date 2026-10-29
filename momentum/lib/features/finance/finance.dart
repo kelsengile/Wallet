@@ -6,14 +6,14 @@ import '../../core/themes.dart';
 import '../../core/utils.dart';
 import '../../database/helper.dart';
 
-class AccountsScreen extends StatefulWidget {
-  const AccountsScreen({super.key});
+class FinanceScreen extends StatefulWidget {
+  const FinanceScreen({super.key});
 
   @override
-  State<AccountsScreen> createState() => _AccountsScreenState();
+  State<FinanceScreen> createState() => _FinanceScreenState();
 }
 
-class _AccountsScreenState extends State<AccountsScreen> {
+class _FinanceScreenState extends State<FinanceScreen> {
   AccountsSummary _summary = AccountsSummary.empty;
   String? _error;
 
@@ -89,7 +89,7 @@ class _AccountsScreenState extends State<AccountsScreen> {
               const Spacer(),
               IconButton(
                 icon: const Icon(Icons.add),
-                tooltip: 'Add account',
+                tooltip: 'Add Account',
                 onPressed: () {}, // TODO: add account
               ),
               // Eye button. Open eye = amounts shown, closed = hidden.
@@ -115,7 +115,7 @@ class _AccountsScreenState extends State<AccountsScreen> {
   }
 }
 
-/// Panel at the top of the Accounts page.
+/// Panel at the top of the Finance page.
 /// It draws behind the status bar and the (transparent) app bar.
 class TotalBalanceCard extends StatelessWidget {
   final AccountsSummary summary;
@@ -263,7 +263,7 @@ class TotalBalanceCard extends StatelessWidget {
               ),
               Text(
                 '${summary.accountCount} '
-                '${summary.accountCount == 1 ? 'account' : 'accounts'}',
+                '${summary.accountCount == 1 ? 'Account' : 'Accounts'}',
                 style: theme.textTheme.bodySmall?.copyWith(color: muted),
               ),
             ],

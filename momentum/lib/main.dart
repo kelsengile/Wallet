@@ -15,7 +15,7 @@ import 'core/screens/search.dart';
 import 'core/screens/settings.dart';
 import 'core/themes.dart';
 import 'database/database.dart';
-import 'features/finance/accounts.dart';
+import 'features/finance/finance.dart';
 import 'features/health/health.dart';
 import 'features/schedule/schedule.dart';
 import 'services/analytics.dart';
@@ -147,10 +147,10 @@ class _HomeShellState extends State<HomeShell> {
 
   static const _destinations = <_Destination>[
     _Destination(
-      label: 'Accounts',
+      label: 'Finance',
       icon: Icons.account_balance_wallet_outlined,
       selectedIcon: Icons.account_balance_wallet,
-      screen: AccountsScreen(),
+      screen: FinanceScreen(),
       headerCard: true,
     ),
     _Destination(
