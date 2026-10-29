@@ -673,6 +673,7 @@ class _CategoryGroupCard extends StatelessWidget {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       buildDefaultDragHandles: false,
+      // ignore: deprecated_member_use
       onReorder: onReorder,
       // While dragging: no background box or shadow behind the bar, so only
       // the bar itself is seen moving over the card.
