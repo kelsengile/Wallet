@@ -6,6 +6,64 @@ import '../constants.dart';
 import '../font.dart';
 import '../themes.dart';
 
+/// Darker dim behind every pop-up, so the pop-up colors stand out more.
+const Color _popupBarrier = Color(0xCC000000);
+
+/// Colors a pop-up: [background] behind, [foreground] for text, buttons,
+/// sliders and switches. Built on top of [base].
+ThemeData _popupTheme(
+  ThemeData base, {
+  required Color background,
+  required Color foreground,
+}) {
+  return base.copyWith(
+    colorScheme: base.colorScheme.copyWith(
+      primary: foreground,
+      onPrimary: background,
+      onSurface: foreground,
+      onSurfaceVariant: foreground.withValues(alpha: 0.7),
+    ),
+  );
+}
+
+/// The pop-up design shared with the Categories screen: accent background,
+/// glyph-colored text and buttons, same corners and same spacing.
+/// [background] / [foreground] default to the accent colors, and
+/// [baseTheme] defaults to the current theme.
+Widget _accentDialog(
+  BuildContext context, {
+  required String title,
+  required Widget content,
+  required List<Widget> actions,
+  Color? background,
+  Color? foreground,
+  ThemeData? baseTheme,
+}) {
+  final accent = AppTheme.accentOf(context);
+  final bg = background ?? accent.background;
+  final fg = foreground ?? accent.foreground;
+
+  return Theme(
+    data: _popupTheme(
+      baseTheme ?? Theme.of(context),
+      background: bg,
+      foreground: fg,
+    ),
+    child: AlertDialog(
+      backgroundColor: bg,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+      titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+      contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+      actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+      title: Text(title),
+      content: SizedBox(width: double.maxFinite, child: content),
+      actions: actions,
+    ),
+  );
+}
+
 /// App-wide user settings. The root MaterialApp listens to this, so any
 /// change applies to every screen, dialog and route immediately.
 class AppSettings extends ChangeNotifier {
@@ -264,6 +322,7 @@ class SettingsScreen extends StatelessWidget {
         settings.customColor ?? Theme.of(context).colorScheme.surface;
     return showDialog<void>(
       context: context,
+      barrierColor: _popupBarrier,
       builder: (_) => _ColorPickerDialog(initial: initial, settings: settings),
     );
   }
@@ -292,6 +351,7 @@ class SettingsScreen extends StatelessWidget {
   Future<void> _showFontConfig(BuildContext context, AppSettings settings) {
     return showDialog<void>(
       context: context,
+      barrierColor: _popupBarrier,
       builder: (_) => _FontConfigDialog(settings: settings),
     );
   }
@@ -434,7 +494,7 @@ class _SectionHeader extends StatelessWidget {
 ///  - Bold text (switch)
 /// Size and bold apply live, so there is only a Close button.
 /// Font style is applied from its own pop-up with an Apply button.
-/// Buttons, slider and switch here follow the Glyph color.
+/// Uses the same pop-up design as the Categories screen.
 class _FontConfigDialog extends StatelessWidget {
   final AppSettings settings;
   const _FontConfigDialog({required this.settings});
@@ -442,107 +502,93 @@ class _FontConfigDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final maxIndex = AppSettings.textSizeLabels.length - 1;
-    final theme = Theme.of(context);
 
-    return AlertDialog(
-      surfaceTintColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(
-        horizontal: AppConstants.spaceMd,
-        vertical: 24,
-      ),
-      contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
-      title: const Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Font Configuration:'),
-          SizedBox(height: AppConstants.spaceSm),
-          Divider(height: 1),
-        ],
-      ),
-      content: SizedBox(
-        width: 300, // narrower popup (was double.maxFinite)
-        child: ListenableBuilder(
-          listenable: settings,
-          builder: (context, _) {
-            return SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // ---- Font style ----
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.font_download_outlined),
-                    title: const Text('Font style'),
-                    subtitle: Text(settings.fontStyle.label),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => showDialog<void>(
-                      context: context,
-                      builder: (_) => _FontStyleDialog(settings: settings),
-                    ),
+    return _accentDialog(
+      context,
+      title: 'Font Configuration',
+      content: ListenableBuilder(
+        listenable: settings,
+        builder: (context, _) {
+          // Read inside the pop-up, so these are the pop-up's colors.
+          final theme = Theme.of(context);
+          final fg = theme.colorScheme.onSurface;
+          final fgSoft = theme.colorScheme.onSurfaceVariant;
+
+          return SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ---- Font style ----
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.font_download_outlined),
+                  title: const Text('Font style'),
+                  subtitle: Text(settings.fontStyle.label),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => showDialog<void>(
+                    context: context,
+                    barrierColor: _popupBarrier,
+                    builder: (_) => _FontStyleDialog(settings: settings),
                   ),
-                  const Divider(height: 1),
-                  // ---- Font size: text on the left, short slider on the right ----
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.format_size,
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: AppConstants.spaceMd),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'Font size',
-                                style: theme.textTheme.bodyLarge,
+                ),
+                Divider(height: 1, color: fg.withValues(alpha: 0.25)),
+                // ---- Font size: text on the left, short slider on the right ----
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Row(
+                    children: [
+                      Icon(Icons.format_size, color: fgSoft),
+                      const SizedBox(width: AppConstants.spaceMd),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Font size',
+                              style: theme.textTheme.bodyLarge?.copyWith(
+                                color: fg,
                               ),
-                              Text(
-                                settings.textSizeLabel,
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
+                            ),
+                            Text(
+                              settings.textSizeLabel,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: fgSoft,
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                        // Shorter slider so the narrower popup still fits.
-                        SizedBox(
-                          width: 110,
-                          child: Slider(
-                            value: settings.textSizeIndex.toDouble(),
-                            min: 0,
-                            max: maxIndex.toDouble(),
-                            divisions: maxIndex,
-                            label: settings.textSizeLabel,
-                            onChanged: (v) =>
-                                settings.setTextSizeIndex(v.round()),
-                          ),
+                      ),
+                      // Short slider so it fits the pop-up width.
+                      SizedBox(
+                        width: 100,
+                        child: Slider(
+                          value: settings.textSizeIndex.toDouble(),
+                          min: 0,
+                          max: maxIndex.toDouble(),
+                          divisions: maxIndex,
+                          label: settings.textSizeLabel,
+                          onChanged: (v) =>
+                              settings.setTextSizeIndex(v.round()),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                  const Divider(height: 1),
-                  // ---- Bold text ----
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    secondary: const Icon(Icons.format_bold),
-                    title: const Text('Bold text'),
-                    value: settings.boldText,
-                    onChanged: settings.setBoldText,
-                  ),
-                  // Space between the Bold switch and the Close button.
-                  const SizedBox(height: AppConstants.spaceMd),
-                ],
-              ),
-            );
-          },
-        ),
+                ),
+                Divider(height: 1, color: fg.withValues(alpha: 0.25)),
+                // ---- Bold text ----
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  secondary: const Icon(Icons.format_bold),
+                  title: const Text('Bold text'),
+                  value: settings.boldText,
+                  onChanged: settings.setBoldText,
+                ),
+              ],
+            ),
+          );
+        },
       ),
       actions: [
         FilledButton(
@@ -576,37 +622,26 @@ class _FontStyleDialogState extends State<_FontStyleDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      surfaceTintColor: Colors.transparent,
-      title: const Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Font Style:'),
-          SizedBox(height: AppConstants.spaceSm),
-          Divider(height: 1),
-        ],
-      ),
-      contentPadding: const EdgeInsets.symmetric(vertical: AppConstants.spaceSm),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: ListView.builder(
-          shrinkWrap: true,
-          itemCount: AppFonts.all.length,
-          itemBuilder: (context, i) {
-            final font = AppFonts.all[i];
-            final selected = font.label == _selected.label;
-            return ListTile(
-              title: Text(
-                font.label,
-                style: TextStyle(fontFamily: font.family),
-              ),
-              trailing: selected ? const Icon(Icons.check) : null,
-              selected: selected,
-              onTap: () => setState(() => _selected = font),
-            );
-          },
-        ),
+    return _accentDialog(
+      context,
+      title: 'Font Style',
+      content: ListView.builder(
+        shrinkWrap: true,
+        itemCount: AppFonts.all.length,
+        itemBuilder: (context, i) {
+          final font = AppFonts.all[i];
+          final selected = font.label == _selected.label;
+          return ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(
+              font.label,
+              style: TextStyle(fontFamily: font.family),
+            ),
+            trailing: selected ? const Icon(Icons.check) : null,
+            selected: selected,
+            onTap: () => setState(() => _selected = font),
+          );
+        },
       ),
       actions: [
         TextButton(
@@ -630,8 +665,10 @@ class _FontStyleDialogState extends State<_FontStyleDialog> {
 ///  - Accent: plain color for nav bar, drawer header, version box and
 ///    settings sections (does not affect buttons)
 ///  - Glyph: fonts, icons and buttons
-/// The popup itself is the live sample: it is drawn with the colors being
-/// picked, so Cancel / Apply follow the Glyph color.
+/// Same design as the Categories pop-ups. It is drawn with the Accent color
+/// being picked as its background and the Glyph color being picked as its
+/// text and buttons, so those two update live. The Main color is shown in
+/// the color box while the Main tab is selected.
 class _ColorPickerDialog extends StatefulWidget {
   final Color initial;
   final AppSettings settings;
@@ -746,149 +783,150 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
     final color = hsv.toColor();
     final hexTextColor = AppTheme.onColor(color);
 
-    // The whole popup is drawn with the colors being picked
-    // (and the chosen font, so the preview matches the real app).
     final bgColor = _bg.toColor();
-    final previewTheme = AppFonts.apply(
+    final accentColor = _accent.toColor();
+    final glyphColor = _text.toColor();
+
+    // Theme being picked, with the chosen font, so the preview matches
+    // the real app. The pop-up is drawn on the accent being picked, with
+    // the glyph color being picked, like the Categories pop-ups.
+    final baseTheme = AppFonts.apply(
       AppTheme.fromColor(
         bgColor,
-        accent: _accent.toColor(),
-        text: _text.toColor(),
+        accent: accentColor,
+        text: glyphColor,
       ),
       widget.settings.fontFamily,
     );
 
-    return Theme(
-      data: previewTheme,
-      child: AlertDialog(
-        backgroundColor: bgColor,
-        surfaceTintColor: Colors.transparent,
-        title: const Column(
+    return _accentDialog(
+      context,
+      title: 'Theme Configuration',
+      background: accentColor,
+      foreground: glyphColor,
+      baseTheme: baseTheme,
+      content: SingleChildScrollView(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Theme Configuration:'),
-            SizedBox(height: AppConstants.spaceSm),
-            Divider(height: 1),
+            // Three parts: Main | Accent | Glyph
+            SizedBox(
+              width: double.infinity,
+              child: SegmentedButton<int>(
+                showSelectedIcon: false,
+                style: SegmentedButton.styleFrom(
+                  foregroundColor: glyphColor,
+                  selectedForegroundColor: glyphColor,
+                  selectedBackgroundColor: glyphColor.withValues(alpha: 0.25),
+                  side: BorderSide(color: glyphColor.withValues(alpha: 0.5)),
+                ),
+                segments: const [
+                  ButtonSegment(value: 0, label: Text('Main')),
+                  ButtonSegment(value: 1, label: Text('Accent')),
+                  ButtonSegment(value: 2, label: Text('Glyph')),
+                ],
+                selected: {_tab},
+                onSelectionChanged: (s) => _selectTab(s.first),
+              ),
+            ),
+            const SizedBox(height: AppConstants.spaceMd),
+            // Editable hex code for the selected part
+            Container(
+              height: 72,
+              width: double.infinity,
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppConstants.spaceMd,
+              ),
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+                border: Border.all(color: glyphColor.withValues(alpha: 0.5)),
+              ),
+              child: TextField(
+                controller: _hexController,
+                onChanged: _onHexChanged,
+                textAlign: TextAlign.center,
+                textCapitalization: TextCapitalization.characters,
+                autocorrect: false,
+                enableSuggestions: false,
+                cursorColor: hexTextColor,
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[#0-9a-fA-F]')),
+                  LengthLimitingTextInputFormatter(7),
+                  TextInputFormatter.withFunction(
+                    (oldValue, newValue) => newValue.copyWith(
+                      text: newValue.text.toUpperCase(),
+                    ),
+                  ),
+                ],
+                style: TextStyle(
+                  color: hexTextColor,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 18,
+                ),
+                decoration: const InputDecoration(
+                  isDense: true,
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  disabledBorder: InputBorder.none,
+                  errorBorder: InputBorder.none,
+                  focusedErrorBorder: InputBorder.none,
+                ),
+              ),
+            ),
+            const SizedBox(height: AppConstants.spaceMd),
+            _GradientSlider(
+              label: 'Hue',
+              value: hsv.hue,
+              max: 360,
+              colors: [
+                for (var h = 0; h <= 360; h += 60)
+                  HSVColor.fromAHSV(1, h.toDouble(), 1, 1).toColor(),
+              ],
+              onChanged: (v) => _setFromSlider(hsv.withHue(v)),
+            ),
+            _GradientSlider(
+              label: 'Saturation',
+              value: hsv.saturation,
+              max: 1,
+              colors: [
+                hsv.withSaturation(0).toColor(),
+                hsv.withSaturation(1).toColor(),
+              ],
+              onChanged: (v) => _setFromSlider(hsv.withSaturation(v)),
+            ),
+            _GradientSlider(
+              label: 'Brightness',
+              value: hsv.value,
+              max: 1,
+              colors: [Colors.black, hsv.withValue(1).toColor()],
+              onChanged: (v) => _setFromSlider(hsv.withValue(v)),
+            ),
           ],
         ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Three parts: Main | Accent | Glyph
-              SizedBox(
-                width: double.infinity,
-                child: SegmentedButton<int>(
-                  showSelectedIcon: false,
-                  segments: const [
-                    ButtonSegment(value: 0, label: Text('Main')),
-                    ButtonSegment(value: 1, label: Text('Accent')),
-                    ButtonSegment(value: 2, label: Text('Glyph')),
-                  ],
-                  selected: {_tab},
-                  onSelectionChanged: (s) => _selectTab(s.first),
-                ),
-              ),
-              const SizedBox(height: AppConstants.spaceMd),
-              // Editable hex code for the selected part
-              Container(
-                height: 72,
-                width: double.infinity,
-                alignment: Alignment.center,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppConstants.spaceMd,
-                ),
-                decoration: BoxDecoration(
-                  color: color,
-                  borderRadius: BorderRadius.circular(AppConstants.radiusMd),
-                  border: Border.all(color: previewTheme.colorScheme.outline),
-                ),
-                child: TextField(
-                  controller: _hexController,
-                  onChanged: _onHexChanged,
-                  textAlign: TextAlign.center,
-                  textCapitalization: TextCapitalization.characters,
-                  autocorrect: false,
-                  enableSuggestions: false,
-                  cursorColor: hexTextColor,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[#0-9a-fA-F]')),
-                    LengthLimitingTextInputFormatter(7),
-                    TextInputFormatter.withFunction(
-                      (oldValue, newValue) => newValue.copyWith(
-                        text: newValue.text.toUpperCase(),
-                      ),
-                    ),
-                  ],
-                  style: TextStyle(
-                    color: hexTextColor,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 18,
-                  ),
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    disabledBorder: InputBorder.none,
-                    errorBorder: InputBorder.none,
-                    focusedErrorBorder: InputBorder.none,
-                  ),
-                ),
-              ),
-              const SizedBox(height: AppConstants.spaceMd),
-              _GradientSlider(
-                label: 'Hue',
-                value: hsv.hue,
-                max: 360,
-                colors: [
-                  for (var h = 0; h <= 360; h += 60)
-                    HSVColor.fromAHSV(1, h.toDouble(), 1, 1).toColor(),
-                ],
-                onChanged: (v) => _setFromSlider(hsv.withHue(v)),
-              ),
-              _GradientSlider(
-                label: 'Saturation',
-                value: hsv.saturation,
-                max: 1,
-                colors: [
-                  hsv.withSaturation(0).toColor(),
-                  hsv.withSaturation(1).toColor(),
-                ],
-                onChanged: (v) => _setFromSlider(hsv.withSaturation(v)),
-              ),
-              _GradientSlider(
-                label: 'Brightness',
-                value: hsv.value,
-                max: 1,
-                colors: [Colors.black, hsv.withValue(1).toColor()],
-                onChanged: (v) => _setFromSlider(hsv.withValue(v)),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              widget.settings.setCustomTheme(
-                background: _bg.toColor(),
-                // Colors left on auto are saved as null so they keep
-                // following the Main color.
-                accent: _accentAuto ? null : _accent.toColor(),
-                text: _textAuto ? null : _text.toColor(),
-              );
-              Navigator.of(context).pop();
-            },
-            child: const Text('Apply'),
-          ),
-        ],
       ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () {
+            widget.settings.setCustomTheme(
+              background: _bg.toColor(),
+              // Colors left on auto are saved as null so they keep
+              // following the Main color.
+              accent: _accentAuto ? null : _accent.toColor(),
+              text: _textAuto ? null : _text.toColor(),
+            );
+            Navigator.of(context).pop();
+          },
+          child: const Text('Apply'),
+        ),
+      ],
     );
   }
 }
@@ -911,10 +949,16 @@ class _GradientSlider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: Theme.of(context).textTheme.labelMedium),
+        Text(
+          label,
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: theme.colorScheme.onSurface,
+          ),
+        ),
         SizedBox(
           height: 32,
           child: Stack(
