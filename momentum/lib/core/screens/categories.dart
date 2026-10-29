@@ -174,7 +174,7 @@ Widget _accentDialog(
       backgroundColor: bg,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
       titlePadding: compact
           ? const EdgeInsets.fromLTRB(20, 14, 20, 0)
           : const EdgeInsets.fromLTRB(20, 18, 20, 0),
