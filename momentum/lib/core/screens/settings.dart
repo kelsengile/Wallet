@@ -53,7 +53,7 @@ Widget _accentDialog(
       backgroundColor: bg,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
       titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
       contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
       actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
@@ -562,7 +562,7 @@ class _FontConfigDialog extends StatelessWidget {
                       ),
                       // Short slider so it fits the pop-up width.
                       SizedBox(
-                        width: 100,
+                        width: 150,
                         child: Slider(
                           value: settings.textSizeIndex.toDouble(),
                           min: 0,

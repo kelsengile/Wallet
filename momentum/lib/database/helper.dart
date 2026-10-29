@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:path/path.dart' as p;
@@ -26,6 +28,48 @@ class AccountsSummary {
     income: 0,
     expense: 0,
   );
+}
+
+/// Row counts shown on the Database screen.
+class DatabaseStats {
+  final int accounts;
+  final int transactions;
+  final int categories;
+  final int trashed;
+
+  const DatabaseStats({
+    required this.accounts,
+    required this.transactions,
+    required this.categories,
+    required this.trashed,
+  });
+
+  static const empty = DatabaseStats(
+    accounts: 0,
+    transactions: 0,
+    categories: 0,
+    trashed: 0,
+  );
+}
+
+/// What kind of row is sitting in the trash.
+enum TrashKind { account, transaction }
+
+/// One row of the Trash screen.
+class TrashItem {
+  final TrashKind kind;
+  final int id;
+  final String title;
+  final String subtitle;
+  final DateTime? deletedAt;
+
+  const TrashItem({
+    required this.kind,
+    required this.id,
+    required this.title,
+    required this.subtitle,
+    required this.deletedAt,
+  });
 }
 
 /// The lists managed on the Categories screen.
@@ -116,7 +160,7 @@ class DatabaseHelper {
     await _rebuild(db);
   }
 
-  /// NEW: older databases get the `icon` column without losing any data.
+  /// Older databases get the `icon` column without losing any data.
   Future<void> _addMissingIconColumns(Database db) async {
     for (final table in _iconTables) {
       final columns = await _columnsOf(db, table);
@@ -159,19 +203,24 @@ class DatabaseHelper {
     return transfer > 0 && types > 0;
   }
 
+  /// Drops every finance table. Children first, so foreign keys don't
+  /// block the drops.
+  Future<void> _dropAll(DatabaseExecutor db) async {
+    await db.execute('DROP VIEW IF EXISTS account_balances');
+    await db.execute('DROP TABLE IF EXISTS transactions');
+    await db.execute('DROP TABLE IF EXISTS accounts');
+    await db.execute('DROP TABLE IF EXISTS categories');
+    await db.execute('DROP TABLE IF EXISTS account_categories');
+    await db.execute('DROP TABLE IF EXISTS account_types');
+  }
+
   /// Drops the finance tables and recreates them from the .sql assets.
   /// All in one transaction: it either fully works or changes nothing.
   Future<void> _rebuild(Database db) async {
     final schema = await rootBundle.loadString(_schemaAsset);
     final seed = await rootBundle.loadString(_seedAsset);
     await db.transaction((txn) async {
-      // Children first, so foreign keys don't block the drops.
-      await txn.execute('DROP VIEW IF EXISTS account_balances');
-      await txn.execute('DROP TABLE IF EXISTS transactions');
-      await txn.execute('DROP TABLE IF EXISTS accounts');
-      await txn.execute('DROP TABLE IF EXISTS categories');
-      await txn.execute('DROP TABLE IF EXISTS account_categories');
-      await txn.execute('DROP TABLE IF EXISTS account_types');
+      await _dropAll(txn);
       await _runScript(txn, schema);
       await _runScript(txn, seed);
     });
@@ -354,6 +403,357 @@ class DatabaseHelper {
       _checkEditable(group);
       final db = await database;
       await db.delete(_tableOf(group), where: 'id = ?', whereArgs: [id]);
+      notifyChanged();
+    });
+  }
+
+  // ---------- Soft delete (moves a row to the trash) ----------
+
+  Future<void> softDeleteAccount(int id) {
+    return _guard(() async {
+      final db = await database;
+      await db.update(
+        'accounts',
+        {'deleted_at': DateTime.now().toIso8601String()},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      notifyChanged();
+    });
+  }
+
+  Future<void> softDeleteTransaction(int id) {
+    return _guard(() async {
+      final db = await database;
+      await db.update(
+        'transactions',
+        {'deleted_at': DateTime.now().toIso8601String()},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      notifyChanged();
+    });
+  }
+
+  // ---------- Trash ----------
+
+  /// Everything currently in the trash, newest first.
+  Future<List<TrashItem>> getTrashItems() {
+    return _guard(() async {
+      final db = await database;
+
+      final accountRows = await db.query(
+        'accounts',
+        columns: ['id', 'name', 'deleted_at'],
+        where: 'deleted_at IS NOT NULL',
+      );
+      final transactionRows = await db.rawQuery('''
+        SELECT t.id, t.type, t.amount, t.note, t.deleted_at,
+               c.name AS category_name
+        FROM transactions t
+        LEFT JOIN categories c ON c.id = t.category_id
+        WHERE t.deleted_at IS NOT NULL
+      ''');
+
+      final items = <TrashItem>[
+        for (final row in accountRows)
+          TrashItem(
+            kind: TrashKind.account,
+            id: (row['id'] as num).toInt(),
+            title: row['name'] as String,
+            subtitle: 'Account',
+            deletedAt: DateTime.tryParse('${row['deleted_at']}'),
+          ),
+        for (final row in transactionRows)
+          TrashItem(
+            kind: TrashKind.transaction,
+            id: (row['id'] as num).toInt(),
+            title: (row['category_name'] as String?) ??
+                _capitalize(row['type'] as String),
+            subtitle: _transactionSubtitle(row),
+            deletedAt: DateTime.tryParse('${row['deleted_at']}'),
+          ),
+      ];
+
+      items.sort((a, b) {
+        final left = a.deletedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final right = b.deletedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return right.compareTo(left);
+      });
+      return items;
+    });
+  }
+
+  String _capitalize(String text) =>
+      text.isEmpty ? text : text[0].toUpperCase() + text.substring(1);
+
+  String _transactionSubtitle(Map<String, Object?> row) {
+    final amount = ((row['amount'] as num).toInt() / 100).toStringAsFixed(2);
+    final note = (row['note'] as String?)?.trim();
+    final base = '${_capitalize(row['type'] as String)} | ₱$amount';
+    return (note == null || note.isEmpty) ? base : '$base | $note';
+  }
+
+  Future<int> getTrashCount() {
+    return _guard(() async {
+      final db = await database;
+      return _countTrash(db);
+    });
+  }
+
+  Future<int> _countTrash(DatabaseExecutor db) async {
+    final accounts = Sqflite.firstIntValue(
+          await db.rawQuery(
+            'SELECT COUNT(*) FROM accounts WHERE deleted_at IS NOT NULL',
+          ),
+        ) ??
+        0;
+    final transactions = Sqflite.firstIntValue(
+          await db.rawQuery(
+            'SELECT COUNT(*) FROM transactions WHERE deleted_at IS NOT NULL',
+          ),
+        ) ??
+        0;
+    return accounts + transactions;
+  }
+
+  /// Puts a trashed row back. Restoring a transaction also restores the
+  /// account(s) it belongs to, so it never points at a hidden account.
+  Future<void> restoreTrashItem(TrashItem item) {
+    return _guard(() async {
+      final db = await database;
+      await db.transaction((txn) async {
+        if (item.kind == TrashKind.account) {
+          await txn.update(
+            'accounts',
+            {'deleted_at': null},
+            where: 'id = ?',
+            whereArgs: [item.id],
+          );
+        } else {
+          final rows = await txn.query(
+            'transactions',
+            columns: ['account_id', 'to_account_id'],
+            where: 'id = ?',
+            whereArgs: [item.id],
+          );
+          if (rows.isNotEmpty) {
+            final ids = <int>[
+              (rows.first['account_id'] as num).toInt(),
+              if (rows.first['to_account_id'] != null)
+                (rows.first['to_account_id'] as num).toInt(),
+            ];
+            for (final accountId in ids) {
+              await txn.update(
+                'accounts',
+                {'deleted_at': null},
+                where: 'id = ?',
+                whereArgs: [accountId],
+              );
+            }
+          }
+          await txn.update(
+            'transactions',
+            {'deleted_at': null},
+            where: 'id = ?',
+            whereArgs: [item.id],
+          );
+        }
+      });
+      notifyChanged();
+    });
+  }
+
+  /// Permanently removes one trashed row. Deleting an account also removes
+  /// the transactions that use it.
+  Future<void> deleteTrashItemForever(TrashItem item) {
+    return _guard(() async {
+      final db = await database;
+      await db.transaction((txn) async {
+        if (item.kind == TrashKind.account) {
+          await txn.delete(
+            'transactions',
+            where: 'account_id = ? OR to_account_id = ?',
+            whereArgs: [item.id, item.id],
+          );
+          await txn.delete(
+            'accounts',
+            where: 'id = ?',
+            whereArgs: [item.id],
+          );
+        } else {
+          await txn.delete(
+            'transactions',
+            where: 'id = ?',
+            whereArgs: [item.id],
+          );
+        }
+      });
+      notifyChanged();
+    });
+  }
+
+  /// Permanently removes everything in the trash.
+  Future<void> emptyTrash() {
+    return _guard(() async {
+      final db = await database;
+      await db.transaction((txn) async {
+        await txn.rawDelete('''
+          DELETE FROM transactions
+          WHERE deleted_at IS NOT NULL
+             OR account_id IN (SELECT id FROM accounts WHERE deleted_at IS NOT NULL)
+             OR to_account_id IN (SELECT id FROM accounts WHERE deleted_at IS NOT NULL)
+        ''');
+        await txn.delete('accounts', where: 'deleted_at IS NOT NULL');
+      });
+      notifyChanged();
+    });
+  }
+
+  // ---------- Database screen ----------
+
+  Future<DatabaseStats> getStats() {
+    return _guard(() async {
+      final db = await database;
+
+      Future<int> count(String sql) async =>
+          Sqflite.firstIntValue(await db.rawQuery(sql)) ?? 0;
+
+      return DatabaseStats(
+        accounts: await count(
+          'SELECT COUNT(*) FROM accounts WHERE deleted_at IS NULL',
+        ),
+        transactions: await count(
+          'SELECT COUNT(*) FROM transactions WHERE deleted_at IS NULL',
+        ),
+        categories: await count('SELECT COUNT(*) FROM categories'),
+        trashed: await _countTrash(db),
+      );
+    });
+  }
+
+  /// Deletes everything and puts the database back to its original
+  /// configuration (same tables and default data as a fresh install).
+  Future<void> resetDatabase() {
+    return _guard(() async {
+      final db = await database;
+      await _rebuild(db);
+      notifyChanged();
+    });
+  }
+
+  // ---------- Export / Import ----------
+
+  static const _exportApp = 'momentum';
+  static const _exportFormat = 1;
+
+  /// Columns saved to / read from a backup file, in the order the tables
+  /// must be filled (parents first).
+  static const _exportColumns = <String, List<String>>{
+    'account_types': ['id', 'name', 'icon'],
+    'account_categories': ['id', 'name', 'sort_order', 'icon'],
+    'accounts': [
+      'id',
+      'name',
+      'type_id',
+      'category_id',
+      'initial_balance',
+      'created_at',
+      'deleted_at',
+    ],
+    'categories': ['id', 'name', 'kind', 'icon'],
+    'transactions': [
+      'id',
+      'type',
+      'amount',
+      'account_id',
+      'to_account_id',
+      'category_id',
+      'note',
+      'date',
+      'created_at',
+      'deleted_at',
+    ],
+  };
+
+  /// Every table (trash included) as one JSON text, ready to save as a file.
+  Future<String> exportToJson() {
+    return _guard(() async {
+      final db = await database;
+      final tables = <String, Object?>{};
+      for (final table in _exportColumns.keys) {
+        tables[table] = await db.query(table, orderBy: 'id');
+      }
+      return const JsonEncoder.withIndent('  ').convert({
+        'app': _exportApp,
+        'format': _exportFormat,
+        'appVersion': AppConstants.appVersion,
+        'exportedAt': DateTime.now().toIso8601String(),
+        'tables': tables,
+      });
+    });
+  }
+
+  ValidationFailure get _badBackup => const ValidationFailure(
+        'That file is not a valid Momentum backup.',
+      );
+
+  /// Replaces ALL current data with the data in a backup file.
+  /// Everything happens in one transaction, so a bad file changes nothing.
+  Future<void> importFromJson(String text) {
+    return _guard(() async {
+      final Object? decoded;
+      try {
+        decoded = jsonDecode(text);
+      } catch (_) {
+        throw _badBackup;
+      }
+      if (decoded is! Map ||
+          decoded['app'] != _exportApp ||
+          decoded['tables'] is! Map) {
+        throw _badBackup;
+      }
+      final tables = decoded['tables'] as Map;
+
+      // Keep only known columns of every row.
+      final data = <String, List<Map<String, Object?>>>{};
+      for (final entry in _exportColumns.entries) {
+        final raw = tables[entry.key];
+        if (raw is! List) throw _badBackup;
+        final rows = <Map<String, Object?>>[];
+        for (final row in raw) {
+          if (row is! Map) throw _badBackup;
+          rows.add({
+            for (final column in entry.value)
+              if (row.containsKey(column)) column: row[column] as Object?,
+          });
+        }
+        data[entry.key] = rows;
+      }
+
+      // The app needs account types and the locked Transfer category.
+      final hasTransfer =
+          data['categories']!.any((row) => row['kind'] == 'transfer');
+      if (data['account_types']!.isEmpty || !hasTransfer) throw _badBackup;
+
+      final schema = await rootBundle.loadString(_schemaAsset);
+      final db = await database;
+      try {
+        await db.transaction((txn) async {
+          await _dropAll(txn);
+          await _runScript(txn, schema);
+          for (final table in _exportColumns.keys) {
+            for (final row in data[table]!) {
+              await txn.insert(table, row);
+            }
+          }
+        });
+      } catch (error) {
+        debugPrint('Import failed: $error');
+        throw const ValidationFailure(
+          'The backup file is damaged or doesn\'t match this app.',
+        );
+      }
       notifyChanged();
     });
   }
