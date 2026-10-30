@@ -85,13 +85,11 @@ class CategoryItem {
 }
 
 /// Opens the local SQLite database and holds every database function.
-/// Money is stored as whole centavos, so values are divided by 100 here.
+/// Money is stored as whole centavos, so values are divided by
+/// [AppConstants.centavosPerPeso] here.
 class DatabaseHelper {
   DatabaseHelper._();
   static final DatabaseHelper instance = DatabaseHelper._();
-
-  static const _schemaAsset = 'lib/database/schema.sql';
-  static const _seedAsset = 'lib/database/seed.sql';
 
   /// Screens listen to this and reload when it changes.
   /// Call [notifyChanged] after any insert, update or delete.
@@ -217,8 +215,8 @@ class DatabaseHelper {
   /// Drops the finance tables and recreates them from the .sql assets.
   /// All in one transaction: it either fully works or changes nothing.
   Future<void> _rebuild(Database db) async {
-    final schema = await rootBundle.loadString(_schemaAsset);
-    final seed = await rootBundle.loadString(_seedAsset);
+    final schema = await rootBundle.loadString(AppConstants.schemaAsset);
+    final seed = await rootBundle.loadString(AppConstants.seedAsset);
     await db.transaction((txn) async {
       await _dropAll(txn);
       await _runScript(txn, schema);
@@ -266,10 +264,13 @@ class DatabaseHelper {
       ''')).first;
 
       return AccountsSummary(
-        totalBalance: (balanceRow['total'] as num).toInt() / 100,
+        totalBalance: (balanceRow['total'] as num).toInt() /
+            AppConstants.centavosPerPeso,
         accountCount: (balanceRow['count'] as num).toInt(),
-        income: (incomeRow['total'] as num).toInt() / 100,
-        expense: (expenseRow['total'] as num).toInt() / 100,
+        income: (incomeRow['total'] as num).toInt() /
+            AppConstants.centavosPerPeso,
+        expense: (expenseRow['total'] as num).toInt() /
+            AppConstants.centavosPerPeso,
       );
     } catch (error) {
       debugPrint('getAccountsSummary failed: $error');
@@ -488,9 +489,12 @@ class DatabaseHelper {
       text.isEmpty ? text : text[0].toUpperCase() + text.substring(1);
 
   String _transactionSubtitle(Map<String, Object?> row) {
-    final amount = ((row['amount'] as num).toInt() / 100).toStringAsFixed(2);
+    final amount =
+        ((row['amount'] as num).toInt() / AppConstants.centavosPerPeso)
+            .toStringAsFixed(2);
     final note = (row['note'] as String?)?.trim();
-    final base = '${_capitalize(row['type'] as String)} | ₱$amount';
+    final base =
+        '${_capitalize(row['type'] as String)} | ${AppConstants.currencySymbol}$amount';
     return (note == null || note.isEmpty) ? base : '$base | $note';
   }
 
@@ -644,9 +648,6 @@ class DatabaseHelper {
 
   // ---------- Export / Import ----------
 
-  static const _exportApp = 'momentum';
-  static const _exportFormat = 1;
-
   /// Columns saved to / read from a backup file, in the order the tables
   /// must be filled (parents first).
   static const _exportColumns = <String, List<String>>{
@@ -685,8 +686,8 @@ class DatabaseHelper {
         tables[table] = await db.query(table, orderBy: 'id');
       }
       return const JsonEncoder.withIndent('  ').convert({
-        'app': _exportApp,
-        'format': _exportFormat,
+        'app': AppConstants.exportApp,
+        'format': AppConstants.exportFormat,
         'appVersion': AppConstants.appVersion,
         'exportedAt': DateTime.now().toIso8601String(),
         'tables': tables,
@@ -709,7 +710,7 @@ class DatabaseHelper {
         throw _badBackup;
       }
       if (decoded is! Map ||
-          decoded['app'] != _exportApp ||
+          decoded['app'] != AppConstants.exportApp ||
           decoded['tables'] is! Map) {
         throw _badBackup;
       }
@@ -736,7 +737,7 @@ class DatabaseHelper {
           data['categories']!.any((row) => row['kind'] == 'transfer');
       if (data['account_types']!.isEmpty || !hasTransfer) throw _badBackup;
 
-      final schema = await rootBundle.loadString(_schemaAsset);
+      final schema = await rootBundle.loadString(AppConstants.schemaAsset);
       final db = await database;
       try {
         await db.transaction((txn) async {

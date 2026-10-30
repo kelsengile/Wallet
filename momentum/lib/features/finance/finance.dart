@@ -82,45 +82,32 @@ IconData _iconForType(String name, String? saved) {
 
 // ------------------------------------------------------------------
 // Account card size.
-// The card has the real card ratio (ISO/IEC 7810 ID-1: 85.60 x 53.98 mm).
+// The values that tune it (card ratio, sample width, how much the card
+// and its text follow the font size) are in AppConstants:
+//   cardSampleWidth, cardRatio, bigTextScale, baseCardWidth,
+//   cardFollow, textFollow.
 // Every size inside the card (icon, spacing, corners) is a multiple of
-// "u" = card width / 612, which keeps the proportions measured from the
-// sample screenshot.
-//
-// At the "Big" font size the card and its text match the sample.
-// Other font sizes only change them a little:
-//   _cardFollow = how much of the font size change the CARD follows.
-//   _textFollow = how much of the font size change the TEXT follows.
-// 0 = never changes, 1 = changes as much as the font size setting.
-// Smaller number = smaller adjustment per size.
+// "u" = card width / cardSampleWidth.
 // ------------------------------------------------------------------
-const double _sampleWidth = 612;
-
-/// Real card ratio (width / height).
-const double _cardRatio = 85.60 / 53.98;
-
-/// The text scale of the "Big" font size setting.
-const double _bigTextScale = 1.15;
-
-/// Card width at the "Big" font size.
-const double _baseCardWidth = 250 * _bigTextScale;
-
-/// CHANGE THESE to make the adjustment per size smaller or bigger.
-const double _cardFollow = 0.25;
-const double _textFollow = 0.4;
 
 double _fontScale(BuildContext context) =>
-    MediaQuery.textScalerOf(context).scale(14) / 14;
+    MediaQuery.textScalerOf(context).scale(AppConstants.baseFontSize) /
+    AppConstants.baseFontSize;
 
 /// Card width: slightly smaller or bigger than the "Big" size.
 double _cardWidthFor(BuildContext context) =>
-    _baseCardWidth * (1 + (_fontScale(context) - _bigTextScale) * _cardFollow);
+    AppConstants.baseCardWidth *
+    (1 +
+        (_fontScale(context) - AppConstants.bigTextScale) *
+            AppConstants.cardFollow);
 
 /// Text size multiplier inside the card (1.0 at "Big").
 double _textFactorFor(BuildContext context) =>
-    1 + (_fontScale(context) - _bigTextScale) * _textFollow;
+    1 +
+    (_fontScale(context) - AppConstants.bigTextScale) *
+        AppConstants.textFollow;
 
-double _cardHeightFor(double width) => width / _cardRatio;
+double _cardHeightFor(double width) => width / AppConstants.cardRatio;
 
 class FinanceScreen extends StatefulWidget {
   const FinanceScreen({super.key});
@@ -175,7 +162,8 @@ class _FinanceScreenState extends State<FinanceScreen> {
           typeName: row['type_name'] as String,
           typeIcon: row['type_icon'] as String?,
           category: row['category_name'] as String,
-          balance: (row['balance'] as num).toInt() / 100,
+          balance: (row['balance'] as num).toInt() /
+              AppConstants.centavosPerPeso,
         ),
     ];
   }
@@ -283,8 +271,6 @@ class _AccountTypeSection extends StatelessWidget {
 
   const _AccountTypeSection({required this.accounts, required this.hidden});
 
-  static const double _gap = 12;
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -303,7 +289,7 @@ class _AccountTypeSection extends StatelessWidget {
             AppConstants.spaceMd,
             AppConstants.spaceMd,
             AppConstants.spaceMd,
-            AppConstants.spaceSm + 4,
+            AppConstants.spaceSmMd,
           ),
           child: Row(
             children: [
@@ -320,7 +306,7 @@ class _AccountTypeSection extends StatelessWidget {
                   color: accent.foreground,
                 ),
               ),
-              const SizedBox(width: AppConstants.spaceSm + 4),
+              const SizedBox(width: AppConstants.spaceSmMd),
               Text(
                 first.typeName,
                 style: theme.textTheme.titleMedium?.copyWith(
@@ -338,7 +324,8 @@ class _AccountTypeSection extends StatelessWidget {
               horizontal: AppConstants.spaceMd,
             ),
             itemCount: accounts.length,
-            separatorBuilder: (_, _) => const SizedBox(width: _gap),
+            separatorBuilder: (_, _) =>
+                const SizedBox(width: AppConstants.spaceSmMd),
             itemBuilder: (context, i) => SizedBox(
               width: cardWidth,
               height: cardHeight,
@@ -375,7 +362,7 @@ class _FlipAccountCardState extends State<_FlipAccountCard>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 400),
+    duration: AppConstants.cardFlipDuration,
   );
   bool _showBack = false;
 
@@ -469,12 +456,15 @@ class _CardFront extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final fg = accent.foreground;
-    final u = width / _sampleWidth;
+    final u = width / AppConstants.cardSampleWidth;
     final k = u * textFactor; // text size unit
 
     final balanceText = hidden
-        ? '₱ ****'
-        : Utils.formatCurrency(account.balance, symbol: '₱ ');
+        ? '${AppConstants.currencySymbol} ${AppConstants.maskText}'
+        : Utils.formatCurrency(
+            account.balance,
+            symbol: AppConstants.currencyPrefix,
+          );
 
     return Container(
       width: width,
@@ -494,7 +484,7 @@ class _CardFront extends StatelessWidget {
               width: 62 * u,
               height: 62 * u,
               decoration: BoxDecoration(
-                color: fg.withValues(alpha: 0.18),
+                color: fg.withValues(alpha: AppConstants.tintAlpha),
                 borderRadius: BorderRadius.circular(16 * u),
               ),
               child: Icon(
@@ -523,7 +513,7 @@ class _CardFront extends StatelessWidget {
                       fontSize: 26 * k,
                       height: 1.2,
                       fontWeight: FontWeight.w400,
-                      color: fg.withValues(alpha: 0.7),
+                      color: fg.withValues(alpha: AppConstants.mutedAlpha),
                     ),
                   ),
                 ),
@@ -551,7 +541,7 @@ class _CardFront extends StatelessWidget {
                     vertical: 7 * u,
                   ),
                   decoration: BoxDecoration(
-                    color: fg.withValues(alpha: 0.18),
+                    color: fg.withValues(alpha: AppConstants.tintAlpha),
                     borderRadius: BorderRadius.circular(17 * u),
                   ),
                   child: Text(
@@ -596,7 +586,7 @@ class _CardBack extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final fg = accent.foreground;
-    final u = width / _sampleWidth;
+    final u = width / AppConstants.cardSampleWidth;
     final k = u * textFactor; // text size unit
 
     return Container(
@@ -615,7 +605,9 @@ class _CardBack extends StatelessWidget {
             left: 0,
             right: 0,
             height: 70 * u,
-            child: Container(color: Colors.black.withValues(alpha: 0.6)),
+            child: Container(
+              color: Colors.black.withValues(alpha: AppConstants.cardBandAlpha),
+            ),
           ),
           // First notes section: the small one, with a box.
           Positioned(
@@ -627,7 +619,7 @@ class _CardBack extends StatelessWidget {
               padding: EdgeInsets.symmetric(horizontal: 20 * u),
               alignment: Alignment.centerLeft,
               decoration: BoxDecoration(
-                color: fg.withValues(alpha: 0.18),
+                color: fg.withValues(alpha: AppConstants.tintAlpha),
                 borderRadius: BorderRadius.circular(14 * u),
               ),
               child: FittedBox(
@@ -659,7 +651,7 @@ class _CardBack extends StatelessWidget {
                 fontSize: 24 * k,
                 height: 1.2,
                 fontWeight: FontWeight.w400,
-                color: fg.withValues(alpha: 0.7),
+                color: fg.withValues(alpha: AppConstants.mutedAlpha),
               ),
             ),
           ),
@@ -670,7 +662,7 @@ class _CardBack extends StatelessWidget {
             child: Icon(
               _iconForType(account.typeName, account.typeIcon),
               size: 34 * u,
-              color: fg.withValues(alpha: 0.7),
+              color: fg.withValues(alpha: AppConstants.mutedAlpha),
             ),
           ),
         ],
@@ -681,6 +673,9 @@ class _CardBack extends StatelessWidget {
 
 /// Panel at the top of the Finance page.
 /// It draws behind the status bar and the (transparent) app bar.
+/// Its margins, radius, balance weight and mask settings are in
+/// AppConstants (totalCard*, balanceWeight, balanceFontSize, maskDrop,
+/// maskText).
 class TotalBalanceCard extends StatelessWidget {
   final AccountsSummary summary;
 
@@ -693,55 +688,6 @@ class TotalBalanceCard extends StatelessWidget {
     this.hidden = false,
   });
 
-  /// ISO/IEC 7810 ID-1 card size: 85.60 mm x 53.98 mm.
-  static const double cardRatio = 85.60 / 53.98;
-
-  // ------------------------------------------------------------------
-  // true  = card keeps the exact debit/credit card ratio (taller, text
-  //         is centered inside, so there is more empty space).
-  // false = card is only as tall as its content (less empty space).
-  // ------------------------------------------------------------------
-  static const bool useCardRatio = false;
-
-  // ------------------------------------------------------------------
-  // CHANGE THESE to set the space above and below the text.
-  // textTopMargin    = space between the app bar and "Total Balance".
-  // textBottomMargin = space between the balance row and the
-  //                    bottom edge of the card.
-  // Smaller number -> less space.
-  // ------------------------------------------------------------------
-  static const double textTopMargin = 60;
-  static const double textBottomMargin = 35;
-  static const double textSideMargin =
-      AppConstants.spaceLg - AppConstants.spaceXs;
-
-  // ------------------------------------------------------------------
-  // CHANGE THIS to set the space between the labels.
-  // Smaller number -> labels sit closer together.
-  // ------------------------------------------------------------------
-  /// Space between "Total Balance" and the balance row.
-  static const double labelToBalanceGap = 10;
-
-  // ------------------------------------------------------------------
-  // CHANGE THIS to set how bold the big balance is.
-  // w300 = light, w400 = normal, w500 = medium, w600 = semi-bold,
-  // w700 = bold.
-  // ------------------------------------------------------------------
-  static const FontWeight balanceWeight = FontWeight.w700;
-
-  // ------------------------------------------------------------------
-  // CHANGE THIS to move the * up or down.
-  // It is a fraction of the font size: bigger = lower, 0 = no shift.
-  // ------------------------------------------------------------------
-  static const double maskDrop = 0.25;
-
-  static const double _bottomRadius = 28;
-  static const Color _incomeColor = Color(0xFF4CAF50);
-  static const Color _expenseColor = Color(0xFFF44A5A);
-
-  /// Shown instead of amounts when hidden.
-  static const String _mask = '****';
-
   static String _plain(double v) => Utils.formatCurrency(v, symbol: '');
 
   /// Draws the asterisks vertically centered on the text line.
@@ -752,8 +698,9 @@ class TotalBalanceCard extends StatelessWidget {
     TextStyle? style, {
     String prefix = '',
   }) {
-    final size = style?.fontSize ?? 14;
-    final drop = MediaQuery.textScalerOf(context).scale(size) * maskDrop;
+    final size = style?.fontSize ?? AppConstants.baseFontSize;
+    final drop =
+        MediaQuery.textScalerOf(context).scale(size) * AppConstants.maskDrop;
     return Text.rich(
       TextSpan(
         children: [
@@ -763,7 +710,7 @@ class TotalBalanceCard extends StatelessWidget {
             baseline: TextBaseline.alphabetic,
             child: Transform.translate(
               offset: Offset(0, drop),
-              child: Text(_mask, style: style),
+              child: Text(AppConstants.maskText, style: style),
             ),
           ),
         ],
@@ -777,43 +724,45 @@ class TotalBalanceCard extends StatelessWidget {
     final theme = Theme.of(context);
     final accent = AppTheme.accentOf(context);
     final fg = accent.foreground;
-    final muted = fg.withValues(alpha: 0.7);
+    final muted = fg.withValues(alpha: AppConstants.mutedAlpha);
 
     // Space taken by the status bar + app bar, so content starts below them.
     final topInset = MediaQuery.viewPaddingOf(context).top + kToolbarHeight;
 
     final balanceStyle = theme.textTheme.headlineLarge?.copyWith(
-      fontSize: 38,
-      fontWeight: balanceWeight,
+      fontSize: AppConstants.balanceFontSize,
+      fontWeight: AppConstants.balanceWeight,
       color: fg,
       height: 1.0, // removes the font's extra line spacing
     );
     final incomeStyle = theme.textTheme.labelSmall?.copyWith(
-      color: _incomeColor,
+      color: AppConstants.incomeColor,
       fontWeight: FontWeight.w600,
     );
     final expenseStyle = theme.textTheme.labelSmall?.copyWith(
-      color: _expenseColor,
+      color: AppConstants.expenseColor,
       fontWeight: FontWeight.w600,
     );
 
     final card = Container(
       width: double.infinity,
       padding: EdgeInsets.fromLTRB(
-        textSideMargin,
-        topInset + textTopMargin,
-        textSideMargin,
-        textBottomMargin,
+        AppConstants.totalCardSideMargin,
+        topInset + AppConstants.totalCardTopMargin,
+        AppConstants.totalCardSideMargin,
+        AppConstants.totalCardBottomMargin,
       ),
       decoration: BoxDecoration(
         color: accent.background,
         borderRadius: const BorderRadius.vertical(
-          bottom: Radius.circular(_bottomRadius),
+          bottom: Radius.circular(AppConstants.totalCardRadius),
         ),
       ),
       child: Column(
         // Shrinks to the content when the ratio is off.
-        mainAxisSize: useCardRatio ? MainAxisSize.max : MainAxisSize.min,
+        mainAxisSize: AppConstants.totalCardUseRatio
+            ? MainAxisSize.max
+            : MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -832,7 +781,7 @@ class TotalBalanceCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: labelToBalanceGap),
+          const SizedBox(height: AppConstants.totalCardLabelGap),
           // Big balance (left) and analytics (right) on one row.
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
@@ -843,11 +792,15 @@ class TotalBalanceCard extends StatelessWidget {
                   fit: BoxFit.scaleDown,
                   alignment: Alignment.centerLeft,
                   child: hidden
-                      ? _maskedText(context, balanceStyle, prefix: '₱ ')
+                      ? _maskedText(
+                          context,
+                          balanceStyle,
+                          prefix: AppConstants.currencyPrefix,
+                        )
                       : Text(
                           Utils.formatCurrency(
                             summary.totalBalance,
-                            symbol: '₱ ',
+                            symbol: AppConstants.currencyPrefix,
                           ),
                           style: balanceStyle,
                         ),
@@ -861,7 +814,7 @@ class TotalBalanceCard extends StatelessWidget {
                   const Icon(
                     Icons.arrow_upward,
                     size: 11,
-                    color: _incomeColor,
+                    color: AppConstants.incomeColor,
                   ),
                   const SizedBox(width: 2),
                   hidden
@@ -871,13 +824,13 @@ class TotalBalanceCard extends StatelessWidget {
                   Container(
                     width: 1,
                     height: 12,
-                    color: fg.withValues(alpha: 0.3),
+                    color: fg.withValues(alpha: AppConstants.separatorAlpha),
                   ),
                   const SizedBox(width: AppConstants.spaceSm),
                   const Icon(
                     Icons.arrow_downward,
                     size: 11,
-                    color: _expenseColor,
+                    color: AppConstants.expenseColor,
                   ),
                   const SizedBox(width: 2),
                   hidden
@@ -891,8 +844,8 @@ class TotalBalanceCard extends StatelessWidget {
       ),
     );
 
-    return useCardRatio
-        ? AspectRatio(aspectRatio: cardRatio, child: card)
+    return AppConstants.totalCardUseRatio
+        ? AspectRatio(aspectRatio: AppConstants.cardRatio, child: card)
         : card;
   }
 }

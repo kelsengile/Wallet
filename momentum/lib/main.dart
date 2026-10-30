@@ -75,7 +75,9 @@ class MomentumApp extends StatelessWidget {
           // Wraps the Navigator, so every page, drawer and dialog is scaled.
           builder: (context, child) {
             final mq = MediaQuery.of(context);
-            final systemScale = mq.textScaler.scale(14) / 14;
+            final systemScale =
+                mq.textScaler.scale(AppConstants.baseFontSize) /
+                    AppConstants.baseFontSize;
             return MediaQuery(
               data: mq.copyWith(
                 textScaler: TextScaler.linear(systemScale * settings.textScale),
@@ -204,7 +206,7 @@ class _HomeShellState extends State<HomeShell> {
     _animating = true;
     await _pageController.animateToPage(
       index,
-      duration: const Duration(milliseconds: 250),
+      duration: AppConstants.pageAnimationDuration,
       curve: Curves.easeInOut,
     );
     _animating = false;
@@ -284,7 +286,7 @@ class _HomeShellState extends State<HomeShell> {
       width: double.infinity,
       margin: const EdgeInsets.all(AppConstants.spaceMd),
       padding: const EdgeInsets.symmetric(
-        vertical: AppConstants.spaceSm + 4,
+        vertical: AppConstants.spaceSmMd,
         horizontal: AppConstants.spaceMd,
       ),
       decoration: BoxDecoration(
@@ -320,7 +322,8 @@ class _HomeShellState extends State<HomeShell> {
     final navTheme = theme.copyWith(
       colorScheme: theme.colorScheme.copyWith(
         onSurface: accent.foreground,
-        onSurfaceVariant: accent.foreground.withValues(alpha: 0.7),
+        onSurfaceVariant:
+            accent.foreground.withValues(alpha: AppConstants.mutedAlpha),
       ),
     );
 
@@ -372,7 +375,7 @@ class _HomeShellState extends State<HomeShell> {
                 child: ListView(
                   padding: EdgeInsets.zero,
                   children: [
-                    const SizedBox(height: 10),
+                    const SizedBox(height: AppConstants.drawerTopGap),
                     for (final item in _profileItem)
                       _buildTile(
                         icon: item.icon,

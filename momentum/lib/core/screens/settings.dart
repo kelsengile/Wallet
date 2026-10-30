@@ -6,9 +6,6 @@ import '../constants.dart';
 import '../font.dart';
 import '../themes.dart';
 
-/// Darker dim behind every pop-up, so the pop-up colors stand out more.
-const Color _popupBarrier = Color(0xCC000000);
-
 /// Colors a pop-up: [background] behind, [foreground] for text, buttons,
 /// sliders and switches. Built on top of [base].
 ThemeData _popupTheme(
@@ -21,7 +18,7 @@ ThemeData _popupTheme(
       primary: foreground,
       onPrimary: background,
       onSurface: foreground,
-      onSurfaceVariant: foreground.withValues(alpha: 0.7),
+      onSurfaceVariant: foreground.withValues(alpha: AppConstants.mutedAlpha),
     ),
   );
 }
@@ -52,11 +49,13 @@ Widget _accentDialog(
     child: AlertDialog(
       backgroundColor: bg,
       surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
-      titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
-      contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
-      actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppConstants.popupRadius),
+      ),
+      insetPadding: AppConstants.popupInsetPadding,
+      titlePadding: AppConstants.popupTitlePadding,
+      contentPadding: AppConstants.popupContentPadding,
+      actionsPadding: AppConstants.popupActionsPadding,
       title: Text(title),
       content: SizedBox(width: double.maxFinite, child: content),
       actions: actions,
@@ -70,14 +69,6 @@ class AppSettings extends ChangeNotifier {
   AppSettings._();
   static final AppSettings instance = AppSettings._();
 
-  static const _kTheme = 'settings.theme';
-  static const _kColor = 'settings.customColor';
-  static const _kAccent = 'settings.accentColor';
-  static const _kText = 'settings.textColor';
-  static const _kTextSize = 'settings.textSizeIndex';
-  static const _kFontStyle = 'settings.fontStyle';
-  static const _kBoldText = 'settings.boldText';
-
   SharedPreferences? _prefs;
 
   /// Call once before runApp so saved settings apply from the first frame.
@@ -85,7 +76,7 @@ class AppSettings extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     _prefs = prefs;
 
-    final themeName = prefs.getString(_kTheme);
+    final themeName = prefs.getString(AppConstants.prefTheme);
     if (themeName != null) {
       for (final option in AppThemeOption.values) {
         if (option.name == themeName) {
@@ -95,24 +86,25 @@ class AppSettings extends ChangeNotifier {
       }
     }
 
-    final sizeIndex = prefs.getInt(_kTextSize);
+    final sizeIndex = prefs.getInt(AppConstants.prefTextSize);
     if (sizeIndex != null &&
         sizeIndex >= 0 &&
-        sizeIndex < textSizeLabels.length) {
+        sizeIndex < AppConstants.textSizeLabels.length) {
       _textSizeIndex = sizeIndex;
     }
 
-    final colorValue = prefs.getInt(_kColor);
+    final colorValue = prefs.getInt(AppConstants.prefColor);
     if (colorValue != null) _customColor = Color(colorValue);
 
-    final accentValue = prefs.getInt(_kAccent);
+    final accentValue = prefs.getInt(AppConstants.prefAccent);
     if (accentValue != null) _accentColor = Color(accentValue);
 
-    final textValue = prefs.getInt(_kText);
+    final textValue = prefs.getInt(AppConstants.prefText);
     if (textValue != null) _textColor = Color(textValue);
 
-    _fontStyle = AppFonts.byLabel(prefs.getString(_kFontStyle));
-    _boldText = prefs.getBool(_kBoldText) ?? false;
+    _fontStyle =
+        AppFonts.byLabel(prefs.getString(AppConstants.prefFontStyle));
+    _boldText = prefs.getBool(AppConstants.prefBoldText) ?? false;
   }
 
   // ---- Theme ----
@@ -140,10 +132,10 @@ class AppSettings extends ChangeNotifier {
     _customColor = null;
     _accentColor = null;
     _textColor = null;
-    _prefs?.setString(_kTheme, option.name);
-    _prefs?.remove(_kColor);
-    _prefs?.remove(_kAccent);
-    _prefs?.remove(_kText);
+    _prefs?.setString(AppConstants.prefTheme, option.name);
+    _prefs?.remove(AppConstants.prefColor);
+    _prefs?.remove(AppConstants.prefAccent);
+    _prefs?.remove(AppConstants.prefText);
     notifyListeners();
   }
 
@@ -158,18 +150,18 @@ class AppSettings extends ChangeNotifier {
     _accentColor = accent;
     _textColor = text;
     _themeOption = null;
-    _prefs?.setInt(_kColor, background.toARGB32());
+    _prefs?.setInt(AppConstants.prefColor, background.toARGB32());
     if (accent != null) {
-      _prefs?.setInt(_kAccent, accent.toARGB32());
+      _prefs?.setInt(AppConstants.prefAccent, accent.toARGB32());
     } else {
-      _prefs?.remove(_kAccent);
+      _prefs?.remove(AppConstants.prefAccent);
     }
     if (text != null) {
-      _prefs?.setInt(_kText, text.toARGB32());
+      _prefs?.setInt(AppConstants.prefText, text.toARGB32());
     } else {
-      _prefs?.remove(_kText);
+      _prefs?.remove(AppConstants.prefText);
     }
-    _prefs?.remove(_kTheme);
+    _prefs?.remove(AppConstants.prefTheme);
     notifyListeners();
   }
 
@@ -183,7 +175,7 @@ class AppSettings extends ChangeNotifier {
   void setFontStyle(AppFont font) {
     if (font.label == _fontStyle.label) return;
     _fontStyle = font;
-    _prefs?.setString(_kFontStyle, font.label);
+    _prefs?.setString(AppConstants.prefFontStyle, font.label);
     notifyListeners();
   }
 
@@ -194,32 +186,22 @@ class AppSettings extends ChangeNotifier {
   void setBoldText(bool value) {
     if (value == _boldText) return;
     _boldText = value;
-    _prefs?.setBool(_kBoldText, value);
+    _prefs?.setBool(AppConstants.prefBoldText, value);
     notifyListeners();
   }
 
   // ---- Font size ----
-  static const textSizeLabels = [
-    'Smallest',
-    'Small',
-    'Default (system)',
-    'Big',
-    'Biggest',
-  ];
-  static const _textScales = [0.8, 0.9, 1.0, 1.15, 1.3];
-  static const defaultTextSizeIndex = 2;
-
-  int _textSizeIndex = defaultTextSizeIndex;
+  int _textSizeIndex = AppConstants.defaultTextSizeIndex;
   int get textSizeIndex => _textSizeIndex;
-  String get textSizeLabel => textSizeLabels[_textSizeIndex];
+  String get textSizeLabel => AppConstants.textSizeLabels[_textSizeIndex];
 
   /// Multiplier applied on top of the system text scale.
-  double get textScale => _textScales[_textSizeIndex];
+  double get textScale => AppConstants.textScales[_textSizeIndex];
 
   void setTextSizeIndex(int index) {
     if (index == _textSizeIndex) return;
     _textSizeIndex = index;
-    _prefs?.setInt(_kTextSize, index);
+    _prefs?.setInt(AppConstants.prefTextSize, index);
     notifyListeners();
   }
 }
@@ -237,7 +219,7 @@ class SettingsScreen extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.settings_outlined),
-            SizedBox(width: 8),
+            SizedBox(width: AppConstants.spaceSm),
             Text('Settings'),
           ],
         ),
@@ -322,7 +304,7 @@ class SettingsScreen extends StatelessWidget {
         settings.customColor ?? Theme.of(context).colorScheme.surface;
     return showDialog<void>(
       context: context,
-      barrierColor: _popupBarrier,
+      barrierColor: AppConstants.popupBarrier,
       builder: (_) => _ColorPickerDialog(initial: initial, settings: settings),
     );
   }
@@ -351,7 +333,7 @@ class SettingsScreen extends StatelessWidget {
   Future<void> _showFontConfig(BuildContext context, AppSettings settings) {
     return showDialog<void>(
       context: context,
-      barrierColor: _popupBarrier,
+      barrierColor: AppConstants.popupBarrier,
       builder: (_) => _FontConfigDialog(settings: settings),
     );
   }
@@ -390,14 +372,19 @@ class _SettingGroup extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final accent = AppTheme.accentOf(context);
-    final divider = Color.lerp(accent.background, accent.foreground, 0.18)!;
+    final divider = Color.lerp(
+      accent.background,
+      accent.foreground,
+      AppConstants.dividerBlend,
+    )!;
 
     // Tiles inside the group read their colors from the theme, so point
     // them at the accent's readable color.
     final groupTheme = theme.copyWith(
       colorScheme: theme.colorScheme.copyWith(
         onSurface: accent.foreground,
-        onSurfaceVariant: accent.foreground.withValues(alpha: 0.7),
+        onSurfaceVariant:
+            accent.foreground.withValues(alpha: AppConstants.mutedAlpha),
       ),
       listTileTheme: theme.listTileTheme.copyWith(
         iconColor: accent.foreground,
@@ -501,7 +488,7 @@ class _FontConfigDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final maxIndex = AppSettings.textSizeLabels.length - 1;
+    final maxIndex = AppConstants.textSizeLabels.length - 1;
 
     return _accentDialog(
       context,
@@ -528,14 +515,19 @@ class _FontConfigDialog extends StatelessWidget {
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => showDialog<void>(
                     context: context,
-                    barrierColor: _popupBarrier,
+                    barrierColor: AppConstants.popupBarrier,
                     builder: (_) => _FontStyleDialog(settings: settings),
                   ),
                 ),
-                Divider(height: 1, color: fg.withValues(alpha: 0.25)),
+                Divider(
+                  height: 1,
+                  color: fg.withValues(alpha: AppConstants.dividerAlpha),
+                ),
                 // ---- Font size: text on the left, short slider on the right ----
                 Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: AppConstants.spaceSm,
+                  ),
                   child: Row(
                     children: [
                       Icon(Icons.format_size, color: fgSoft),
@@ -562,7 +554,7 @@ class _FontConfigDialog extends StatelessWidget {
                       ),
                       // Short slider so it fits the pop-up width.
                       SizedBox(
-                        width: 150,
+                        width: AppConstants.fontSliderWidth,
                         child: Slider(
                           value: settings.textSizeIndex.toDouble(),
                           min: 0,
@@ -576,7 +568,10 @@ class _FontConfigDialog extends StatelessWidget {
                     ],
                   ),
                 ),
-                Divider(height: 1, color: fg.withValues(alpha: 0.25)),
+                Divider(
+                  height: 1,
+                  color: fg.withValues(alpha: AppConstants.dividerAlpha),
+                ),
                 // ---- Bold text ----
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
@@ -818,8 +813,14 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
                 style: SegmentedButton.styleFrom(
                   foregroundColor: glyphColor,
                   selectedForegroundColor: glyphColor,
-                  selectedBackgroundColor: glyphColor.withValues(alpha: 0.25),
-                  side: BorderSide(color: glyphColor.withValues(alpha: 0.5)),
+                  selectedBackgroundColor: glyphColor.withValues(
+                    alpha: AppConstants.segmentSelectedAlpha,
+                  ),
+                  side: BorderSide(
+                    color: glyphColor.withValues(
+                      alpha: AppConstants.borderAlpha,
+                    ),
+                  ),
                 ),
                 segments: const [
                   ButtonSegment(value: 0, label: Text('Main')),
@@ -833,7 +834,7 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
             const SizedBox(height: AppConstants.spaceMd),
             // Editable hex code for the selected part
             Container(
-              height: 72,
+              height: AppConstants.colorBoxHeight,
               width: double.infinity,
               alignment: Alignment.center,
               padding: const EdgeInsets.symmetric(
@@ -842,7 +843,11 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
               decoration: BoxDecoration(
                 color: color,
                 borderRadius: BorderRadius.circular(AppConstants.radiusMd),
-                border: Border.all(color: glyphColor.withValues(alpha: 0.5)),
+                border: Border.all(
+                  color: glyphColor.withValues(
+                    alpha: AppConstants.borderAlpha,
+                  ),
+                ),
               ),
               child: TextField(
                 controller: _hexController,
@@ -854,7 +859,9 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
                 cursorColor: hexTextColor,
                 inputFormatters: [
                   FilteringTextInputFormatter.allow(RegExp(r'[#0-9a-fA-F]')),
-                  LengthLimitingTextInputFormatter(7),
+                  LengthLimitingTextInputFormatter(
+                    AppConstants.hexInputLength,
+                  ),
                   TextInputFormatter.withFunction(
                     (oldValue, newValue) => newValue.copyWith(
                       text: newValue.text.toUpperCase(),
@@ -864,7 +871,7 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
                 style: TextStyle(
                   color: hexTextColor,
                   fontWeight: FontWeight.w600,
-                  fontSize: 18,
+                  fontSize: AppConstants.hexFontSize,
                 ),
                 decoration: const InputDecoration(
                   isDense: true,
@@ -883,8 +890,8 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
               value: hsv.hue,
               max: 360,
               colors: [
-                for (var h = 0; h <= 360; h += 60)
-                  HSVColor.fromAHSV(1, h.toDouble(), 1, 1).toColor(),
+                for (var h = 0.0; h <= 360; h += AppConstants.hueGradientStep)
+                  HSVColor.fromAHSV(1, h, 1, 1).toColor(),
               ],
               onChanged: (v) => _setFromSlider(hsv.withHue(v)),
             ),
@@ -960,21 +967,25 @@ class _GradientSlider extends StatelessWidget {
           ),
         ),
         SizedBox(
-          height: 32,
+          height: AppConstants.gradientSliderHeight,
           child: Stack(
             alignment: Alignment.center,
             children: [
               Container(
-                height: 12,
-                margin: const EdgeInsets.symmetric(horizontal: 12),
+                height: AppConstants.gradientTrackHeight,
+                margin: const EdgeInsets.symmetric(
+                  horizontal: AppConstants.spaceSmMd,
+                ),
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: BorderRadius.circular(
+                    AppConstants.gradientTrackHeight / 2,
+                  ),
                   gradient: LinearGradient(colors: colors),
                 ),
               ),
               SliderTheme(
                 data: SliderTheme.of(context).copyWith(
-                  trackHeight: 12,
+                  trackHeight: AppConstants.gradientTrackHeight,
                   activeTrackColor: Colors.transparent,
                   inactiveTrackColor: Colors.transparent,
                   thumbColor: Colors.white,

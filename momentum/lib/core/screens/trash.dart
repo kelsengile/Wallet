@@ -5,9 +5,6 @@ import '../constants.dart';
 import '../failures.dart';
 import '../themes.dart';
 
-/// Darker dim behind every pop-up, same as the Settings screen.
-const Color _popupBarrier = Color(0xCC000000);
-
 /// Everything that was deleted but not yet removed for good.
 /// Each row can be restored or deleted forever; the top bar can empty it.
 class TrashScreen extends StatefulWidget {
@@ -99,7 +96,7 @@ class _TrashScreenState extends State<TrashScreen> {
   }) async {
     final result = await showDialog<bool>(
       context: context,
-      barrierColor: _popupBarrier,
+      barrierColor: AppConstants.popupBarrier,
       builder: (context) {
         final base = Theme.of(context);
         final accent = AppTheme.accentOf(context);
@@ -111,20 +108,20 @@ class _TrashScreenState extends State<TrashScreen> {
               primary: fg,
               onPrimary: bg,
               onSurface: fg,
-              onSurfaceVariant: fg.withValues(alpha: 0.7),
+              onSurfaceVariant:
+                  fg.withValues(alpha: AppConstants.mutedAlpha),
             ),
           ),
           child: AlertDialog(
             backgroundColor: bg,
             surfaceTintColor: Colors.transparent,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(24),
+              borderRadius: BorderRadius.circular(AppConstants.popupRadius),
             ),
-            insetPadding:
-                const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
-            titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
-            contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
-            actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+            insetPadding: AppConstants.popupInsetPadding,
+            titlePadding: AppConstants.popupTitlePadding,
+            contentPadding: AppConstants.popupContentPadding,
+            actionsPadding: AppConstants.popupActionsPadding,
             title: Text(title),
             content: Text(message),
             actions: [
@@ -154,12 +151,17 @@ class _TrashScreenState extends State<TrashScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final accent = AppTheme.accentOf(context);
-    final divider = Color.lerp(accent.background, accent.foreground, 0.18)!;
+    final divider = Color.lerp(
+      accent.background,
+      accent.foreground,
+      AppConstants.dividerBlend,
+    )!;
 
     final groupTheme = theme.copyWith(
       colorScheme: theme.colorScheme.copyWith(
         onSurface: accent.foreground,
-        onSurfaceVariant: accent.foreground.withValues(alpha: 0.7),
+        onSurfaceVariant:
+            accent.foreground.withValues(alpha: AppConstants.mutedAlpha),
       ),
       listTileTheme: theme.listTileTheme.copyWith(
         iconColor: accent.foreground,
@@ -173,7 +175,7 @@ class _TrashScreenState extends State<TrashScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.delete_outline),
-            SizedBox(width: 8),
+            SizedBox(width: AppConstants.spaceSm),
             Text('Trash'),
           ],
         ),
@@ -187,8 +189,10 @@ class _TrashScreenState extends State<TrashScreen> {
         ],
         bottom: _busy
             ? const PreferredSize(
-                preferredSize: Size.fromHeight(3),
-                child: LinearProgressIndicator(minHeight: 3),
+                preferredSize: Size.fromHeight(AppConstants.progressBarHeight),
+                child: LinearProgressIndicator(
+                  minHeight: AppConstants.progressBarHeight,
+                ),
               )
             : null,
       ),
@@ -211,7 +215,7 @@ class _TrashScreenState extends State<TrashScreen> {
                 children: [
                   Icon(
                     Icons.delete_outline,
-                    size: 48,
+                    size: AppConstants.emptyStateIconSize,
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                   const SizedBox(height: AppConstants.spaceSm),

@@ -1,3 +1,5 @@
+import 'constants.dart';
+
 /// Small formatting and date helpers (no external packages needed).
 class Utils {
   Utils._();
@@ -8,7 +10,10 @@ class Utils {
   ];
 
   /// 1234.5 -> "₱1,234.50"
-  static String formatCurrency(double amount, {String symbol = '₱'}) {
+  static String formatCurrency(
+    double amount, {
+    String symbol = AppConstants.currencySymbol,
+  }) {
     final negative = amount < 0;
     final parts = amount.abs().toStringAsFixed(2).split('.');
     final whole = parts[0].replaceAllMapped(
