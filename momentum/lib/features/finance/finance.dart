@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/constants.dart';
 import '../../core/failures.dart';
@@ -129,6 +130,9 @@ class FinanceScreen extends StatefulWidget {
 }
 
 class _FinanceScreenState extends State<FinanceScreen> {
+  /// Where the order of the account types is saved on the phone.
+  static const String _orderPref = 'finance.typeOrder';
+
   AccountsSummary _summary = AccountsSummary.empty;
   List<_AccountCardData> _accounts = const [];
   String? _error;
@@ -136,10 +140,20 @@ class _FinanceScreenState extends State<FinanceScreen> {
   // true = amounts are hidden (eye closed), false = amounts are shown.
   bool _hideAmounts = false;
 
+  // NEW: false = sideways cards, true = list of rows.
+  bool _listView = false;
+
+  // NEW: true while the user is dragging account types to reorder them.
+  bool _rearranging = false;
+
+  // NEW: saved order of the account type ids.
+  List<int> _typeOrder = const [];
+
   @override
   void initState() {
     super.initState();
     _load();
+    _loadOrder();
     // Reload whenever the database reports a change.
     DatabaseHelper.instance.changes.addListener(_load);
   }
@@ -148,6 +162,38 @@ class _FinanceScreenState extends State<FinanceScreen> {
   void dispose() {
     DatabaseHelper.instance.changes.removeListener(_load);
     super.dispose();
+  }
+
+  // NEW
+  Future<void> _loadOrder() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getStringList(_orderPref) ?? const <String>[];
+      if (!mounted) return;
+      setState(() {
+        _typeOrder = [
+          for (final id in saved)
+            if (int.tryParse(id) != null) int.parse(id),
+        ];
+      });
+    } catch (_) {
+      // No saved order: the normal (id) order is used.
+    }
+  }
+
+  // NEW
+  Future<void> _saveOrder(List<int> ids) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_orderPref, [for (final id in ids) '$id']);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('Couldn\'t save the new order.')),
+        );
+    }
   }
 
   /// Active accounts with their type, category and current balance.
@@ -202,13 +248,56 @@ class _FinanceScreenState extends State<FinanceScreen> {
     }
   }
 
-  /// Accounts grouped by account type, in the order of the types.
+  /// CHANGED: accounts grouped by account type, in the saved order.
+  /// Types that are not in the saved order yet go to the end (by id).
   List<List<_AccountCardData>> get _groups {
     final groups = <int, List<_AccountCardData>>{};
     for (final account in _accounts) {
       groups.putIfAbsent(account.typeId, () => []).add(account);
     }
-    return groups.values.toList();
+    final ids = groups.keys.toList();
+    final rank = {for (var i = 0; i < _typeOrder.length; i++) _typeOrder[i]: i};
+    const last = 1 << 30;
+    ids.sort((a, b) {
+      final ra = rank[a] ?? last;
+      final rb = rank[b] ?? last;
+      if (ra != rb) return ra.compareTo(rb);
+      return a.compareTo(b);
+    });
+    return [for (final id in ids) groups[id]!];
+  }
+
+  /// NEW: tap. Finishes rearranging, or switches card view <-> list view.
+  void _onViewButtonTap() {
+    setState(() {
+      if (_rearranging) {
+        _rearranging = false;
+      } else {
+        _listView = !_listView;
+      }
+    });
+  }
+
+  /// NEW: long press. Starts rearranging the account types.
+  void _onViewButtonLongPress() {
+    if (_rearranging) return;
+    HapticFeedback.mediumImpact();
+    setState(() => _rearranging = true);
+  }
+
+  /// NEW: moves one account type to a new place and saves the order.
+  void _reorderTypes(
+    List<List<_AccountCardData>> groups,
+    int oldIndex,
+    int newIndex,
+  ) {
+    if (newIndex > oldIndex) newIndex -= 1;
+    if (newIndex == oldIndex) return;
+    final ids = [for (final g in groups) g.first.typeId];
+    final moved = ids.removeAt(oldIndex);
+    ids.insert(newIndex, moved);
+    setState(() => _typeOrder = ids);
+    _saveOrder(ids);
   }
 
   /// Pops the "New Account" sheet up from the bottom.
@@ -227,11 +316,160 @@ class _FinanceScreenState extends State<FinanceScreen> {
     );
   }
 
+  /// NEW: the Rearrange button. Tap = view, long press = reorder types.
+  Widget _viewButton() {
+    final IconData icon;
+    final String label;
+    if (_rearranging) {
+      icon = Icons.check;
+      label = 'Done';
+    } else if (_listView) {
+      icon = Icons.view_agenda_outlined;
+      label = 'Card view';
+    } else {
+      icon = Icons.view_headline;
+      label = 'List view';
+    }
+    return Semantics(
+      button: true,
+      label: label,
+      child: InkResponse(
+        onTap: _onViewButtonTap,
+        onLongPress: _onViewButtonLongPress,
+        radius: 24,
+        child: SizedBox(
+          width: 48,
+          height: 48,
+          child: Center(child: Icon(icon)),
+        ),
+      ),
+    );
+  }
+
+  /// NEW: one bar per account type that can be dragged.
+  Widget _rearrangeList(
+    BuildContext context,
+    List<List<_AccountCardData>> groups,
+  ) {
+    final theme = Theme.of(context);
+    final accent = AppTheme.accentOf(context);
+    final fg = accent.foreground;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppConstants.spaceMd + AppConstants.spaceXs,
+            AppConstants.spaceSm,
+            AppConstants.spaceMd,
+            AppConstants.spaceXs,
+          ),
+        ),
+        Expanded(
+          child: ReorderableListView(
+            padding: const EdgeInsets.fromLTRB(
+              AppConstants.spaceMd,
+              AppConstants.spaceSm,
+              AppConstants.spaceMd,
+              AppConstants.spaceLg,
+            ),
+            buildDefaultDragHandles: false,
+            onReorder: (oldIndex, newIndex) =>
+                _reorderTypes(groups, oldIndex, newIndex),
+            // While dragging: no extra box or shadow, only the bar moves.
+            proxyDecorator: (child, index, animation) => Material(
+              type: MaterialType.transparency,
+              child: child,
+            ),
+            children: [
+              for (var i = 0; i < groups.length; i++)
+                Padding(
+                  key: ValueKey('type-${groups[i].first.typeId}'),
+                  padding: const EdgeInsets.only(bottom: AppConstants.spaceSm),
+                  child: Material(
+                    color: accent.background,
+                    borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppConstants.spaceSmMd,
+                        vertical: AppConstants.spaceSm,
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: fg.withValues(
+                                alpha: AppConstants.tintAlpha,
+                              ),
+                              borderRadius: BorderRadius.circular(
+                                AppConstants.radiusSm,
+                              ),
+                            ),
+                            child: Icon(
+                              _iconForType(
+                                groups[i].first.typeName,
+                                groups[i].first.typeIcon,
+                              ),
+                              size: 22,
+                              color: fg,
+                            ),
+                          ),
+                          const SizedBox(width: AppConstants.spaceSmMd),
+                          Expanded(
+                            child: Text(
+                              groups[i].first.typeName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: fg,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            '${groups[i].length}',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: fg.withValues(
+                                alpha: AppConstants.mutedAlpha,
+                              ),
+                            ),
+                          ),
+                          ReorderableDragStartListener(
+                            index: i,
+                            child: Padding(
+                              padding: const EdgeInsets.all(
+                                AppConstants.spaceSm,
+                              ),
+                              child: Icon(
+                                Icons.drag_handle,
+                                size: 24,
+                                color: fg.withValues(
+                                  alpha: AppConstants.mutedAlpha,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final groups = _groups;
 
-    // Column: the top part stays fixed, only the Expanded list scrolls.
+    // Column: the top part stays fixed, only the Expanded part scrolls.
     // Nothing is padded at the top so the card still starts behind the
     // status bar and the transparent app bar.
     return Column(
@@ -279,26 +517,29 @@ class _FinanceScreenState extends State<FinanceScreen> {
                 tooltip: _hideAmounts ? 'Show amounts' : 'Hide amounts',
                 onPressed: () => setState(() => _hideAmounts = !_hideAmounts),
               ),
-              IconButton(
-                icon: const Icon(Icons.view_headline),
-                tooltip: 'Rearrange',
-                onPressed: () {}, // TODO: rearrange / list / grid view
-              ),
+              // CHANGED: tap = card / list view, long press = reorder types.
+              _viewButton(),
             ],
           ),
         ),
 
         // ----- Scrolling part: starts right below the My Accounts row -----
         Expanded(
-          child: ListView(
-            padding: EdgeInsets.zero,
-            children: [
-              // One section per account type.
-              for (final group in _groups)
-                _AccountTypeSection(accounts: group, hidden: _hideAmounts),
-              const SizedBox(height: AppConstants.spaceLg),
-            ],
-          ),
+          child: _rearranging
+              ? _rearrangeList(context, groups)
+              : ListView(
+                  padding: EdgeInsets.zero,
+                  children: [
+                    // One section per account type.
+                    for (final group in groups)
+                      _AccountTypeSection(
+                        accounts: group,
+                        hidden: _hideAmounts,
+                        listView: _listView,
+                      ),
+                    const SizedBox(height: AppConstants.spaceLg),
+                  ],
+                ),
         ),
       ],
     );
@@ -885,7 +1126,7 @@ Future<CategoryItem?> _pickItem(
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(iconFor(item), size: 24, color: fg),
+                          Icon(iconFor(item), size: 15, color: fg),
                           const SizedBox(width: AppConstants.spaceSm),
                           Text(
                             item.name,
@@ -908,12 +1149,18 @@ Future<CategoryItem?> _pickItem(
   );
 }
 
-/// A header (type icon + type name) with a sideways list of its cards.
+/// A header (type icon + type name) with either a sideways list of its
+/// cards or, in list view, a column of rows.
 class _AccountTypeSection extends StatelessWidget {
   final List<_AccountCardData> accounts;
   final bool hidden;
+  final bool listView; // NEW
 
-  const _AccountTypeSection({required this.accounts, required this.hidden});
+  const _AccountTypeSection({
+    required this.accounts,
+    required this.hidden,
+    required this.listView,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -966,28 +1213,160 @@ class _AccountTypeSection extends StatelessWidget {
             ],
           ),
         ),
-        SizedBox(
-          height: cardHeight,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
+        if (listView)
+          // NEW: list view, one row per account.
+          Padding(
             padding: const EdgeInsets.symmetric(
               horizontal: AppConstants.spaceMd,
             ),
-            itemCount: accounts.length,
-            separatorBuilder: (_, _) =>
-                const SizedBox(width: AppConstants.spaceSmMd),
-            itemBuilder: (context, i) => SizedBox(
-              width: cardWidth,
-              height: cardHeight,
-              child: _FlipAccountCard(
-                account: accounts[i],
-                hidden: hidden,
+            child: Column(
+              children: [
+                for (final account in accounts)
+                  Padding(
+                    padding: const EdgeInsets.only(
+                      bottom: AppConstants.spaceSm,
+                    ),
+                    child: _AccountListTile(account: account, hidden: hidden),
+                  ),
+              ],
+            ),
+          )
+        else
+          SizedBox(
+            height: cardHeight,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppConstants.spaceMd,
+              ),
+              itemCount: accounts.length,
+              separatorBuilder: (_, _) =>
+                  const SizedBox(width: AppConstants.spaceSmMd),
+              itemBuilder: (context, i) => SizedBox(
                 width: cardWidth,
+                height: cardHeight,
+                child: _FlipAccountCard(
+                  account: accounts[i],
+                  hidden: hidden,
+                  width: cardWidth,
+                ),
               ),
             ),
           ),
-        ),
       ],
+    );
+  }
+}
+
+/// NEW: one account as a row (list view). It has everything the front of
+/// the card has: category icon, name, balance and category.
+class _AccountListTile extends StatelessWidget {
+  final _AccountCardData account;
+  final bool hidden;
+
+  const _AccountListTile({required this.account, required this.hidden});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accent = AppTheme.accentOf(context);
+    final fg = accent.foreground;
+
+    final balanceText = hidden
+        ? '${AppConstants.currencySymbol} ${AppConstants.maskText}'
+        : Utils.formatCurrency(
+            account.balance,
+            symbol: AppConstants.currencyPrefix,
+          );
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppConstants.spaceMd,
+        vertical: AppConstants.spaceSmMd,
+      ),
+      decoration: BoxDecoration(
+        color: accent.background,
+        borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+      ),
+      child: Row(
+        children: [
+          // CHANGED: text first (left side)
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  account.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: fg.withValues(alpha: AppConstants.mutedAlpha),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                // Balance shrinks to fit, however long it is.
+                SizedBox(
+                  width: double.infinity,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      balanceText,
+                      maxLines: 1,
+                      softWrap: false,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: fg,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppConstants.spaceXs),
+                // CHANGED: smaller tag (smaller than the account name)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppConstants.spaceSm,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: fg.withValues(alpha: AppConstants.tintAlpha),
+                    borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+                  ),
+                  child: Text(
+                    account.category.toUpperCase(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      fontSize: 9,
+                      height: 1.2,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1,
+                      color: fg,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppConstants.spaceMd),
+          // CHANGED: category icon now on the right side
+          Container(
+            width: 33,
+            height: 33,
+            decoration: BoxDecoration(
+              color: fg.withValues(alpha: AppConstants.tintAlpha),
+              borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+            ),
+            child: Icon(
+              _iconForCategory(account.categoryIcon),
+              size: 26,
+              color: fg,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
