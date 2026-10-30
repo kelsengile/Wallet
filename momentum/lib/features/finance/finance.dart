@@ -231,11 +231,12 @@ class _FinanceScreenState extends State<FinanceScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    // padding: zero so the card can start at the very top of the screen,
-    // behind the status bar and the transparent app bar.
-    return ListView(
-      padding: EdgeInsets.zero,
+    // Column: the top part stays fixed, only the Expanded list scrolls.
+    // Nothing is padded at the top so the card still starts behind the
+    // status bar and the transparent app bar.
+    return Column(
       children: [
+        // ----- Fixed part -----
         TotalBalanceCard(summary: _summary, hidden: _hideAmounts),
         if (_error != null)
           Padding(
@@ -280,16 +281,25 @@ class _FinanceScreenState extends State<FinanceScreen> {
               ),
               IconButton(
                 icon: const Icon(Icons.view_headline),
-                tooltip: 'Change view',
-                onPressed: () {}, // TODO: list / grid view
+                tooltip: 'Rearrange',
+                onPressed: () {}, // TODO: rearrange / list / grid view
               ),
             ],
           ),
         ),
-        // One section per account type.
-        for (final group in _groups)
-          _AccountTypeSection(accounts: group, hidden: _hideAmounts),
-        const SizedBox(height: AppConstants.spaceLg),
+
+        // ----- Scrolling part: starts right below the My Accounts row -----
+        Expanded(
+          child: ListView(
+            padding: EdgeInsets.zero,
+            children: [
+              // One section per account type.
+              for (final group in _groups)
+                _AccountTypeSection(accounts: group, hidden: _hideAmounts),
+              const SizedBox(height: AppConstants.spaceLg),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -319,8 +329,8 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
   static const double _selectorVPad = 12; // Type / Category height
 
   // Balance text: normal size, and the smallest it shrinks to.
-  static const double _balanceMaxFont = 16; // NEW
-  static const double _balanceMinFont = 8; // NEW
+  static const double _balanceMaxFont = 16;
+  static const double _balanceMinFont = 8;
 
   final _name = TextEditingController();
   final _balance = TextEditingController();
@@ -425,7 +435,7 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
     if (picked != null) setState(() => _category = picked);
   }
 
-  /// NEW: the biggest font size (down to the minimum) at which the typed
+  /// The biggest font size (down to the minimum) at which the typed
   /// balance still fits inside the field. No limit on how long it can be.
   double _balanceFontSize(double fieldWidth) {
     final text = _balance.text;
@@ -607,7 +617,7 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
               const SizedBox(height: _gap),
 
               // Initial balance: no length limit, the text shrinks to fit.
-              LayoutBuilder( // CHANGED
+              LayoutBuilder(
                 builder: (context, constraints) {
                   final size = _balanceFontSize(constraints.maxWidth);
                   return TextField(
@@ -875,7 +885,7 @@ Future<CategoryItem?> _pickItem(
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(iconFor(item), size: 15, color: fg),
+                          Icon(iconFor(item), size: 24, color: fg),
                           const SizedBox(width: AppConstants.spaceSm),
                           Text(
                             item.name,
@@ -915,6 +925,17 @@ class _AccountTypeSection extends StatelessWidget {
     final cardWidth = _cardWidthFor(context);
     final cardHeight = _cardHeightFor(cardWidth);
 
+    // The icon box follows the size of the type name text.
+    // At the default size (16) this gives a 36 box and a 20 icon.
+    final titleStyle = theme.textTheme.titleMedium?.copyWith(
+      fontWeight: FontWeight.w600,
+    );
+    final textSize = MediaQuery.textScalerOf(
+      context,
+    ).scale(titleStyle?.fontSize ?? 16);
+    final boxSize = textSize * 2.25;
+    final iconSize = textSize * 1.25;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -928,25 +949,20 @@ class _AccountTypeSection extends StatelessWidget {
           child: Row(
             children: [
               Container(
-                width: 36,
-                height: 36,
+                width: boxSize,
+                height: boxSize,
                 decoration: BoxDecoration(
                   color: accent.background,
                   borderRadius: BorderRadius.circular(AppConstants.radiusSm),
                 ),
                 child: Icon(
                   _iconForType(first.typeName, first.typeIcon),
-                  size: 20,
+                  size: iconSize,
                   color: accent.foreground,
                 ),
               ),
               const SizedBox(width: AppConstants.spaceSmMd),
-              Text(
-                first.typeName,
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              Text(first.typeName, style: titleStyle),
             ],
           ),
         ),
@@ -1155,7 +1171,7 @@ class _CardFront extends StatelessWidget {
                 SizedBox(height: 14 * u),
                 // Balance: shrinks to fit the card width (no size limit).
                 SizedBox(
-                  width: double.infinity, // CHANGED: gives FittedBox a width
+                  width: double.infinity,
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
                     alignment: Alignment.centerLeft,
