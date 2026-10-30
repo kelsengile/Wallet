@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../constants.dart';
+
 class FaqScreen extends StatelessWidget {
   const FaqScreen({super.key});
 
@@ -11,7 +13,7 @@ class FaqScreen extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.help_outline),
-            SizedBox(width: 8),
+            SizedBox(width: AppConstants.spaceSm),
             Text('FAQ'),
           ],
         ),
