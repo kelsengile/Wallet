@@ -25,11 +25,13 @@ ThemeData _popupTheme(
 
 /// The pop-up design shared with the Categories screen: accent background,
 /// glyph-colored text and buttons, same corners and same spacing.
+/// The title is an icon in a rounded box followed by a bold heading.
 /// [background] / [foreground] default to the accent colors, and
 /// [baseTheme] defaults to the current theme.
 Widget _accentDialog(
   BuildContext context, {
   required String title,
+  required IconData icon,
   required Widget content,
   required List<Widget> actions,
   Color? background,
@@ -56,7 +58,33 @@ Widget _accentDialog(
       titlePadding: AppConstants.popupTitlePadding,
       contentPadding: AppConstants.popupContentPadding,
       actionsPadding: AppConstants.popupActionsPadding,
-      title: Text(title),
+      // Builder so the text style comes from the pop-up's own theme
+      // (chosen font), not the screen behind it.
+      title: Builder(
+        builder: (context) {
+          final style = Theme.of(context).textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: fg,
+              );
+          return Row(
+            children: [
+              // Icon inside a rounded box, like the "New Account" header.
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  // Soft tint of the text color, so it works on any theme.
+                  color: fg.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+                ),
+                child: Icon(icon, color: fg, size: 24),
+              ),
+              const SizedBox(width: AppConstants.spaceMd),
+              Expanded(child: Text(title, style: style)),
+            ],
+          );
+        },
+      ),
       content: SizedBox(width: double.maxFinite, child: content),
       actions: actions,
     ),
@@ -493,6 +521,7 @@ class _FontConfigDialog extends StatelessWidget {
     return _accentDialog(
       context,
       title: 'Font Configuration',
+      icon: Icons.text_fields,
       content: ListenableBuilder(
         listenable: settings,
         builder: (context, _) {
@@ -620,6 +649,7 @@ class _FontStyleDialogState extends State<_FontStyleDialog> {
     return _accentDialog(
       context,
       title: 'Font Style',
+      icon: Icons.font_download_outlined,
       content: ListView.builder(
         shrinkWrap: true,
         itemCount: AppFonts.all.length,
@@ -797,6 +827,7 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
     return _accentDialog(
       context,
       title: 'Theme Configuration',
+      icon: Icons.palette_outlined,
       background: accentColor,
       foreground: glyphColor,
       baseTheme: baseTheme,
