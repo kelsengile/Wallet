@@ -82,12 +82,12 @@ IconData _iconForType(String name, String? saved) {
 
 // ------------------------------------------------------------------
 // Account card size.
-// The design was measured on a card that is 612 x 413 pixels in the
-// sample screenshot. Every size inside the card (icon, spacing, corners)
-// is a multiple of "u" = card width / 612, so the card keeps the
-// proportions of the sample at any size.
+// The card has the real card ratio (ISO/IEC 7810 ID-1: 85.60 x 53.98 mm).
+// Every size inside the card (icon, spacing, corners) is a multiple of
+// "u" = card width / 612, which keeps the proportions measured from the
+// sample screenshot.
 //
-// At the "Big" font size the card and its text match the sample exactly.
+// At the "Big" font size the card and its text match the sample.
 // Other font sizes only change them a little:
 //   _cardFollow = how much of the font size change the CARD follows.
 //   _textFollow = how much of the font size change the TEXT follows.
@@ -95,7 +95,9 @@ IconData _iconForType(String name, String? saved) {
 // Smaller number = smaller adjustment per size.
 // ------------------------------------------------------------------
 const double _sampleWidth = 612;
-const double _sampleHeight = 413;
+
+/// Real card ratio (width / height).
+const double _cardRatio = 85.60 / 53.98;
 
 /// The text scale of the "Big" font size setting.
 const double _bigTextScale = 1.15;
@@ -118,7 +120,7 @@ double _cardWidthFor(BuildContext context) =>
 double _textFactorFor(BuildContext context) =>
     1 + (_fontScale(context) - _bigTextScale) * _textFollow;
 
-double _cardHeightFor(double width) => width * _sampleHeight / _sampleWidth;
+double _cardHeightFor(double width) => width / _cardRatio;
 
 class FinanceScreen extends StatefulWidget {
   const FinanceScreen({super.key});
@@ -447,7 +449,7 @@ class _FlipAccountCardState extends State<_FlipAccountCard>
 /// Front: icon on the top right, then name, balance and category at the
 /// bottom left. Sizes are measured from the sample (u = width / 612).
 /// Text sizes use k = u * textFactor, so at the Big font size they match
-/// the sample exactly and change only slightly at other sizes.
+/// the sample and change only slightly at other sizes.
 class _CardFront extends StatelessWidget {
   final _AccountCardData account;
   final bool hidden;
@@ -575,8 +577,8 @@ class _CardFront extends StatelessWidget {
 
 /// Back: a dark band (the same on every card), a small notes box under it,
 /// then a bigger notes area with no box. Sizes are measured from the sample
-/// (u = width / 612). Text changes slightly with the font size like the
-/// front.
+/// (u = width / 612) and fitted to the real card height. Text changes
+/// slightly with the font size like the front.
 class _CardBack extends StatelessWidget {
   final _AccountCardData account;
   final AppAccent accent;
@@ -609,15 +611,15 @@ class _CardBack extends StatelessWidget {
         children: [
           // The black band, the same on every card.
           Positioned(
-            top: 68 * u,
+            top: 58 * u,
             left: 0,
             right: 0,
-            height: 76 * u,
+            height: 70 * u,
             child: Container(color: Colors.black.withValues(alpha: 0.6)),
           ),
           // First notes section: the small one, with a box.
           Positioned(
-            top: 183 * u,
+            top: 160 * u,
             left: 38 * u,
             right: 39 * u,
             height: 53 * u,
@@ -646,10 +648,10 @@ class _CardBack extends StatelessWidget {
           ),
           // Second notes section: the bigger one, no box.
           Positioned(
-            top: 256 * u,
+            top: 228 * u,
             left: 58 * u,
             right: 58 * u,
-            bottom: 90 * u,
+            bottom: 82 * u,
             child: Text(
               'Notes',
               overflow: TextOverflow.ellipsis,
@@ -664,7 +666,7 @@ class _CardBack extends StatelessWidget {
           // Type icon, bottom left
           Positioned(
             left: 40 * u,
-            bottom: 38 * u,
+            bottom: 34 * u,
             child: Icon(
               _iconForType(account.typeName, account.typeIcon),
               size: 34 * u,
