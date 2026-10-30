@@ -30,6 +30,9 @@ class AppConstants {
 
   static const Color incomeColor = Color(0xFF4CAF50);
   static const Color expenseColor = Color(0xFFF44A5A);
+  // NEW: defaults for the other transaction colors
+  static const Color transferColor = Color(0xFF2196F3);
+  static const Color notificationColor = Color(0xFFFFA726);
 
   // ---------- Spacing scale ----------
   static const double spaceXs = 4;
@@ -118,6 +121,11 @@ class AppConstants {
   static const String prefTextSize = 'settings.textSizeIndex';
   static const String prefFontStyle = 'settings.fontStyle';
   static const String prefBoldText = 'settings.boldText';
+  // NEW: saved transaction colors (Specific Color)
+  static const String prefIncomeColor = 'settings.transactionColor.income';
+  static const String prefExpenseColor = 'settings.transactionColor.expense';
+  static const String prefTransferColor = 'settings.transactionColor.transfer';
+  static const String prefNotificationColor = 'settings.transactionColor.notification';
 
   static const List<String> textSizeLabels = [
     'Smallest',

@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/constants.dart';
 import '../../core/failures.dart';
+import '../../core/screens/settings.dart';
 import '../../core/themes.dart';
 import '../../core/utils.dart';
 import '../../database/helper.dart';
@@ -1757,12 +1758,25 @@ class TotalBalanceCard extends StatelessWidget {
     );
   }
 
+  // NEW: rebuilds the card when a setting (like a transaction color) changes.
   @override
   Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: AppSettings.instance,
+      builder: (context, _) => _buildCard(context),
+    );
+  }
+
+  // CHANGED: was `build`, no @override anymore.
+  Widget _buildCard(BuildContext context) {
     final theme = Theme.of(context);
     final accent = AppTheme.accentOf(context);
     final fg = accent.foreground;
     final muted = fg.withValues(alpha: AppConstants.mutedAlpha);
+
+    // NEW: colors picked in Settings > Theme > Specific Color
+    final incomeColor = AppSettings.instance.incomeColor;
+    final expenseColor = AppSettings.instance.expenseColor;
 
     // Space taken by the status bar + app bar, so content starts below them.
     final topInset = MediaQuery.viewPaddingOf(context).top + kToolbarHeight;
@@ -1774,11 +1788,11 @@ class TotalBalanceCard extends StatelessWidget {
       height: 1.0, // removes the font's extra line spacing
     );
     final incomeStyle = theme.textTheme.labelSmall?.copyWith(
-      color: AppConstants.incomeColor,
+      color: incomeColor, // CHANGED
       fontWeight: FontWeight.w600,
     );
     final expenseStyle = theme.textTheme.labelSmall?.copyWith(
-      color: AppConstants.expenseColor,
+      color: expenseColor, // CHANGED
       fontWeight: FontWeight.w600,
     );
 
@@ -1848,13 +1862,13 @@ class TotalBalanceCard extends StatelessWidget {
               ),
               const SizedBox(width: AppConstants.spaceSm),
               // Analytics: green = income | red = expense (right side)
-              Row(
+                            Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.arrow_upward,
                     size: 11,
-                    color: AppConstants.incomeColor,
+                    color: incomeColor, // CHANGED (was const + AppConstants.incomeColor)
                   ),
                   const SizedBox(width: 2),
                   hidden
@@ -1867,10 +1881,10 @@ class TotalBalanceCard extends StatelessWidget {
                     color: fg.withValues(alpha: AppConstants.separatorAlpha),
                   ),
                   const SizedBox(width: AppConstants.spaceSm),
-                  const Icon(
+                  Icon(
                     Icons.arrow_downward,
                     size: 11,
-                    color: AppConstants.expenseColor,
+                    color: expenseColor, // CHANGED (was const + AppConstants.expenseColor)
                   ),
                   const SizedBox(width: 2),
                   hidden

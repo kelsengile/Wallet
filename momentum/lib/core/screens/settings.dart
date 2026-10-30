@@ -91,6 +91,47 @@ Widget _accentDialog(
   );
 }
 
+/// The transaction types whose color can be changed in
+/// Theme > Specific Color. Each one has its own saved key and default.
+enum TransactionColorType {
+  income(
+    'Income',
+    Icons.arrow_upward,
+    AppConstants.prefIncomeColor,
+    AppConstants.incomeColor,
+  ),
+  expense(
+    'Expense',
+    Icons.arrow_downward,
+    AppConstants.prefExpenseColor,
+    AppConstants.expenseColor,
+  ),
+  transfer(
+    'Transfer',
+    Icons.swap_horiz,
+    AppConstants.prefTransferColor,
+    AppConstants.transferColor,
+  ),
+  notification(
+    'Notification',
+    Icons.notifications_outlined,
+    AppConstants.prefNotificationColor,
+    AppConstants.notificationColor,
+  );
+
+  final String label;
+  final IconData icon;
+  final String prefKey;
+  final Color defaultColor;
+
+  const TransactionColorType(
+    this.label,
+    this.icon,
+    this.prefKey,
+    this.defaultColor,
+  );
+}
+
 /// App-wide user settings. The root MaterialApp listens to this, so any
 /// change applies to every screen, dialog and route immediately.
 class AppSettings extends ChangeNotifier {
@@ -129,6 +170,12 @@ class AppSettings extends ChangeNotifier {
 
     final textValue = prefs.getInt(AppConstants.prefText);
     if (textValue != null) _textColor = Color(textValue);
+
+    // Saved transaction colors (Specific Color).
+    for (final type in TransactionColorType.values) {
+      final value = prefs.getInt(type.prefKey);
+      if (value != null) _transactionColors[type] = Color(value);
+    }
 
     _fontStyle =
         AppFonts.byLabel(prefs.getString(AppConstants.prefFontStyle));
@@ -193,6 +240,26 @@ class AppSettings extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ---- Specific colors: transaction types ----
+  /// Colors the user changed. A type that is not here uses its default.
+  final Map<TransactionColorType, Color> _transactionColors = {};
+
+  Color transactionColor(TransactionColorType type) =>
+      _transactionColors[type] ?? type.defaultColor;
+
+  Color get incomeColor => transactionColor(TransactionColorType.income);
+  Color get expenseColor => transactionColor(TransactionColorType.expense);
+  Color get transferColor => transactionColor(TransactionColorType.transfer);
+  Color get notificationColor =>
+      transactionColor(TransactionColorType.notification);
+
+  void setTransactionColor(TransactionColorType type, Color color) {
+    if (transactionColor(type) == color) return;
+    _transactionColors[type] = color;
+    _prefs?.setInt(type.prefKey, color.toARGB32());
+    notifyListeners();
+  }
+
   // ---- Font style ----
   AppFont _fontStyle = AppFonts.defaultFont;
   AppFont get fontStyle => _fontStyle;
@@ -232,6 +299,14 @@ class AppSettings extends ChangeNotifier {
     _prefs?.setInt(AppConstants.prefTextSize, index);
     notifyListeners();
   }
+}
+
+/// Name of the current theme: "Custom", the built-in one, or the system one.
+String _themeLabel(BuildContext context, AppSettings settings) {
+  if (settings.customColor != null) return 'Custom';
+  final chosen = settings.themeOption;
+  if (chosen != null) return chosen.label;
+  return Theme.of(context).brightness == Brightness.dark ? 'Dark' : 'Light';
 }
 
 class SettingsScreen extends StatelessWidget {
@@ -310,30 +385,22 @@ class SettingsScreen extends StatelessWidget {
 
   // ---------- Theme ----------
 
-  String _currentLabel(BuildContext context, AppSettings settings) {
-    if (settings.customColor != null) return 'Custom';
-    final chosen = settings.themeOption;
-    if (chosen != null) return chosen.label;
-    return Theme.of(context).brightness == Brightness.dark ? 'Dark' : 'Light';
-  }
-
   Widget _buildThemeTile(BuildContext context, AppSettings settings) {
     return ListTile(
       leading: const Icon(Icons.palette_outlined),
       title: const Text('Theme'),
-      subtitle: Text(_currentLabel(context, settings)),
+      subtitle: Text(_themeLabel(context, settings)),
       trailing: _ThemeSwatch(Theme.of(context).colorScheme.surface),
-      onTap: () => _showColorPicker(context, settings),
+      onTap: () => _showThemeConfig(context, settings),
     );
   }
 
-  Future<void> _showColorPicker(BuildContext context, AppSettings settings) {
-    final initial =
-        settings.customColor ?? Theme.of(context).colorScheme.surface;
+  /// Opens the Theme Configuration pop-up (General Color / Specific Color).
+  Future<void> _showThemeConfig(BuildContext context, AppSettings settings) {
     return showDialog<void>(
       context: context,
       barrierColor: AppConstants.popupBarrier,
-      builder: (_) => _ColorPickerDialog(initial: initial, settings: settings),
+      builder: (_) => _ThemeConfigDialog(settings: settings),
     );
   }
 
@@ -685,7 +752,398 @@ class _FontStyleDialogState extends State<_FontStyleDialog> {
   }
 }
 
-/// Pop-up with three parts:
+// ------------------------------------------------------------------
+// Theme configuration (General Color / Specific Color)
+// ------------------------------------------------------------------
+
+/// First pop-up of the Theme tile, built like the Font pop-up:
+///  - General Color (opens the Main / Accent / Glyph picker)
+///  - Specific Color (opens the list of colors for parts of the app)
+/// Only a Close button; the colors are applied from the pop-ups it opens.
+class _ThemeConfigDialog extends StatelessWidget {
+  final AppSettings settings;
+  const _ThemeConfigDialog({required this.settings});
+
+  @override
+  Widget build(BuildContext context) {
+    return _accentDialog(
+      context,
+      title: 'Theme Configuration',
+      icon: Icons.palette_outlined,
+      content: ListenableBuilder(
+        listenable: settings,
+        builder: (context, _) {
+          // Read inside the pop-up, so these are the pop-up's colors.
+          final theme = Theme.of(context);
+          final fg = theme.colorScheme.onSurface;
+
+          return SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ---- General Color ----
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.palette_outlined),
+                  title: const Text('General Color'),
+                  subtitle: Text(_themeLabel(context, settings)),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => showDialog<void>(
+                    context: context,
+                    barrierColor: AppConstants.popupBarrier,
+                    builder: (_) => _GeneralColorDialog(
+                      initial: settings.customColor ??
+                          Theme.of(context).colorScheme.surface,
+                      settings: settings,
+                    ),
+                  ),
+                ),
+                Divider(
+                  height: 1,
+                  color: fg.withValues(alpha: AppConstants.dividerAlpha),
+                ),
+                // ---- Specific Color ----
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.tune),
+                  title: const Text('Specific Color'),
+                  subtitle: const Text('Transaction colors'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => showDialog<void>(
+                    context: context,
+                    barrierColor: AppConstants.popupBarrier,
+                    builder: (_) => _SpecificColorDialog(settings: settings),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Close'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Pop-up with the colors of specific parts of the app.
+/// For now: Transaction colors (Income, Expense, Transfer, Notification).
+/// Each one is a bar with its color in a circle on the right side.
+/// Tapping a bar opens the color pop-up for that transaction type.
+class _SpecificColorDialog extends StatelessWidget {
+  final AppSettings settings;
+  const _SpecificColorDialog({required this.settings});
+
+  @override
+  Widget build(BuildContext context) {
+    return _accentDialog(
+      context,
+      title: 'Specific Color',
+      icon: Icons.tune,
+      content: ListenableBuilder(
+        listenable: settings,
+        builder: (context, _) {
+          final theme = Theme.of(context);
+          final fgSoft = theme.colorScheme.onSurface;
+
+          return SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppConstants.spaceSm),
+                  child: Text(
+                    'Transaction Colors',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: fgSoft,
+                    ),
+                  ),
+                ),
+                for (final type in TransactionColorType.values)
+                  _ColorBar(
+                    label: type.label,
+                    icon: type.icon,
+                    color: settings.transactionColor(type),
+                    onTap: () => showDialog<void>(
+                      context: context,
+                      barrierColor: AppConstants.popupBarrier,
+                      builder: (_) => _TransactionColorDialog(
+                        type: type,
+                        settings: settings,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Close'),
+        ),
+      ],
+    );
+  }
+}
+
+/// One bar: icon + name on the left, the chosen color in a circle on the right.
+class _ColorBar extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _ColorBar({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final fg = theme.colorScheme.onSurface;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppConstants.spaceSm),
+      child: Material(
+        color: fg.withValues(alpha: AppConstants.tintAlpha),
+        borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppConstants.spaceMd,
+              vertical: AppConstants.spaceSmMd,
+            ),
+            child: Row(
+              children: [
+                Icon(icon, color: fg, size: 22),
+                const SizedBox(width: AppConstants.spaceSmMd),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: fg,
+                    ),
+                  ),
+                ),
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: fg.withValues(alpha: AppConstants.borderAlpha),
+                      width: 1.5,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Pop-up to change the color of one transaction type. The title is the
+/// type's name. It has the same hex box and sliders as the General Color
+/// picker, plus Cancel and Apply buttons.
+class _TransactionColorDialog extends StatefulWidget {
+  final TransactionColorType type;
+  final AppSettings settings;
+  const _TransactionColorDialog({required this.type, required this.settings});
+
+  @override
+  State<_TransactionColorDialog> createState() =>
+      _TransactionColorDialogState();
+}
+
+class _TransactionColorDialogState extends State<_TransactionColorDialog> {
+  late HSVColor _hsv;
+  late final TextEditingController _hexController;
+
+  @override
+  void initState() {
+    super.initState();
+    final start = widget.settings.transactionColor(widget.type);
+    _hsv = HSVColor.fromColor(start);
+    _hexController = TextEditingController(text: _hex(start));
+  }
+
+  @override
+  void dispose() {
+    _hexController.dispose();
+    super.dispose();
+  }
+
+  String _hex(Color c) =>
+      '#${c.toARGB32().toRadixString(16).substring(2).toUpperCase()}';
+
+  /// Reads "#A5413A" or "A5413A". Returns null until it is a full 6-digit code.
+  Color? _parseHex(String input) {
+    var text = input.trim();
+    if (text.startsWith('#')) text = text.substring(1);
+    if (text.length != 6) return null;
+    final value = int.tryParse(text, radix: 16);
+    if (value == null) return null;
+    return Color(0xFF000000 | value);
+  }
+
+  void _setHexText(Color c) {
+    final text = _hex(c);
+    _hexController.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+  }
+
+  /// Called when the user types or pastes into the hex field.
+  void _onHexChanged(String text) {
+    final parsed = _parseHex(text);
+    if (parsed == null) return;
+    // The text field is left alone so typing isn't interrupted.
+    setState(() => _hsv = HSVColor.fromColor(parsed));
+  }
+
+  /// Called when a slider moves: updates the color and the hex text.
+  void _setFromSlider(HSVColor hsv) {
+    setState(() => _hsv = hsv);
+    _setHexText(hsv.toColor());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _hsv.toColor();
+    final hexTextColor = AppTheme.onColor(color);
+    final fg = AppTheme.accentOf(context).foreground;
+
+    return _accentDialog(
+      context,
+      title: widget.type.label,
+      icon: widget.type.icon,
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Editable hex code
+            Container(
+              height: AppConstants.colorBoxHeight,
+              width: double.infinity,
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppConstants.spaceMd,
+              ),
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+                border: Border.all(
+                  color: fg.withValues(alpha: AppConstants.borderAlpha),
+                ),
+              ),
+              child: TextField(
+                controller: _hexController,
+                onChanged: _onHexChanged,
+                textAlign: TextAlign.center,
+                textCapitalization: TextCapitalization.characters,
+                autocorrect: false,
+                enableSuggestions: false,
+                cursorColor: hexTextColor,
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[#0-9a-fA-F]')),
+                  LengthLimitingTextInputFormatter(
+                    AppConstants.hexInputLength,
+                  ),
+                  TextInputFormatter.withFunction(
+                    (oldValue, newValue) => newValue.copyWith(
+                      text: newValue.text.toUpperCase(),
+                    ),
+                  ),
+                ],
+                style: TextStyle(
+                  color: hexTextColor,
+                  fontWeight: FontWeight.w600,
+                  fontSize: AppConstants.hexFontSize,
+                ),
+                decoration: const InputDecoration(
+                  isDense: true,
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  disabledBorder: InputBorder.none,
+                  errorBorder: InputBorder.none,
+                  focusedErrorBorder: InputBorder.none,
+                ),
+              ),
+            ),
+            const SizedBox(height: AppConstants.spaceMd),
+            _GradientSlider(
+              label: 'Hue',
+              value: _hsv.hue,
+              max: 360,
+              colors: [
+                for (var h = 0.0; h <= 360; h += AppConstants.hueGradientStep)
+                  HSVColor.fromAHSV(1, h, 1, 1).toColor(),
+              ],
+              onChanged: (v) => _setFromSlider(_hsv.withHue(v)),
+            ),
+            _GradientSlider(
+              label: 'Saturation',
+              value: _hsv.saturation,
+              max: 1,
+              colors: [
+                _hsv.withSaturation(0).toColor(),
+                _hsv.withSaturation(1).toColor(),
+              ],
+              onChanged: (v) => _setFromSlider(_hsv.withSaturation(v)),
+            ),
+            _GradientSlider(
+              label: 'Brightness',
+              value: _hsv.value,
+              max: 1,
+              colors: [Colors.black, _hsv.withValue(1).toColor()],
+              onChanged: (v) => _setFromSlider(_hsv.withValue(v)),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () {
+            widget.settings.setTransactionColor(widget.type, color);
+            Navigator.of(context).pop();
+          },
+          child: const Text('Apply'),
+        ),
+      ],
+    );
+  }
+}
+
+/// General Color pop-up (the original theme pop-up) with three parts:
 ///  - Main: background
 ///  - Accent: plain color for nav bar, drawer header, version box and
 ///    settings sections (does not affect buttons)
@@ -694,16 +1152,16 @@ class _FontStyleDialogState extends State<_FontStyleDialog> {
 /// being picked as its background and the Glyph color being picked as its
 /// text and buttons, so those two update live. The Main color is shown in
 /// the color box while the Main tab is selected.
-class _ColorPickerDialog extends StatefulWidget {
+class _GeneralColorDialog extends StatefulWidget {
   final Color initial;
   final AppSettings settings;
-  const _ColorPickerDialog({required this.initial, required this.settings});
+  const _GeneralColorDialog({required this.initial, required this.settings});
 
   @override
-  State<_ColorPickerDialog> createState() => _ColorPickerDialogState();
+  State<_GeneralColorDialog> createState() => _GeneralColorDialogState();
 }
 
-class _ColorPickerDialogState extends State<_ColorPickerDialog> {
+class _GeneralColorDialogState extends State<_GeneralColorDialog> {
   late HSVColor _bg;
   late HSVColor _accent;
   late HSVColor _text;
@@ -826,7 +1284,7 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
 
     return _accentDialog(
       context,
-      title: 'Theme Configuration',
+      title: 'General Color',
       icon: Icons.palette_outlined,
       background: accentColor,
       foreground: glyphColor,
