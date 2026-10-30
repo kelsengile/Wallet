@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS accounts (
   type_id INTEGER NOT NULL REFERENCES account_types(id),
   category_id INTEGER NOT NULL REFERENCES account_categories(id),
   initial_balance INTEGER NOT NULL DEFAULT 0,
+  note_title TEXT,
+  note_body TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   deleted_at TEXT
 );

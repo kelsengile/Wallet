@@ -131,29 +131,86 @@ class DatabaseHelper {
     'categories',
   ];
 
-  /// Columns every table must have for the app's queries to work.
-  static const _requiredColumns = <String, Set<String>>{
-    'account_types': {'id', 'name', 'icon'},
-    'account_categories': {'id', 'name', 'sort_order', 'icon'},
-    'accounts': {
-      'id',
-      'name',
-      'type_id',
-      'category_id',
-      'initial_balance',
-      'deleted_at',
+  /// Default icon key of each seed item. Same keys as the Categories screen.
+  /// Written into the `icon` column so every screen reads it from the database.
+  static const _defaultIcons = <String, Map<String, String>>{
+    'account_types': {
+      'Cash': 'cash',
+      'Bank': 'bank',
+      'Digital Bank': 'phone',
+      'Credit': 'card',
+      'E-Wallet': 'wallet',
+      'Investment': 'trending',
+      'Assets': 'home',
+      'Debt': 'handshake',
+      'Business': 'business',
     },
-    'categories': {'id', 'name', 'kind', 'icon'},
-    'transactions': {'id', 'type', 'amount', 'deleted_at'},
+    'account_categories': {
+      'Personal': 'star',
+      'Family': 'family',
+      'Savings': 'savings',
+      'Future': 'flag',
+      'Work': 'work',
+      'Travel': 'flight',
+      'Health': 'medical',
+      'Investment': 'trending',
+      'Debt': 'card',
+      'Emergency': 'heart',
+      'Spending': 'shopping',
+    },
+    'categories': {
+      'Salary': 'cash',
+      'Bonus': 'gift',
+      'Commission': 'handshake',
+      'Allowance': 'wallet',
+      'Freelance': 'work',
+      'Business': 'business',
+      'Investment': 'trending',
+      'Gift': 'gift',
+      'Scholarship': 'school',
+      'Refund': 'receipt',
+      'Loan': 'bank',
+      'Miscellaneous': 'shapes',
+      'Food': 'food',
+      'Transportation': 'car',
+      'Shopping': 'shopping',
+      'Bills': 'receipt',
+      'Health': 'medical',
+      'Education': 'school',
+      'Entertainment': 'movie',
+      'Tax': 'bank',
+      'Debt': 'card',
+      'Travel': 'flight',
+      'Sports': 'fitness',
+      'Transfer': 'swap',
+    },
   };
 
-  /// Runs every time the database opens. Adds the icon columns to older
-  /// files, then rebuilds the database only when the tables are missing or
-  /// different from schema.sql, or when the default data was never inserted.
+  /// Fills empty icons with the defaults above. Icons that were already
+  /// saved (chosen by the user) are never touched.
+  Future<void> _fillDefaultIcons(DatabaseExecutor db) async {
+    for (final table in _defaultIcons.entries) {
+      for (final item in table.value.entries) {
+        await db.rawUpdate(
+          'UPDATE ${table.key} SET icon = ? WHERE name = ? AND icon IS NULL',
+          [item.value, item.key],
+        );
+      }
+    }
+  }
+
+  /// Runs every time the database opens. Adds the icon and note columns to
+  /// older files, then rebuilds the database only when the tables are missing
+  /// or different from schema.sql, or when the default data was never
+  /// inserted.
   Future<void> _ensureReady(Database db) async {
     await _addMissingIconColumns(db);
+    await _addMissingNoteColumns(db);
     final ready = await _schemaIsValid(db) && await _isSeeded(db);
-    if (ready) return;
+    if (ready) {
+      await _fillDefaultIcons(db);
+      return;
+    }
     debugPrint('Database is missing tables or default data. Rebuilding.');
     await _rebuild(db);
   }
@@ -168,13 +225,24 @@ class DatabaseHelper {
     }
   }
 
+  /// Older databases get the account note columns without losing any data.
+  Future<void> _addMissingNoteColumns(Database db) async {
+    final columns = await _columnsOf(db, 'accounts');
+    if (columns.isEmpty) return;
+    for (final column in const ['note_title', 'note_body']) {
+      if (!columns.contains(column)) {
+        await db.execute('ALTER TABLE accounts ADD COLUMN $column TEXT');
+      }
+    }
+  }
+
   Future<Set<String>> _columnsOf(Database db, String table) async {
     final rows = await db.rawQuery('PRAGMA table_info($table)');
     return {for (final row in rows) row['name'] as String};
   }
 
   Future<bool> _schemaIsValid(Database db) async {
-    for (final entry in _requiredColumns.entries) {
+    for (final entry in _exportColumns.entries) {
       final columns = await _columnsOf(db, entry.key);
       if (columns.isEmpty || !columns.containsAll(entry.value)) return false;
     }
@@ -221,6 +289,7 @@ class DatabaseHelper {
       await _dropAll(txn);
       await _runScript(txn, schema);
       await _runScript(txn, seed);
+      await _fillDefaultIcons(txn);
     });
   }
 
@@ -276,6 +345,42 @@ class DatabaseHelper {
       debugPrint('getAccountsSummary failed: $error');
       throw const DatabaseFailure();
     }
+  }
+
+  /// Pesos -> whole centavos. Refuses numbers too big for the database
+  /// instead of crashing.
+  int _toCentavos(double pesos) {
+    final centavos = pesos * AppConstants.centavosPerPeso;
+    if (!centavos.isFinite) {
+      throw const ValidationFailure('That balance is too big.');
+    }
+    return centavos.clamp(-9.0e18, 9.0e18).round();
+  }
+
+  /// Adds a new account. [initialBalance] is in pesos.
+  Future<void> addAccount({
+    required String name,
+    required int typeId,
+    required int categoryId,
+    double initialBalance = 0,
+    String? noteTitle,
+    String? noteBody,
+  }) {
+    return _guard(() async {
+      final db = await database;
+      final title = noteTitle?.trim();
+      final body = noteBody?.trim();
+      await db.insert('accounts', {
+        'name': _cleanName(name),
+        'type_id': typeId,
+        'category_id': categoryId,
+        'initial_balance':
+            _toCentavos(initialBalance),
+        'note_title': (title == null || title.isEmpty) ? null : title,
+        'note_body': (body == null || body.isEmpty) ? null : body,
+      });
+      notifyChanged();
+    });
   }
 
   // ---------- Categories ----------
@@ -659,6 +764,8 @@ class DatabaseHelper {
       'type_id',
       'category_id',
       'initial_balance',
+      'note_title',
+      'note_body',
       'created_at',
       'deleted_at',
     ],
@@ -748,6 +855,7 @@ class DatabaseHelper {
               await txn.insert(table, row);
             }
           }
+          await _fillDefaultIcons(txn);
         });
       } catch (error) {
         debugPrint('Import failed: $error');

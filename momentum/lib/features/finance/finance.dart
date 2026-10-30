@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/constants.dart';
 import '../../core/failures.dart';
@@ -16,7 +17,10 @@ class _AccountCardData {
   final String typeName;
   final String? typeIcon;
   final String category;
+  final String? categoryIcon;
   final double balance;
+  final String? noteTitle;
+  final String? noteBody;
 
   const _AccountCardData({
     required this.id,
@@ -25,7 +29,10 @@ class _AccountCardData {
     required this.typeName,
     required this.typeIcon,
     required this.category,
+    required this.categoryIcon,
     required this.balance,
+    this.noteTitle,
+    this.noteBody,
   });
 }
 
@@ -80,6 +87,12 @@ IconData _iconForType(String name, String? saved) {
   return _typeIcons[_typeIconDefaults[name] ?? 'wallet']!;
 }
 
+/// Account category icon: the saved one, or a plain label.
+IconData _iconForCategory(String? saved) {
+  if (saved != null && _typeIcons.containsKey(saved)) return _typeIcons[saved]!;
+  return _typeIcons['label']!;
+}
+
 // ------------------------------------------------------------------
 // Account card size.
 // The values that tune it (card ratio, sample width, how much the card
@@ -104,8 +117,7 @@ double _cardWidthFor(BuildContext context) =>
 /// Text size multiplier inside the card (1.0 at "Big").
 double _textFactorFor(BuildContext context) =>
     1 +
-    (_fontScale(context) - AppConstants.bigTextScale) *
-        AppConstants.textFollow;
+    (_fontScale(context) - AppConstants.bigTextScale) * AppConstants.textFollow;
 
 double _cardHeightFor(double width) => width / AppConstants.cardRatio;
 
@@ -142,9 +154,9 @@ class _FinanceScreenState extends State<FinanceScreen> {
   Future<List<_AccountCardData>> _loadAccounts() async {
     final db = await DatabaseHelper.instance.database;
     final rows = await db.rawQuery('''
-      SELECT a.id, a.name, a.type_id,
+      SELECT a.id, a.name, a.type_id, a.note_title, a.note_body,
              t.name AS type_name, t.icon AS type_icon,
-             c.name AS category_name,
+             c.name AS category_name, c.icon AS category_icon,
              b.balance AS balance
       FROM accounts a
       JOIN account_types t ON t.id = a.type_id
@@ -162,8 +174,11 @@ class _FinanceScreenState extends State<FinanceScreen> {
           typeName: row['type_name'] as String,
           typeIcon: row['type_icon'] as String?,
           category: row['category_name'] as String,
-          balance: (row['balance'] as num).toInt() /
-              AppConstants.centavosPerPeso,
+          categoryIcon: row['category_icon'] as String?,
+          balance:
+              (row['balance'] as num).toInt() / AppConstants.centavosPerPeso,
+          noteTitle: row['note_title'] as String?,
+          noteBody: row['note_body'] as String?,
         ),
     ];
   }
@@ -194,6 +209,22 @@ class _FinanceScreenState extends State<FinanceScreen> {
       groups.putIfAbsent(account.typeId, () => []).add(account);
     }
     return groups.values.toList();
+  }
+
+  /// Pops the "New Account" sheet up from the bottom.
+  Future<void> _addAccount() {
+    final accent = AppTheme.accentOf(context);
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: accent.background,
+      barrierColor: AppConstants.popupBarrier,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (_) => const _AddAccountSheet(),
+    );
   }
 
   @override
@@ -235,7 +266,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
               IconButton(
                 icon: const Icon(Icons.add),
                 tooltip: 'Add Account',
-                onPressed: () {}, // TODO: add account
+                onPressed: _addAccount,
               ),
               // Eye button. Open eye = amounts shown, closed = hidden.
               IconButton(
@@ -262,6 +293,609 @@ class _FinanceScreenState extends State<FinanceScreen> {
       ],
     );
   }
+}
+
+// ------------------------------------------------------------------
+// New Account bottom sheet
+// ------------------------------------------------------------------
+
+/// Bottom sheet that opens from the "+" button next to "My Accounts".
+/// Background = accent color, text / icons / outlines = glyph color.
+/// Types and categories come from the app's own database lists.
+class _AddAccountSheet extends StatefulWidget {
+  const _AddAccountSheet();
+
+  @override
+  State<_AddAccountSheet> createState() => _AddAccountSheetState();
+}
+
+class _AddAccountSheetState extends State<_AddAccountSheet> {
+  static const int _noteTitleMax = 30;
+  static const int _noteBodyMax = 120;
+  static const double _fieldRadius = 4;
+  static const double _sidePad = 20;
+  static const double _gap = 12; // space between fields
+  static const double _fieldVPad = 15; // text field height
+  static const double _selectorVPad = 12; // Type / Category height
+
+  // Balance text: normal size, and the smallest it shrinks to.
+  static const double _balanceMaxFont = 16; // NEW
+  static const double _balanceMinFont = 8; // NEW
+
+  final _name = TextEditingController();
+  final _balance = TextEditingController();
+  final _noteTitle = TextEditingController();
+  final _noteBody = TextEditingController();
+
+  List<CategoryItem> _types = const [];
+  List<CategoryItem> _categories = const [];
+  CategoryItem? _type;
+  CategoryItem? _category;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    for (final c in [_name, _balance, _noteTitle, _noteBody]) {
+      c.addListener(_refresh);
+    }
+    _loadLists();
+  }
+
+  @override
+  void dispose() {
+    for (final c in [_name, _balance, _noteTitle, _noteBody]) {
+      c.removeListener(_refresh);
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  void _refresh() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _loadLists() async {
+    try {
+      final db = DatabaseHelper.instance;
+      final types = await db.getCategoryItems(CategoryGroup.accountType);
+      final categories = await db.getCategoryItems(
+        CategoryGroup.accountCategory,
+      );
+      if (!mounted) return;
+      setState(() {
+        _types = types;
+        _categories = categories;
+      });
+    } on Failure catch (f) {
+      if (mounted) setState(() => _error = f.message);
+    }
+  }
+
+  bool get _canSave =>
+      !_saving &&
+      _name.text.trim().isNotEmpty &&
+      _type != null &&
+      _category != null;
+
+  Future<void> _save() async {
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await DatabaseHelper.instance.addAccount(
+        name: _name.text,
+        typeId: _type!.id,
+        categoryId: _category!.id,
+        initialBalance: double.tryParse(_balance.text.trim()) ?? 0,
+        noteTitle: _noteTitle.text,
+        noteBody: _noteBody.text,
+      );
+      if (mounted) Navigator.of(context).pop();
+    } on Failure catch (f) {
+      if (mounted) setState(() => _error = f.message);
+    } catch (_) {
+      if (mounted) setState(() => _error = const UnknownFailure().message);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _pickType() async {
+    final picked = await _pickItem(
+      context,
+      title: 'Type',
+      items: _types,
+      selected: _type,
+      iconFor: (item) => _iconForType(item.name, item.icon),
+    );
+    if (picked != null) setState(() => _type = picked);
+  }
+
+  Future<void> _pickCategory() async {
+    final picked = await _pickItem(
+      context,
+      title: 'Category',
+      items: _categories,
+      selected: _category,
+      iconFor: (item) => _iconForCategory(item.icon),
+    );
+    if (picked != null) setState(() => _category = picked);
+  }
+
+  /// NEW: the biggest font size (down to the minimum) at which the typed
+  /// balance still fits inside the field. No limit on how long it can be.
+  double _balanceFontSize(double fieldWidth) {
+    final text = _balance.text;
+    if (text.isEmpty) return _balanceMaxFont;
+
+    // Space left for the text: minus the prefix icon (48) and the padding.
+    final available = fieldWidth - 48 - AppConstants.spaceMd * 2;
+
+    var size = _balanceMaxFont;
+    while (size > _balanceMinFont) {
+      final painter = TextPainter(
+        text: TextSpan(text: text, style: TextStyle(fontSize: size)),
+        textDirection: TextDirection.ltr,
+        maxLines: 1,
+      )..layout();
+      if (painter.width <= available) break;
+      size -= 0.5;
+    }
+    return size;
+  }
+
+  /// Outlined box look shared by every field (glyph-colored outline).
+  InputDecoration _decoration(
+    Color fg, {
+    required String label,
+    required Widget icon,
+    Widget? suffix,
+    FloatingLabelBehavior? floating,
+    double vPad = _fieldVPad,
+  }) {
+    OutlineInputBorder border(double alpha, double width) => OutlineInputBorder(
+      borderRadius: BorderRadius.circular(_fieldRadius),
+      borderSide: BorderSide(
+        color: fg.withValues(alpha: alpha),
+        width: width,
+      ),
+    );
+    return InputDecoration(
+      isDense: true, // icons no longer force a 48px minimum height
+      labelText: label,
+      labelStyle: TextStyle(
+        color: fg.withValues(alpha: AppConstants.mutedAlpha),
+      ),
+      floatingLabelStyle: TextStyle(color: fg),
+      floatingLabelBehavior: floating,
+      prefixIcon: icon,
+      suffixIcon: suffix,
+      contentPadding: EdgeInsets.symmetric(
+        horizontal: AppConstants.spaceMd,
+        vertical: vPad,
+      ),
+      border: border(AppConstants.borderAlpha, 1),
+      enabledBorder: border(AppConstants.borderAlpha, 1),
+      focusedBorder: border(1, 2),
+    );
+  }
+
+  /// A tappable box that looks like the other fields (Type / Category).
+  Widget _selector({
+    required Color fg,
+    required String label,
+    required CategoryItem? value,
+    required IconData Function(CategoryItem) iconFor,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(_fieldRadius),
+      child: InputDecorator(
+        isEmpty: value == null,
+        decoration: _decoration(
+          fg,
+          label: label,
+          vPad: _selectorVPad,
+          icon: Icon(
+            value == null ? Icons.touch_app_outlined : iconFor(value),
+            color: fg,
+          ),
+          suffix: Icon(Icons.expand_more, color: fg),
+        ),
+        child: Text(
+          value?.name ?? '',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: fg, fontSize: 16),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final base = Theme.of(context);
+    final accent = AppTheme.accentOf(context);
+    final fg = accent.foreground;
+    final bg = accent.background;
+    final muted = fg.withValues(alpha: AppConstants.mutedAlpha);
+
+    return Theme(
+      data: base.copyWith(
+        colorScheme: base.colorScheme.copyWith(
+          primary: fg,
+          onPrimary: bg,
+          onSurface: fg,
+          onSurfaceVariant: muted,
+        ),
+        textSelectionTheme: TextSelectionThemeData(cursorColor: fg),
+      ),
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(
+            _sidePad,
+            AppConstants.spaceSmMd,
+            _sidePad,
+            AppConstants.spaceMd,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Drag handle
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: fg.withValues(alpha: AppConstants.borderAlpha),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppConstants.spaceSmMd),
+
+              // Header
+              Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: fg.withValues(alpha: AppConstants.tintAlpha),
+                      borderRadius: BorderRadius.circular(
+                        AppConstants.radiusMd,
+                      ),
+                    ),
+                    child: Icon(
+                      Icons.account_balance_wallet_outlined,
+                      color: fg,
+                    ),
+                  ),
+                  const SizedBox(width: AppConstants.spaceMd),
+                  Text(
+                    'New Account',
+                    style: base.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: fg,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppConstants.spaceMd),
+
+              // Account name
+              TextField(
+                controller: _name,
+                style: TextStyle(color: fg, fontSize: 16),
+                cursorColor: fg,
+                textCapitalization: TextCapitalization.words,
+                textInputAction: TextInputAction.next,
+                decoration: _decoration(
+                  fg,
+                  label: 'Account Name',
+                  icon: Icon(Icons.label_outline, color: fg),
+                ),
+              ),
+              const SizedBox(height: _gap),
+
+              // Initial balance: no length limit, the text shrinks to fit.
+              LayoutBuilder( // CHANGED
+                builder: (context, constraints) {
+                  final size = _balanceFontSize(constraints.maxWidth);
+                  return TextField(
+                    controller: _balance,
+                    style: TextStyle(color: fg, fontSize: size),
+                    cursorColor: fg,
+                    maxLines: 1,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(
+                        RegExp(r'^\d*\.?\d{0,2}'),
+                      ),
+                    ],
+                    decoration: _decoration(
+                      fg,
+                      label: 'Initial Balance (${AppConstants.currencySymbol})',
+                      icon: Icon(Icons.payments_outlined, color: fg),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: _gap),
+
+              // Type + Category side by side
+              Row(
+                children: [
+                  Expanded(
+                    child: _selector(
+                      fg: fg,
+                      label: 'Type',
+                      value: _type,
+                      iconFor: (item) => _iconForType(item.name, item.icon),
+                      onTap: _pickType,
+                    ),
+                  ),
+                  const SizedBox(width: _gap),
+                  Expanded(
+                    child: _selector(
+                      fg: fg,
+                      label: 'Category',
+                      value: _category,
+                      iconFor: (item) => _iconForCategory(item.icon),
+                      onTap: _pickCategory,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: _gap),
+
+              // Card theme (empty for now)
+              InkWell(
+                onTap: () {}, // TODO: card theme picker
+                borderRadius: BorderRadius.circular(_fieldRadius),
+                child: InputDecorator(
+                  decoration: _decoration(
+                    fg,
+                    label: 'Card Theme',
+                    vPad: _selectorVPad,
+                    floating: FloatingLabelBehavior.always,
+                    icon: Icon(Icons.style_outlined, color: fg),
+                    suffix: Icon(Icons.chevron_right, color: fg),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 46,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          gradient: LinearGradient(
+                            colors: [
+                              fg.withValues(alpha: 0.35),
+                              fg.withValues(alpha: 0.15),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: AppConstants.spaceSmMd),
+                      Text(
+                        'Classic',
+                        style: TextStyle(color: fg, fontSize: 16),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: _gap),
+
+              // Note: a short title (30) and a longer body (120)
+              Container(
+                padding: const EdgeInsets.fromLTRB(
+                  AppConstants.spaceMd,
+                  AppConstants.spaceXs,
+                  AppConstants.spaceMd,
+                  AppConstants.spaceXs,
+                ),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(_fieldRadius),
+                  border: Border.all(
+                    color: fg.withValues(alpha: AppConstants.borderAlpha),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.notes, color: fg),
+                        const SizedBox(width: AppConstants.spaceMd),
+                        Expanded(
+                          child: TextField(
+                            controller: _noteTitle,
+                            maxLength: _noteTitleMax,
+                            style: TextStyle(color: fg, fontSize: 16),
+                            cursorColor: fg,
+                            decoration: InputDecoration(
+                              hintText: 'Note',
+                              hintStyle: TextStyle(color: muted),
+                              counterText: '',
+                              border: InputBorder.none,
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(
+                                vertical: AppConstants.spaceSm,
+                              ),
+                            ),
+                          ),
+                        ),
+                        Text(
+                          '${_noteTitle.text.length} / $_noteTitleMax',
+                          style: TextStyle(color: muted, fontSize: 13),
+                        ),
+                      ],
+                    ),
+                    Divider(
+                      height: 1,
+                      thickness: 1,
+                      color: fg.withValues(alpha: AppConstants.dividerAlpha),
+                    ),
+                    TextField(
+                      controller: _noteBody,
+                      maxLength: _noteBodyMax,
+                      minLines: 2,
+                      maxLines: 2,
+                      style: TextStyle(color: fg, fontSize: 16),
+                      cursorColor: fg,
+                      decoration: const InputDecoration(
+                        counterText: '',
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding: EdgeInsets.symmetric(
+                          vertical: AppConstants.spaceSm,
+                        ),
+                      ),
+                    ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        '${_noteBody.text.length} / $_noteBodyMax',
+                        style: TextStyle(color: muted, fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              if (_error != null) ...[
+                const SizedBox(height: AppConstants.spaceSm),
+                Text(
+                  _error!,
+                  style: base.textTheme.bodySmall?.copyWith(color: fg),
+                ),
+              ],
+              const SizedBox(height: AppConstants.spaceMd),
+
+              // Add button (greyed out until name, type and category are set)
+              SizedBox(
+                height: 48,
+                child: FilledButton.icon(
+                  onPressed: _canSave ? _save : null,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add Account'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Second bottom sheet: a wrap of chips (icon + name) to pick one item.
+Future<CategoryItem?> _pickItem(
+  BuildContext context, {
+  required String title,
+  required List<CategoryItem> items,
+  required IconData Function(CategoryItem) iconFor,
+  CategoryItem? selected,
+}) {
+  final base = Theme.of(context);
+  final accent = AppTheme.accentOf(context);
+  final fg = accent.foreground;
+
+  return showModalBottomSheet<CategoryItem>(
+    context: context,
+    backgroundColor: accent.background,
+    barrierColor: AppConstants.popupBarrier,
+    isScrollControlled: true,
+    useSafeArea: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+    ),
+    builder: (sheetContext) => SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(
+        AppConstants.spaceLg,
+        AppConstants.spaceSmMd,
+        AppConstants.spaceLg,
+        AppConstants.spaceLg,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: fg.withValues(alpha: AppConstants.borderAlpha),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppConstants.spaceLg),
+          Text(
+            title,
+            style: base.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: fg,
+            ),
+          ),
+          const SizedBox(height: AppConstants.spaceMd),
+          Wrap(
+            spacing: AppConstants.spaceSm,
+            runSpacing: AppConstants.spaceSm,
+            children: [
+              for (final item in items)
+                Material(
+                  color: fg.withValues(
+                    alpha: item.id == selected?.id
+                        ? AppConstants.iconTileSelectedAlpha
+                        : AppConstants.tintAlpha,
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: () => Navigator.of(sheetContext).pop(item),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppConstants.spaceMd,
+                        vertical: AppConstants.spaceSmMd + 2,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(iconFor(item), size: 15, color: fg),
+                          const SizedBox(width: AppConstants.spaceSm),
+                          Text(
+                            item.name,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: fg,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 /// A header (type icon + type name) with a sideways list of its cards.
@@ -433,10 +1067,11 @@ class _FlipAccountCardState extends State<_FlipAccountCard>
   }
 }
 
-/// Front: icon on the top right, then name, balance and category at the
-/// bottom left. Sizes are measured from the sample (u = width / 612).
+/// Front: category icon on the top right, then name, balance and category
+/// at the bottom left. Sizes are measured from the sample (u = width / 612).
 /// Text sizes use k = u * textFactor, so at the Big font size they match
 /// the sample and change only slightly at other sizes.
+/// The name and the balance shrink to fit the card, however long they are.
 class _CardFront extends StatelessWidget {
   final _AccountCardData account;
   final bool hidden;
@@ -476,7 +1111,7 @@ class _CardFront extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          // Icon, top right
+          // Icon, top right (the account's category icon)
           Positioned(
             top: 29 * u,
             right: 28 * u,
@@ -488,7 +1123,7 @@ class _CardFront extends StatelessWidget {
                 borderRadius: BorderRadius.circular(16 * u),
               ),
               child: Icon(
-                _iconForType(account.typeName, account.typeIcon),
+                _iconForCategory(account.categoryIcon),
                 size: 32 * u,
                 color: fg,
               ),
@@ -518,17 +1153,22 @@ class _CardFront extends StatelessWidget {
                   ),
                 ),
                 SizedBox(height: 14 * u),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    balanceText,
-                    maxLines: 1,
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontSize: 52 * k,
-                      height: 1.1,
-                      fontWeight: FontWeight.w700,
-                      color: fg,
+                // Balance: shrinks to fit the card width (no size limit).
+                SizedBox(
+                  width: double.infinity, // CHANGED: gives FittedBox a width
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      balanceText,
+                      maxLines: 1,
+                      softWrap: false,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontSize: 52 * k,
+                        height: 1.1,
+                        fontWeight: FontWeight.w700,
+                        color: fg,
+                      ),
                     ),
                   ),
                 ),
@@ -589,6 +1229,9 @@ class _CardBack extends StatelessWidget {
     final u = width / AppConstants.cardSampleWidth;
     final k = u * textFactor; // text size unit
 
+    final title = account.noteTitle?.trim() ?? '';
+    final body = account.noteBody?.trim() ?? '';
+
     return Container(
       width: width,
       height: _cardHeightFor(width),
@@ -626,7 +1269,7 @@ class _CardBack extends StatelessWidget {
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  'Notes',
+                  title.isEmpty ? 'Notes' : title,
                   maxLines: 1,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     fontSize: 24 * k,
@@ -645,7 +1288,7 @@ class _CardBack extends StatelessWidget {
             right: 58 * u,
             bottom: 82 * u,
             child: Text(
-              'Notes',
+              body.isEmpty ? 'Notes' : body,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodyMedium?.copyWith(
                 fontSize: 24 * k,
@@ -802,6 +1445,8 @@ class TotalBalanceCard extends StatelessWidget {
                             summary.totalBalance,
                             symbol: AppConstants.currencyPrefix,
                           ),
+                          maxLines: 1,
+                          softWrap: false,
                           style: balanceStyle,
                         ),
                 ),
