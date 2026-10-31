@@ -123,6 +123,10 @@ double _textFactorFor(BuildContext context) =>
 
 double _cardHeightFor(double width) => width / AppConstants.cardRatio;
 
+/// CHANGED: empty space left under the lists so the floating + button
+/// (56 button + 12 ring + 16 margin) never covers the last card.
+const double _addButtonClearance = 56 + 12 + AppConstants.spaceMd * 2;
+
 class FinanceScreen extends StatefulWidget {
   const FinanceScreen({super.key});
 
@@ -373,7 +377,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
               AppConstants.spaceMd,
               AppConstants.spaceSm,
               AppConstants.spaceMd,
-              AppConstants.spaceLg,
+              _addButtonClearance, // CHANGED (was spaceLg)
             ),
             buildDefaultDragHandles: false,
             onReorder: (oldIndex, newIndex) =>
@@ -538,7 +542,8 @@ class _FinanceScreenState extends State<FinanceScreen> {
                         hidden: _hideAmounts,
                         listView: _listView,
                       ),
-                    const SizedBox(height: AppConstants.spaceLg),
+                    // CHANGED: room for the floating + button (was spaceLg)
+                    const SizedBox(height: _addButtonClearance),
                   ],
                 ),
         ),
@@ -1861,14 +1866,15 @@ class TotalBalanceCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: AppConstants.spaceSm),
-              // Analytics: green = income | red = expense (right side)
-                            Row(
+              // Analytics: income | expense (right side), colors come from
+              // Settings > Theme > Specific Color.
+              Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
                     Icons.arrow_upward,
                     size: 11,
-                    color: incomeColor, // CHANGED (was const + AppConstants.incomeColor)
+                    color: incomeColor, // CHANGED
                   ),
                   const SizedBox(width: 2),
                   hidden
@@ -1884,7 +1890,7 @@ class TotalBalanceCard extends StatelessWidget {
                   Icon(
                     Icons.arrow_downward,
                     size: 11,
-                    color: expenseColor, // CHANGED (was const + AppConstants.expenseColor)
+                    color: expenseColor, // CHANGED
                   ),
                   const SizedBox(width: 2),
                   hidden
