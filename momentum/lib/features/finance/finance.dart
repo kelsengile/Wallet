@@ -296,7 +296,6 @@ class _FinanceScreenState extends State<FinanceScreen> {
     int oldIndex,
     int newIndex,
   ) {
-    if (newIndex > oldIndex) newIndex -= 1;
     if (newIndex == oldIndex) return;
     final ids = [for (final g in groups) g.first.typeId];
     final moved = ids.removeAt(oldIndex);
@@ -380,7 +379,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
               _addButtonClearance, // CHANGED (was spaceLg)
             ),
             buildDefaultDragHandles: false,
-            onReorder: (oldIndex, newIndex) =>
+            onReorderItem: (oldIndex, newIndex) =>
                 _reorderTypes(groups, oldIndex, newIndex),
             // While dragging: no extra box or shadow, only the bar moves.
             proxyDecorator: (child, index, animation) => Material(
