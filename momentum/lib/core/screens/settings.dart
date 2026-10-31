@@ -93,6 +93,7 @@ Widget _accentDialog(
 
 /// The transaction types whose color can be changed in
 /// Theme > Specific Color. Each one has its own saved key and default.
+/// Income points up and Expense points down (same icons everywhere).
 enum TransactionColorType {
   income(
     'Income',
@@ -112,11 +113,11 @@ enum TransactionColorType {
     AppConstants.prefTransferColor,
     AppConstants.transferColor,
   ),
-  notification(
-    'Notification',
+  reminder(
+    'Reminder',
     Icons.notifications_outlined,
-    AppConstants.prefNotificationColor,
-    AppConstants.notificationColor,
+    AppConstants.prefReminderColor,
+    AppConstants.reminderColor,
   );
 
   final String label;
@@ -250,8 +251,7 @@ class AppSettings extends ChangeNotifier {
   Color get incomeColor => transactionColor(TransactionColorType.income);
   Color get expenseColor => transactionColor(TransactionColorType.expense);
   Color get transferColor => transactionColor(TransactionColorType.transfer);
-  Color get notificationColor =>
-      transactionColor(TransactionColorType.notification);
+  Color get reminderColor => transactionColor(TransactionColorType.reminder);
 
   void setTransactionColor(TransactionColorType type, Color color) {
     if (transactionColor(type) == color) return;
@@ -832,7 +832,7 @@ class _ThemeConfigDialog extends StatelessWidget {
 }
 
 /// Pop-up with the colors of specific parts of the app.
-/// For now: Transaction colors (Income, Expense, Transfer, Notification).
+/// For now: Transaction colors (Income, Expense, Transfer, Reminder).
 /// Each one is a bar with its color in a circle on the right side.
 /// Tapping a bar opens the color pop-up for that transaction type.
 class _SpecificColorDialog extends StatelessWidget {
