@@ -96,26 +96,21 @@ class MomentumApp extends StatelessWidget {
 }
 
 /// One small button that pops up above the + button.
+/// Its label, icon and color all come from Settings > Theme > Specific Color.
 class _AddAction {
-  final String label;
-  final IconData icon;
-
-  /// Its color comes from Settings > Theme > Specific Color.
   final TransactionColorType type;
+  const _AddAction(this.type);
 
-  const _AddAction(this.label, this.icon, this.type);
+  String get label => type.label;
+  IconData get icon => type.icon;
 }
 
 /// Finance buttons, listed from the + button going UP.
 const _financeAddActions = <_AddAction>[
-  _AddAction('Income', Icons.arrow_downward, TransactionColorType.income),
-  _AddAction('Expense', Icons.arrow_upward, TransactionColorType.expense),
-  _AddAction('Transfer', Icons.swap_horiz, TransactionColorType.transfer),
-  _AddAction(
-    'Notification',
-    Icons.notifications_outlined,
-    TransactionColorType.notification,
-  ),
+  _AddAction(TransactionColorType.income),
+  _AddAction(TransactionColorType.expense),
+  _AddAction(TransactionColorType.transfer),
+  _AddAction(TransactionColorType.reminder),
 ];
 
 class _Destination {
@@ -300,16 +295,22 @@ class _HomeShellState extends State<HomeShell>
     _downPos = null;
   }
 
+  /// 1.0 at the default font size; grows / shrinks with the font setting.
+  double _buttonScale(BuildContext context) =>
+      MediaQuery.textScalerOf(context).scale(AppConstants.baseFontSize) /
+      AppConstants.baseFontSize *
+      AppConstants.addButtonScale;
+
   /// The + is sucked into the middle, then the X grows out of it.
   /// Closing plays the same thing backwards.
-  Widget _addIcon(double value, Color color) {
+  Widget _addIcon(double value, Color color, double size) {
     final showX = value >= 0.5;
     final scale = showX
         ? Curves.easeOut.transform((value - 0.5) / 0.5)
         : 1 - Curves.easeIn.transform(value / 0.5);
     return Transform.scale(
       scale: scale,
-      child: Icon(showX ? Icons.close : Icons.add, size: 28, color: color),
+      child: Icon(showX ? Icons.close : Icons.add, size: size, color: color),
     );
   }
 
@@ -332,79 +333,17 @@ class _HomeShellState extends State<HomeShell>
     return false;
   }
 
-  /// Empty pop-up from below, same style as "New Account".
-  Future<void> _openAddSheet(_AddAction action) {
-    final accent = AppTheme.accentOf(context);
-    final fg = accent.foreground;
-    return showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: accent.background,
-      barrierColor: AppConstants.popupBarrier,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      builder: (sheetContext) {
-        final base = Theme.of(sheetContext);
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(
-            20,
-            AppConstants.spaceSmMd,
-            20,
-            AppConstants.spaceLg,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: fg.withValues(alpha: AppConstants.borderAlpha),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: AppConstants.spaceSmMd),
-              Row(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: fg.withValues(alpha: AppConstants.tintAlpha),
-                      borderRadius:
-                          BorderRadius.circular(AppConstants.radiusMd),
-                    ),
-                    child: Icon(action.icon, color: fg),
-                  ),
-                  const SizedBox(width: AppConstants.spaceMd),
-                  Text(
-                    action.label,
-                    style: base.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: fg,
-                    ),
-                  ),
-                ],
-              ),
-              // Empty for now.
-              const SizedBox(height: AppConstants.spaceXl * 3),
-            ],
-          ),
-        );
-      },
-    );
-  }
+  /// Opens the Income / Expense / Transfer / Reminder pop-up.
+  /// The pop-ups live in features/finance/finance.dart.
+  Future<void> _openAddSheet(_AddAction action) =>
+      showTransactionSheet(context, action.type);
 
   /// The small buttons and the + button.
   List<Widget> _addLayer(BuildContext context, _Destination current) {
     final accent = AppTheme.accentOf(context);
     final ringColor = Theme.of(context).scaffoldBackgroundColor;
     final actions = current.addActions;
+    final s = _buttonScale(context);
 
     return [
       Positioned(
@@ -444,17 +383,18 @@ class _HomeShellState extends State<HomeShell>
                           ).transform(value),
                           accent: accent,
                           ringColor: ringColor,
+                          scale: s,
                         ),
-                        const SizedBox(height: 10), // space between buttons
+                        SizedBox(height: 10 * s), // space between buttons
                       ],
                       _RingButton(
                         label: _addOpen ? 'Cancel' : 'Add',
-                        size: 56,
-                        ring: 4,
+                        size: 56 * s,
+                        ring: 4 * s,
                         ringColor: ringColor,
                         color: accent.background,
                         onTap: () => setState(() => _addOpen = !_addOpen),
-                        child: _addIcon(value, accent.foreground),
+                        child: _addIcon(value, accent.foreground, 28 * s),
                       ),
                     ],
                   );
@@ -469,25 +409,27 @@ class _HomeShellState extends State<HomeShell>
 
   /// One small transaction button. [t] is its own animation progress
   /// (0 = hidden under the +, 1 = fully out). It slides up, grows and fades in.
+  /// [scale] makes the circle and the icon follow the font size.
   Widget _smallButton({
     required _AddAction action,
     required double t,
     required AppAccent accent,
     required Color ringColor,
+    required double scale,
   }) {
     return IgnorePointer(
       ignoring: !_addOpen,
       child: Opacity(
         opacity: t.clamp(0.0, 1.0),
         child: Transform.translate(
-          offset: Offset(0, (1 - t) * 28),
+          offset: Offset(0, (1 - t) * 28 * scale),
           child: Transform.scale(
             scale: t.clamp(0.0, 1.3),
             alignment: Alignment.bottomRight,
             child: _RingButton(
               label: action.label,
-              size: 44,
-              ring: 3,
+              size: 44 * scale,
+              ring: 3 * scale,
               ringColor: ringColor,
               // Dark tint of the chosen transaction color.
               color: Color.alphaBlend(
@@ -500,7 +442,11 @@ class _HomeShellState extends State<HomeShell>
                 _closeAdd();
                 _openAddSheet(action);
               },
-              child: Icon(action.icon, size: 22, color: accent.foreground),
+              child: Icon(
+                action.icon,
+                size: 22 * scale,
+                color: accent.foreground,
+              ),
             ),
           ),
         ),
@@ -843,8 +789,8 @@ class _RingButton extends StatelessWidget {
             clipBehavior: Clip.antiAlias,
             child: InkWell(
               onTap: onTap,
-              splashFactory: NoSplash.splashFactory, // CHANGED: no ripple
-              highlightColor: Colors.transparent, // CHANGED: no press glow
+              splashFactory: NoSplash.splashFactory, // no ripple
+              highlightColor: Colors.transparent, // no press glow
               hoverColor: Colors.transparent,
               focusColor: Colors.transparent,
               overlayColor: const WidgetStatePropertyAll(Colors.transparent),

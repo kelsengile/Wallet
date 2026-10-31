@@ -1,7 +1,11 @@
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/constants.dart';
@@ -123,9 +127,11 @@ double _textFactorFor(BuildContext context) =>
 
 double _cardHeightFor(double width) => width / AppConstants.cardRatio;
 
-/// CHANGED: empty space left under the lists so the floating + button
-/// (56 button + 12 ring + 16 margin) never covers the last card.
-const double _addButtonClearance = 56 + 12 + AppConstants.spaceMd * 2;
+/// Empty space left under the lists so the floating + button
+/// (56 button + 8 ring, scaled with the font) never covers the last card.
+double _addButtonClearanceOf(BuildContext context) =>
+    (56 + 8) * _fontScale(context) * AppConstants.addButtonScale +
+    AppConstants.spaceMd * 2;
 
 class FinanceScreen extends StatefulWidget {
   const FinanceScreen({super.key});
@@ -145,13 +151,13 @@ class _FinanceScreenState extends State<FinanceScreen> {
   // true = amounts are hidden (eye closed), false = amounts are shown.
   bool _hideAmounts = false;
 
-  // NEW: false = sideways cards, true = list of rows.
+  // false = sideways cards, true = list of rows.
   bool _listView = false;
 
-  // NEW: true while the user is dragging account types to reorder them.
+  // true while the user is dragging account types to reorder them.
   bool _rearranging = false;
 
-  // NEW: saved order of the account type ids.
+  // saved order of the account type ids.
   List<int> _typeOrder = const [];
 
   @override
@@ -169,7 +175,6 @@ class _FinanceScreenState extends State<FinanceScreen> {
     super.dispose();
   }
 
-  // NEW
   Future<void> _loadOrder() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -186,7 +191,6 @@ class _FinanceScreenState extends State<FinanceScreen> {
     }
   }
 
-  // NEW
   Future<void> _saveOrder(List<int> ids) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -253,7 +257,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
     }
   }
 
-  /// CHANGED: accounts grouped by account type, in the saved order.
+  /// Accounts grouped by account type, in the saved order.
   /// Types that are not in the saved order yet go to the end (by id).
   List<List<_AccountCardData>> get _groups {
     final groups = <int, List<_AccountCardData>>{};
@@ -272,7 +276,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
     return [for (final id in ids) groups[id]!];
   }
 
-  /// NEW: tap. Finishes rearranging, or switches card view <-> list view.
+  /// Tap. Finishes rearranging, or switches card view <-> list view.
   void _onViewButtonTap() {
     setState(() {
       if (_rearranging) {
@@ -283,14 +287,14 @@ class _FinanceScreenState extends State<FinanceScreen> {
     });
   }
 
-  /// NEW: long press. Starts rearranging the account types.
+  /// Long press. Starts rearranging the account types.
   void _onViewButtonLongPress() {
     if (_rearranging) return;
     HapticFeedback.mediumImpact();
     setState(() => _rearranging = true);
   }
 
-  /// NEW: moves one account type to a new place and saves the order.
+  /// Moves one account type to a new place and saves the order.
   void _reorderTypes(
     List<List<_AccountCardData>> groups,
     int oldIndex,
@@ -320,7 +324,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
     );
   }
 
-  /// NEW: the Rearrange button. Tap = view, long press = reorder types.
+  /// The Rearrange button. Tap = view, long press = reorder types.
   Widget _viewButton() {
     final IconData icon;
     final String label;
@@ -350,7 +354,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
     );
   }
 
-  /// NEW: one bar per account type that can be dragged.
+  /// One bar per account type that can be dragged.
   Widget _rearrangeList(
     BuildContext context,
     List<List<_AccountCardData>> groups,
@@ -372,11 +376,11 @@ class _FinanceScreenState extends State<FinanceScreen> {
         ),
         Expanded(
           child: ReorderableListView(
-            padding: const EdgeInsets.fromLTRB(
+            padding: EdgeInsets.fromLTRB(
               AppConstants.spaceMd,
               AppConstants.spaceSm,
               AppConstants.spaceMd,
-              _addButtonClearance, // CHANGED (was spaceLg)
+              _addButtonClearanceOf(context),
             ),
             buildDefaultDragHandles: false,
             onReorderItem: (oldIndex, newIndex) =>
@@ -521,7 +525,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                 tooltip: _hideAmounts ? 'Show amounts' : 'Hide amounts',
                 onPressed: () => setState(() => _hideAmounts = !_hideAmounts),
               ),
-              // CHANGED: tap = card / list view, long press = reorder types.
+              // Tap = card / list view, long press = reorder types.
               _viewButton(),
             ],
           ),
@@ -541,8 +545,8 @@ class _FinanceScreenState extends State<FinanceScreen> {
                         hidden: _hideAmounts,
                         listView: _listView,
                       ),
-                    // CHANGED: room for the floating + button (was spaceLg)
-                    const SizedBox(height: _addButtonClearance),
+                    // Room for the floating + button.
+                    SizedBox(height: _addButtonClearanceOf(context)),
                   ],
                 ),
         ),
@@ -1159,7 +1163,7 @@ Future<CategoryItem?> _pickItem(
 class _AccountTypeSection extends StatelessWidget {
   final List<_AccountCardData> accounts;
   final bool hidden;
-  final bool listView; // NEW
+  final bool listView;
 
   const _AccountTypeSection({
     required this.accounts,
@@ -1219,7 +1223,7 @@ class _AccountTypeSection extends StatelessWidget {
           ),
         ),
         if (listView)
-          // NEW: list view, one row per account.
+          // List view, one row per account.
           Padding(
             padding: const EdgeInsets.symmetric(
               horizontal: AppConstants.spaceMd,
@@ -1263,7 +1267,7 @@ class _AccountTypeSection extends StatelessWidget {
   }
 }
 
-/// NEW: one account as a row (list view). It has everything the front of
+/// One account as a row (list view). It has everything the front of
 /// the card has: category icon, name, balance and category.
 class _AccountListTile extends StatelessWidget {
   final _AccountCardData account;
@@ -1296,7 +1300,7 @@ class _AccountListTile extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // CHANGED: text first (left side)
+          // Text first (left side)
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1329,7 +1333,7 @@ class _AccountListTile extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: AppConstants.spaceXs),
-                // CHANGED: smaller tag (smaller than the account name)
+                // Smaller tag (smaller than the account name)
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: AppConstants.spaceSm,
@@ -1356,7 +1360,7 @@ class _AccountListTile extends StatelessWidget {
             ),
           ),
           const SizedBox(width: AppConstants.spaceMd),
-          // CHANGED: category icon now on the right side
+          // Category icon on the right side
           Container(
             width: 33,
             height: 33,
@@ -1762,7 +1766,7 @@ class TotalBalanceCard extends StatelessWidget {
     );
   }
 
-  // NEW: rebuilds the card when a setting (like a transaction color) changes.
+  // Rebuilds the card when a setting (like a transaction color) changes.
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -1771,14 +1775,13 @@ class TotalBalanceCard extends StatelessWidget {
     );
   }
 
-  // CHANGED: was `build`, no @override anymore.
   Widget _buildCard(BuildContext context) {
     final theme = Theme.of(context);
     final accent = AppTheme.accentOf(context);
     final fg = accent.foreground;
     final muted = fg.withValues(alpha: AppConstants.mutedAlpha);
 
-    // NEW: colors picked in Settings > Theme > Specific Color
+    // Colors picked in Settings > Theme > Specific Color
     final incomeColor = AppSettings.instance.incomeColor;
     final expenseColor = AppSettings.instance.expenseColor;
 
@@ -1792,11 +1795,11 @@ class TotalBalanceCard extends StatelessWidget {
       height: 1.0, // removes the font's extra line spacing
     );
     final incomeStyle = theme.textTheme.labelSmall?.copyWith(
-      color: incomeColor, // CHANGED
+      color: incomeColor,
       fontWeight: FontWeight.w600,
     );
     final expenseStyle = theme.textTheme.labelSmall?.copyWith(
-      color: expenseColor, // CHANGED
+      color: expenseColor,
       fontWeight: FontWeight.w600,
     );
 
@@ -1873,7 +1876,7 @@ class TotalBalanceCard extends StatelessWidget {
                   Icon(
                     Icons.arrow_upward,
                     size: 11,
-                    color: incomeColor, // CHANGED
+                    color: incomeColor,
                   ),
                   const SizedBox(width: 2),
                   hidden
@@ -1889,7 +1892,7 @@ class TotalBalanceCard extends StatelessWidget {
                   Icon(
                     Icons.arrow_downward,
                     size: 11,
-                    color: expenseColor, // CHANGED
+                    color: expenseColor,
                   ),
                   const SizedBox(width: 2),
                   hidden
@@ -1906,5 +1909,1464 @@ class TotalBalanceCard extends StatelessWidget {
     return AppConstants.totalCardUseRatio
         ? AspectRatio(aspectRatio: AppConstants.cardRatio, child: card)
         : card;
+  }
+}
+
+// ------------------------------------------------------------------
+// Transaction pop-ups: Income, Expense, Transfer and Reminder
+// ------------------------------------------------------------------
+
+/// Opens the pop-up for [type] (called by the + button in main.dart).
+Future<void> showTransactionSheet(
+  BuildContext context,
+  TransactionColorType type,
+) {
+  final accent = AppTheme.accentOf(context);
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    backgroundColor: accent.background,
+    barrierColor: AppConstants.popupBarrier,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+    ),
+    builder: (_) => _TransactionSheet(type: type),
+  );
+}
+
+const double _sheetRadius = 4;
+const double _sheetGap = 12;
+const List<String> _monthNames = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+const List<String> _weekdayShort = [
+  'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun',
+];
+
+String _two(int n) => n.toString().padLeft(2, '0');
+String _fmtDate(DateTime d) => '${_two(d.month)}/${_two(d.day)}/${d.year}';
+
+/// An account type with its accounts, for the grouped account picker.
+class _AccountGroup {
+  final int typeId;
+  final String typeName;
+  final String? typeIcon;
+  final List<CategoryItem> items;
+  const _AccountGroup(this.typeId, this.typeName, this.typeIcon, this.items);
+}
+
+/// Account picker: accounts grouped under their type. The types follow the
+/// order of the Finance screen. [disabledId] is shown crossed out and can't
+/// be tapped (used on a transfer for the account already chosen on the
+/// other side).
+Future<CategoryItem?> _pickGroupedAccount(
+  BuildContext context, {
+  required String title,
+  required List<_AccountGroup> groups,
+  CategoryItem? selected,
+  int? disabledId,
+}) {
+  final base = Theme.of(context);
+  final accent = AppTheme.accentOf(context);
+  final fg = accent.foreground;
+
+  return showModalBottomSheet<CategoryItem>(
+    context: context,
+    backgroundColor: accent.background,
+    barrierColor: AppConstants.popupBarrier,
+    isScrollControlled: true,
+    useSafeArea: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+    ),
+    builder: (sheetContext) => SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(
+        AppConstants.spaceLg,
+        AppConstants.spaceSmMd,
+        AppConstants.spaceLg,
+        AppConstants.spaceLg,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: fg.withValues(alpha: AppConstants.borderAlpha),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: AppConstants.spaceLg),
+          Text(
+            title,
+            style: base.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: fg,
+            ),
+          ),
+          const SizedBox(height: AppConstants.spaceMd),
+          for (final group in groups) ...[
+            // Type header
+            Row(
+              children: [
+                Icon(
+                  _iconForType(group.typeName, group.typeIcon),
+                  size: 18,
+                  color: fg.withValues(alpha: AppConstants.mutedAlpha),
+                ),
+                const SizedBox(width: AppConstants.spaceSm),
+                Text(
+                  group.typeName,
+                  style: base.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: fg.withValues(alpha: AppConstants.mutedAlpha),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppConstants.spaceSm),
+            Wrap(
+              spacing: AppConstants.spaceSm,
+              runSpacing: AppConstants.spaceSm,
+              children: [
+                for (final item in group.items)
+                  Opacity(
+                    opacity: item.id == disabledId ? 0.4 : 1,
+                    child: Material(
+                      color: fg.withValues(
+                        alpha: item.id == selected?.id
+                            ? AppConstants.iconTileSelectedAlpha
+                            : AppConstants.tintAlpha,
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                      clipBehavior: Clip.antiAlias,
+                      child: InkWell(
+                        onTap: item.id == disabledId
+                            ? null
+                            : () => Navigator.of(sheetContext).pop(item),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppConstants.spaceMd,
+                            vertical: AppConstants.spaceSmMd + 2,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                _iconForType(group.typeName, group.typeIcon),
+                                size: 15,
+                                color: fg,
+                              ),
+                              const SizedBox(width: AppConstants.spaceSm),
+                              Text(
+                                item.name,
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: fg,
+                                  decoration: item.id == disabledId
+                                      ? TextDecoration.lineThrough
+                                      : null,
+                                  decorationColor: fg,
+                                  decorationThickness: 2,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: AppConstants.spaceMd),
+          ],
+        ],
+      ),
+    ),
+  );
+}
+
+/// Outlined field look shared by every field of the pop-ups.
+InputDecoration _sheetDecoration(
+  Color fg, {
+  required String label,
+  Widget? icon,
+  Widget? suffix,
+  FloatingLabelBehavior? floating,
+  double vPad = 15,
+  bool alignLabelWithHint = false,
+  EdgeInsets? contentPadding,
+}) {
+  OutlineInputBorder border(double alpha, double width) => OutlineInputBorder(
+        borderRadius: BorderRadius.circular(_sheetRadius),
+        borderSide: BorderSide(
+          color: fg.withValues(alpha: alpha),
+          width: width,
+        ),
+      );
+  return InputDecoration(
+    isDense: true,
+    labelText: label,
+    alignLabelWithHint: alignLabelWithHint,
+    labelStyle: TextStyle(color: fg.withValues(alpha: AppConstants.mutedAlpha)),
+    floatingLabelStyle: TextStyle(color: fg),
+    floatingLabelBehavior: floating,
+    prefixIcon: icon,
+    suffixIcon: suffix,
+    contentPadding: contentPadding ??
+        EdgeInsets.symmetric(
+          horizontal: AppConstants.spaceMd,
+          vertical: vPad,
+        ),
+    border: border(AppConstants.borderAlpha, 1),
+    enabledBorder: border(AppConstants.borderAlpha, 1),
+    focusedBorder: border(1, 2),
+  );
+}
+
+/// A tappable box that looks like the other fields.
+Widget _sheetSelector({
+  required Color fg,
+  required String label,
+  required Widget icon,
+  required VoidCallback onTap,
+  String? value,
+  bool chevron = true,
+  bool alwaysFloat = false,
+  bool shrink = false,
+  double vPad = 12,
+}) {
+  final style = TextStyle(color: fg, fontSize: 16);
+  return InkWell(
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(_sheetRadius),
+    child: InputDecorator(
+      isEmpty: value == null,
+      decoration: _sheetDecoration(
+        fg,
+        label: label,
+        vPad: vPad,
+        icon: icon,
+        floating: alwaysFloat ? FloatingLabelBehavior.always : null,
+        suffix: chevron ? Icon(Icons.expand_more, color: fg) : null,
+      ),
+      child: shrink
+          ? FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(value ?? '', maxLines: 1, style: style),
+            )
+          : Text(
+              value ?? '',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: style,
+            ),
+    ),
+  );
+}
+
+class _TransactionSheet extends StatefulWidget {
+  final TransactionColorType type;
+  const _TransactionSheet({required this.type});
+
+  @override
+  State<_TransactionSheet> createState() => _TransactionSheetState();
+}
+
+class _TransactionSheetState extends State<_TransactionSheet> {
+  static const _repeatOptions = <CategoryItem>[
+    CategoryItem(0, 'No repeat'),
+    CategoryItem(1, 'Daily'),
+    CategoryItem(2, 'Weekly'),
+    CategoryItem(3, 'Monthly'),
+    CategoryItem(4, 'Yearly'),
+  ];
+  static const _repeatKeys = ['none', 'daily', 'weekly', 'monthly', 'yearly'];
+
+  final _title = TextEditingController();
+  final _amount = TextEditingController();
+  final _note = TextEditingController();
+
+  List<CategoryItem> _incomeCategories = const [];
+  List<CategoryItem> _expenseCategories = const [];
+  List<_AccountGroup> _accountGroups = const [];
+  final Map<int, String> _accountTypes = {};
+
+  CategoryItem? _category;
+  CategoryItem? _account; // "From" on a transfer
+  CategoryItem? _toAccount;
+  CategoryItem? _repeat; // null = nothing chosen yet (not prefilled)
+  DateTime? _date;
+  bool _reminderIncome = false; // reminder: false = Expense, true = Income
+  String? _imagePath;
+  bool _didSave = false;
+  bool _saving = false;
+  String? _error;
+
+  bool get _isReminder => widget.type == TransactionColorType.reminder;
+  bool get _isTransfer => widget.type == TransactionColorType.transfer;
+  bool get _incomeLike =>
+      _isReminder ? _reminderIncome : widget.type == TransactionColorType.income;
+  List<CategoryItem> get _categoryList =>
+      _incomeLike ? _incomeCategories : _expenseCategories;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!_isReminder) {
+      final n = DateTime.now();
+      _date = DateTime(n.year, n.month, n.day, n.hour, n.minute); // prefilled
+    }
+    _title.addListener(_refresh);
+    _amount.addListener(_refresh);
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _title.removeListener(_refresh);
+    _amount.removeListener(_refresh);
+    _title.dispose();
+    _amount.dispose();
+    _note.dispose();
+    // A picked image that was never saved is not kept.
+    final path = _imagePath;
+    if (!_didSave && path != null) _deleteFile(path);
+    super.dispose();
+  }
+
+  void _refresh() {
+    if (mounted) setState(() {});
+  }
+
+  void _deleteFile(String path) {
+    try {
+      File(path).delete();
+    } catch (_) {}
+  }
+
+  Future<void> _load() async {
+    try {
+      final db = DatabaseHelper.instance;
+      final income = await db.getCategoryItems(CategoryGroup.income);
+      final expense = await db.getCategoryItems(CategoryGroup.expense);
+      final accounts = await db.getAccountOptions();
+
+      // Same type order as the Finance screen.
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getStringList(_FinanceScreenState._orderPref) ??
+          const <String>[];
+      final rank = <int, int>{
+        for (var i = 0; i < saved.length; i++)
+          (int.tryParse(saved[i]) ?? -1): i,
+      };
+      final byType = <int, List<AccountOption>>{};
+      for (final a in accounts) {
+        byType.putIfAbsent(a.typeId, () => []).add(a);
+      }
+      const last = 1 << 30;
+      final typeIds = byType.keys.toList()
+        ..sort((a, b) {
+          final ra = rank[a] ?? last;
+          final rb = rank[b] ?? last;
+          return ra != rb ? ra.compareTo(rb) : a.compareTo(b);
+        });
+      final groups = [
+        for (final id in typeIds)
+          _AccountGroup(
+            id,
+            byType[id]!.first.typeName,
+            byType[id]!.first.typeIcon,
+            [
+              for (final a in byType[id]!)
+                CategoryItem(a.id, a.name, a.typeIcon),
+            ],
+          ),
+      ];
+
+      if (!mounted) return;
+      setState(() {
+        _incomeCategories = income;
+        _expenseCategories = expense;
+        _accountGroups = groups;
+        for (final a in accounts) {
+          _accountTypes[a.id] = a.typeName;
+        }
+      });
+    } on Failure catch (f) {
+      if (mounted) setState(() => _error = f.message);
+    } catch (_) {
+      // Saved order unreadable: the accounts just stay in the default order.
+    }
+  }
+
+  // ---------- Rules ----------
+
+  bool get _canSave {
+    if (_saving) return false;
+    final amount = double.tryParse(_amount.text.trim()) ?? 0;
+    if (amount <= 0 || _date == null) return false;
+    if (_isTransfer) return _account != null && _toAccount != null;
+    if (_title.text.trim().isEmpty) return false;
+    if (_isReminder) return true; // category, account and repeat are optional
+    return _account != null && _category != null;
+  }
+
+  Future<void> _save() async {
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    final db = DatabaseHelper.instance;
+    final amount = double.tryParse(_amount.text.trim()) ?? 0;
+    try {
+      switch (widget.type) {
+        case TransactionColorType.income:
+        case TransactionColorType.expense:
+          await db.addTransaction(
+            type: widget.type.name,
+            title: _title.text,
+            amount: amount,
+            date: _date!,
+            accountId: _account!.id,
+            categoryId: _category!.id,
+            note: _note.text,
+            imagePath: _imagePath,
+          );
+        case TransactionColorType.transfer:
+          await db.addTransfer(
+            title: _title.text.trim().isEmpty ? 'Transfer' : _title.text,
+            amount: amount,
+            date: _date!,
+            fromAccountId: _account!.id,
+            toAccountId: _toAccount!.id,
+            note: _note.text,
+            imagePath: _imagePath,
+          );
+        case TransactionColorType.reminder:
+          await db.addReminder(
+            type: _reminderIncome ? 'income' : 'expense',
+            title: _title.text,
+            amount: amount,
+            dueDate: _date!,
+            categoryId: _category?.id,
+            accountId: _account?.id,
+            repeat: _repeatKeys[_repeat?.id ?? 0],
+            note: _note.text,
+            imagePath: _imagePath,
+          );
+      }
+      _didSave = true;
+      if (mounted) Navigator.of(context).pop();
+    } on Failure catch (f) {
+      if (mounted) setState(() => _error = f.message);
+    } catch (_) {
+      if (mounted) setState(() => _error = const UnknownFailure().message);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  // ---------- Pickers ----------
+
+  IconData _accountIcon(CategoryItem item) =>
+      _iconForType(_accountTypes[item.id] ?? '', item.icon);
+
+  Future<void> _pickCategory() async {
+    final picked = await _pickItem(
+      context,
+      title: 'Category',
+      items: _categoryList,
+      selected: _category,
+      iconFor: (item) => _iconForCategory(item.icon),
+    );
+    if (picked != null) setState(() => _category = picked);
+  }
+
+  Future<void> _pickAccount({bool isTo = false}) async {
+    // On a transfer the account chosen on the other side is crossed out.
+    final other = isTo ? _account : _toAccount;
+    final picked = await _pickGroupedAccount(
+      context,
+      title: isTo ? 'To' : (_isTransfer ? 'From' : 'Account'),
+      groups: _accountGroups,
+      selected: isTo ? _toAccount : _account,
+      disabledId: _isTransfer ? other?.id : null,
+    );
+    if (picked == null) return;
+    setState(() {
+      if (isTo) {
+        _toAccount = picked;
+      } else {
+        _account = picked;
+      }
+    });
+  }
+
+  Future<void> _pickRepeat() async {
+    final picked = await _pickItem(
+      context,
+      title: 'Repeat',
+      items: _repeatOptions,
+      selected: _repeat,
+      iconFor: (item) =>
+          item.id == 0 ? Icons.remove_circle_outline : Icons.repeat,
+    );
+    if (picked != null) setState(() => _repeat = picked);
+  }
+
+  Future<void> _pickDate(Color color) async {
+    final picked = await _showDateTimeDialog(
+      context,
+      initial: _date ?? DateTime.now(),
+      color: color,
+    );
+    if (picked != null) setState(() => _date = picked);
+  }
+
+  void _swapAccounts() {
+    setState(() {
+      final tmp = _account;
+      _account = _toAccount;
+      _toAccount = tmp;
+    });
+  }
+
+  // ---------- Image ----------
+
+  Future<String> _copyToAppFolder(String source) async {
+    final dir = await getApplicationDocumentsDirectory();
+    final folder = Directory(p.join(dir.path, 'attachments'));
+    if (!await folder.exists()) await folder.create(recursive: true);
+    final target = p.join(
+      folder.path,
+      '${DateTime.now().microsecondsSinceEpoch}${p.extension(source)}',
+    );
+    await File(source).copy(target);
+    return target;
+  }
+
+  /// Asks Camera or Gallery, then keeps a copy inside the app.
+  Future<void> _chooseImage() async {
+    final choice = await _pickItem(
+      context,
+      title: 'Add image',
+      items: const [CategoryItem(0, 'Camera'), CategoryItem(1, 'Gallery')],
+      iconFor: (item) => item.id == 0
+          ? Icons.photo_camera_outlined
+          : Icons.photo_library_outlined,
+    );
+    if (choice == null || !mounted) return;
+    try {
+      final file = await ImagePicker().pickImage(
+        source: choice.id == 0 ? ImageSource.camera : ImageSource.gallery,
+        imageQuality: 80,
+        maxWidth: 1600,
+      );
+      if (file == null) return;
+      final saved = await _copyToAppFolder(file.path);
+      final old = _imagePath;
+      if (old != null) _deleteFile(old);
+      if (mounted) setState(() => _imagePath = saved);
+    } catch (_) {
+      if (mounted) setState(() => _error = 'Couldn\'t get that image.');
+    }
+  }
+
+  void _removeImage() {
+    final old = _imagePath;
+    if (old != null) _deleteFile(old);
+    setState(() => _imagePath = null);
+  }
+
+  Widget _imageTile(Color fg, double size) {
+    final path = _imagePath;
+    return InkWell(
+      onTap: _chooseImage,
+      borderRadius: BorderRadius.circular(_sheetRadius),
+      child: Container(
+        width: size,
+        height: size,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(_sheetRadius),
+          border: Border.all(
+            color: fg.withValues(alpha: AppConstants.borderAlpha),
+          ),
+        ),
+        child: path == null
+            ? Center(
+                child: Icon(
+                  Icons.add_photo_alternate_outlined,
+                  color: fg,
+                  size: 30,
+                ),
+              )
+            : Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.file(
+                    File(path),
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => Center(
+                      child: Icon(Icons.broken_image_outlined, color: fg),
+                    ),
+                  ),
+                  Positioned(
+                    top: 3,
+                    right: 3,
+                    child: GestureDetector(
+                      onTap: _removeImage,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: const BoxDecoration(
+                          color: Colors.black54,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.close,
+                          size: 16,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+
+  // ---------- Pieces ----------
+
+  Widget _kindButton({
+    required bool selected,
+    required Color color,
+    required Color fg,
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: Material(
+        color: selected
+            ? color.withValues(alpha: 0.18)
+            : fg.withValues(alpha: AppConstants.tintAlpha),
+        shape: StadiumBorder(
+          side: selected ? BorderSide(color: color, width: 2) : BorderSide.none,
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: SizedBox(
+            height: 48,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: 18, color: selected ? color : fg),
+                const SizedBox(width: AppConstants.spaceSm),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: selected ? color : fg,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _dateField(Color fg, Color color, {required bool due}) {
+    final d = _date;
+    return _sheetSelector(
+      fg: fg,
+      label: due ? 'Due date' : 'Date',
+      icon: Icon(Icons.calendar_today_outlined, color: color),
+      // Date and the Hour:Min of the transaction.
+      value: d == null ? null : '${_fmtDate(d)}  ${Utils.formatTime(d)}',
+      chevron: due,
+      alwaysFloat: !due,
+      shrink: true,
+      vPad: 15,
+      onTap: () => _pickDate(color),
+    );
+  }
+
+  Widget _accountField(Color fg, {String label = 'Account', bool isTo = false}) {
+    final value = isTo ? _toAccount : _account;
+    return _sheetSelector(
+      fg: fg,
+      label: label,
+      value: value?.name,
+      icon: Icon(
+        value == null ? Icons.touch_app_outlined : _accountIcon(value),
+        color: fg,
+      ),
+      onTap: () => _pickAccount(isTo: isTo),
+    );
+  }
+
+  Widget _categoryField(Color fg) {
+    final value = _category;
+    return _sheetSelector(
+      fg: fg,
+      label: 'Category',
+      value: value?.name,
+      icon: Icon(
+        value == null
+            ? (_isReminder ? Icons.label_outline : Icons.touch_app_outlined)
+            : _iconForCategory(value.icon),
+        color: fg,
+      ),
+      onTap: _pickCategory,
+    );
+  }
+
+  Widget _repeatField(Color fg) {
+    final value = _repeat;
+    return _sheetSelector(
+      fg: fg,
+      label: 'Repeat',
+      value: value?.name,
+      icon: Icon(
+        (value == null || value.id == 0)
+            ? Icons.remove_circle_outline
+            : Icons.repeat,
+        color: fg,
+      ),
+      onTap: _pickRepeat,
+    );
+  }
+
+  Widget _swapButton(Color color, double scale) {
+    return InkWell(
+      customBorder: const CircleBorder(),
+      onTap: _swapAccounts,
+      child: Container(
+        width: 40 * scale,
+        height: 40 * scale,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: color.withValues(alpha: 0.18),
+          border: Border.all(color: color.withValues(alpha: 0.5)),
+        ),
+        child: Icon(Icons.swap_horiz, size: 20 * scale, color: color),
+      ),
+    );
+  }
+
+  String get _heading {
+    switch (widget.type) {
+      case TransactionColorType.income:
+        return 'New Income';
+      case TransactionColorType.expense:
+        return 'New Expense';
+      case TransactionColorType.transfer:
+        return 'Transfer Funds';
+      case TransactionColorType.reminder:
+        return 'New Reminder';
+    }
+  }
+
+  String get _buttonLabel {
+    switch (widget.type) {
+      case TransactionColorType.transfer:
+        return 'Transfer';
+      case TransactionColorType.reminder:
+        return 'Add Reminder';
+      default:
+        return 'Add Transaction';
+    }
+  }
+
+  IconData get _buttonIcon {
+    switch (widget.type) {
+      case TransactionColorType.transfer:
+        return Icons.swap_horiz;
+      case TransactionColorType.reminder:
+        return Icons.notifications_active;
+      default:
+        return Icons.add;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final base = Theme.of(context);
+    final accent = AppTheme.accentOf(context);
+    final fg = accent.foreground;
+    final bg = accent.background;
+    final muted = fg.withValues(alpha: AppConstants.mutedAlpha);
+    final settings = AppSettings.instance;
+
+    final typeColor = settings.transactionColor(widget.type);
+    // Icons inside the fields. A reminder follows its Expense / Income pick.
+    final fieldColor = _isReminder
+        ? (_reminderIncome ? settings.incomeColor : settings.expenseColor)
+        : typeColor;
+
+    final scale = _fontScale(context).clamp(0.9, 1.3).toDouble();
+    final noteHeight = 96 * scale;
+    final amountStyle = TextStyle(color: fg, fontSize: 16);
+
+    final amountField = TextField(
+      controller: _amount,
+      style: amountStyle,
+      cursorColor: fg,
+      maxLines: 1,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+      ],
+      decoration: _sheetDecoration(
+        fg,
+        label: 'Amount (${AppConstants.currencySymbol})',
+        icon: Icon(Icons.payments_outlined, color: fieldColor),
+      ),
+    );
+
+    return Theme(
+      data: base.copyWith(
+        colorScheme: base.colorScheme.copyWith(
+          primary: fg,
+          onPrimary: bg,
+          onSurface: fg,
+          onSurfaceVariant: muted,
+        ),
+        textSelectionTheme: TextSelectionThemeData(cursorColor: fg),
+      ),
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(
+            20,
+            AppConstants.spaceSmMd,
+            20,
+            AppConstants.spaceMd,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Drag handle
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: fg.withValues(alpha: AppConstants.borderAlpha),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppConstants.spaceSmMd),
+
+              // Header: icon box tinted with the transaction color
+              Row(
+                children: [
+                  Container(
+                    width: 40 * scale,
+                    height: 40 * scale,
+                    decoration: BoxDecoration(
+                      color: typeColor.withValues(alpha: AppConstants.tintAlpha),
+                      borderRadius: BorderRadius.circular(
+                        AppConstants.radiusMd,
+                      ),
+                    ),
+                    child: Icon(widget.type.icon, color: typeColor),
+                  ),
+                  const SizedBox(width: AppConstants.spaceMd),
+                  Text(
+                    _heading,
+                    style: base.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: fg,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppConstants.spaceMd),
+
+              // Reminder: Expense | Income
+              if (_isReminder) ...[
+                Row(
+                  children: [
+                    _kindButton(
+                      selected: !_reminderIncome,
+                      color: settings.expenseColor,
+                      fg: fg,
+                      icon: TransactionColorType.expense.icon,
+                      label: 'Expense',
+                      onTap: () => setState(() {
+                        _reminderIncome = false;
+                        _category = null;
+                      }),
+                    ),
+                    const SizedBox(width: _sheetGap),
+                    _kindButton(
+                      selected: _reminderIncome,
+                      color: settings.incomeColor,
+                      fg: fg,
+                      icon: TransactionColorType.income.icon,
+                      label: 'Income',
+                      onTap: () => setState(() {
+                        _reminderIncome = true;
+                        _category = null;
+                      }),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: _sheetGap),
+              ],
+
+              // Title
+              TextField(
+                controller: _title,
+                style: amountStyle,
+                cursorColor: fg,
+                textCapitalization: TextCapitalization.sentences,
+                textInputAction: TextInputAction.next,
+                decoration: _sheetDecoration(
+                  fg,
+                  label: 'Title',
+                  icon: Icon(Icons.title, color: fg),
+                ),
+              ),
+              const SizedBox(height: _sheetGap),
+
+              // Transfer: From | swap | To
+              if (_isTransfer) ...[
+                Row(
+                  children: [
+                    Expanded(child: _accountField(fg, label: 'From')),
+                    const SizedBox(width: AppConstants.spaceSm),
+                    _swapButton(typeColor, scale),
+                    const SizedBox(width: AppConstants.spaceSm),
+                    Expanded(child: _accountField(fg, label: 'To', isTo: true)),
+                  ],
+                ),
+                const SizedBox(height: _sheetGap),
+              ],
+
+              // Amount (+ Date, or full width on a reminder)
+              if (_isReminder)
+                amountField
+              else
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(flex: 3, child: amountField),
+                    const SizedBox(width: _sheetGap),
+                    Expanded(flex: 2, child: _dateField(fg, fieldColor, due: false)),
+                  ],
+                ),
+              const SizedBox(height: _sheetGap),
+
+              // Income / Expense: Category | Account
+              if (!_isTransfer && !_isReminder) ...[
+                Row(
+                  children: [
+                    Expanded(child: _categoryField(fg)),
+                    const SizedBox(width: _sheetGap),
+                    Expanded(child: _accountField(fg)),
+                  ],
+                ),
+                const SizedBox(height: _sheetGap),
+              ],
+
+              // Reminder: Category | Due date, then Repeat | Account
+              if (_isReminder) ...[
+                Row(
+                  children: [
+                    Expanded(child: _categoryField(fg)),
+                    const SizedBox(width: _sheetGap),
+                    Expanded(child: _dateField(fg, fieldColor, due: true)),
+                  ],
+                ),
+                const SizedBox(height: _sheetGap),
+                Row(
+                  children: [
+                    Expanded(child: _repeatField(fg)),
+                    const SizedBox(width: _sheetGap),
+                    Expanded(child: _accountField(fg)),
+                  ],
+                ),
+                const SizedBox(height: _sheetGap),
+              ],
+
+              // Image (square, left) + Note
+              SizedBox(
+                height: noteHeight,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(width: noteHeight, child: _imageTile(fg, noteHeight)),
+                    const SizedBox(width: _sheetGap),
+                    Expanded(
+                      // The note icon sits in the top left corner of the
+                      // box, so it is drawn on top of the field instead
+                      // of being the field's (centered) prefix icon.
+                      child: Stack(
+                        children: [
+                          TextField(
+                            controller: _note,
+                            style: amountStyle,
+                            cursorColor: fg,
+                            maxLines: null,
+                            expands: true,
+                            textAlignVertical: TextAlignVertical.top,
+                            textCapitalization: TextCapitalization.sentences,
+                            decoration: _sheetDecoration(
+                              fg,
+                              label: 'Note (optional)',
+                              alignLabelWithHint: true,
+                              contentPadding: const EdgeInsets.fromLTRB(
+                                48,
+                                15,
+                                AppConstants.spaceMd,
+                                15,
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            left: 12,
+                            top: 12,
+                            child: IgnorePointer(
+                              child: Icon(
+                                Icons.sticky_note_2_outlined,
+                                color: fg,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              if (_error != null) ...[
+                const SizedBox(height: AppConstants.spaceSm),
+                Text(
+                  _error!,
+                  style: base.textTheme.bodySmall?.copyWith(color: fg),
+                ),
+              ],
+              const SizedBox(height: AppConstants.spaceMd),
+
+              // Main button, colored with the transaction color
+              SizedBox(
+                height: 48,
+                child: FilledButton.icon(
+                  onPressed: _canSave ? _save : null,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: typeColor,
+                    foregroundColor: AppTheme.onColor(typeColor),
+                  ),
+                  icon: Icon(_buttonIcon),
+                  label: Text(_buttonLabel),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ------------------------------------------------------------------
+// Date + time pop-up
+// ------------------------------------------------------------------
+
+/// Calendar pop-up with a time row under it. [color] is the accent
+/// (the transaction color). Returns the chosen date and time, or null.
+Future<DateTime?> _showDateTimeDialog(
+  BuildContext context, {
+  required DateTime initial,
+  required Color color,
+}) {
+  return showDialog<DateTime>(
+    context: context,
+    barrierColor: AppConstants.popupBarrier,
+    builder: (_) => _DateTimeDialog(initial: initial, color: color),
+  );
+}
+
+class _DateTimeDialog extends StatefulWidget {
+  final DateTime initial;
+  final Color color;
+  const _DateTimeDialog({required this.initial, required this.color});
+
+  @override
+  State<_DateTimeDialog> createState() => _DateTimeDialogState();
+}
+
+class _DateTimeDialogState extends State<_DateTimeDialog> {
+  static const double _wheelItem = 20; // height of one number on a wheel
+
+  late DateTime _month; // first day of the month being shown
+  late DateTime _selected; // date only
+  late int _hour;
+  late int _minute;
+  late final FixedExtentScrollController _hourController;
+  late final FixedExtentScrollController _minuteController;
+
+  @override
+  void initState() {
+    super.initState();
+    final i = widget.initial;
+    _month = DateTime(i.year, i.month);
+    _selected = DateTime(i.year, i.month, i.day);
+    _hour = i.hour;
+    _minute = i.minute;
+    _hourController = FixedExtentScrollController(initialItem: _hour);
+    _minuteController = FixedExtentScrollController(initialItem: _minute);
+  }
+
+  @override
+  void dispose() {
+    _hourController.dispose();
+    _minuteController.dispose();
+    super.dispose();
+  }
+
+  void _shiftMonth(int by) =>
+      setState(() => _month = DateTime(_month.year, _month.month + by));
+
+  String get _weekdayText => _weekdayShort[_selected.weekday - 1];
+
+  String get _dateText =>
+      '${_monthNames[_selected.month - 1].substring(0, 3)} '
+      '${_selected.day}, ${_selected.year}';
+
+  Widget _pill(Color fg, {required Widget child, VoidCallback? onTap}) {
+    final color = widget.color;
+    return Material(
+      color: color.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(AppConstants.radiusSm),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          alignment: Alignment.center,
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  Widget _cell(int day, int daysInMonth, Color fg) {
+    final color = widget.color;
+    if (day < 1 || day > daysInMonth) return const SizedBox(height: 44);
+    final date = DateTime(_month.year, _month.month, day);
+    final selected = date == _selected;
+    return Padding(
+      padding: const EdgeInsets.all(2),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => setState(() => _selected = date),
+        child: Container(
+          height: 40,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? color.withValues(alpha: 0.2) : null,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            '$day',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+              color: selected ? color : fg,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// One wheel (hours or minutes). It loops, snaps to a number, and the
+  /// number in the middle is drawn bigger and in the accent color.
+  Widget _wheel({
+    required FixedExtentScrollController controller,
+    required int count,
+    required int current,
+    required Color fg,
+    required ValueChanged<int> onChanged,
+  }) {
+    final color = widget.color;
+    return SizedBox(
+      width: 46,
+      child: ListWheelScrollView.useDelegate(
+        controller: controller,
+        itemExtent: _wheelItem,
+        diameterRatio: 6, // large = flat, like a rectangle
+        perspective: 0.002,
+        physics: const FixedExtentScrollPhysics(),
+        onSelectedItemChanged: (index) {
+          HapticFeedback.selectionClick();
+          onChanged(index % count);
+        },
+        childDelegate: ListWheelChildLoopingListDelegate(
+          children: [
+            for (var i = 0; i < count; i++)
+              Center(
+                child: Text(
+                  _two(i),
+                  style: TextStyle(
+                    fontSize: i == current ? 20 : 16,
+                    fontWeight:
+                        i == current ? FontWeight.w700 : FontWeight.w400,
+                    color: i == current
+                        ? color
+                        : fg.withValues(alpha: AppConstants.mutedAlpha),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Rectangular box with the Hour : Minute wheels, a band marks the
+  /// number that will be used.
+  Widget _timeWheel(Color fg) {
+    final color = widget.color;
+    return Container(
+      height: _wheelItem * 3,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(AppConstants.radiusSm),
+      ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          IgnorePointer(
+            child: Container(
+              height: _wheelItem,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(6),
+              ),
+            ),
+          ),
+          SizedBox(
+            height: _wheelItem * 3,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _wheel(
+                  controller: _hourController,
+                  count: 24,
+                  current: _hour,
+                  fg: fg,
+                  onChanged: (v) => setState(() => _hour = v),
+                ),
+                Text(
+                  ':',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                  ),
+                ),
+                _wheel(
+                  controller: _minuteController,
+                  count: 60,
+                  current: _minute,
+                  fg: fg,
+                  onChanged: (v) => setState(() => _minute = v),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = AppTheme.accentOf(context);
+    final fg = accent.foreground;
+    final bg = accent.background;
+    final color = widget.color;
+    final theme = Theme.of(context);
+
+    final lead = DateTime(_month.year, _month.month, 1).weekday - 1; // Mon = 0
+    final days = DateTime(_month.year, _month.month + 1, 0).day;
+    final rows = ((lead + days) / 7).ceil();
+
+    return Dialog(
+      backgroundColor: bg,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // < October 2026 >
+            Row(
+              children: [
+                IconButton(
+                  icon: Icon(Icons.chevron_left, color: fg),
+                  onPressed: () => _shiftMonth(-1),
+                ),
+                Expanded(
+                  child: Center(
+                    child: Text(
+                      '${_monthNames[_month.month - 1]} ${_month.year}',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: fg,
+                      ),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.chevron_right, color: fg),
+                  onPressed: () => _shiftMonth(1),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppConstants.spaceSm),
+            // M T W T F S S
+            Row(
+              children: [
+                for (final letter in const ['M', 'T', 'W', 'T', 'F', 'S', 'S'])
+                  Expanded(
+                    child: Center(
+                      child: Text(
+                        letter,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: fg.withValues(alpha: AppConstants.mutedAlpha),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: AppConstants.spaceSm),
+            // Days
+            for (var r = 0; r < rows; r++)
+              Row(
+                children: [
+                  for (var c = 0; c < 7; c++)
+                    Expanded(child: _cell(r * 7 + c - lead + 1, days, fg)),
+                ],
+              ),
+            const SizedBox(height: AppConstants.spaceMd),
+            // Bottom of the calendar: chosen date (left) and the time
+            // wheels (right).
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: _wheelItem * 3,
+                    child: _pill(
+                      fg,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              _weekdayText,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: color.withValues(alpha: 0.8),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _dateText,
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: color,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppConstants.spaceSm),
+                _timeWheel(fg),
+              ],
+            ),
+            const SizedBox(height: AppConstants.spaceMd),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(48),
+                      shape: const StadiumBorder(),
+                      foregroundColor: color,
+                      side: BorderSide(color: color.withValues(alpha: 0.5)),
+                    ),
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: _sheetGap),
+                Expanded(
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(48),
+                      shape: const StadiumBorder(),
+                      backgroundColor: color,
+                      foregroundColor: AppTheme.onColor(color),
+                    ),
+                    onPressed: () => Navigator.of(context).pop(
+                      DateTime(
+                        _selected.year,
+                        _selected.month,
+                        _selected.day,
+                        _hour,
+                        _minute,
+                      ),
+                    ),
+                    child: const Text(
+                      'Apply',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

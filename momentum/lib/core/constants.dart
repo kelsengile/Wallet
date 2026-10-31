@@ -30,9 +30,9 @@ class AppConstants {
 
   static const Color incomeColor = Color(0xFF4CAF50);
   static const Color expenseColor = Color(0xFFF44A5A);
-  // NEW: defaults for the other transaction colors
+  // Defaults for the other transaction colors
   static const Color transferColor = Color(0xFF2196F3);
-  static const Color notificationColor = Color(0xFFFFA726);
+  static const Color reminderColor = Color(0xFFFFA726);
 
   // ---------- Spacing scale ----------
   static const double spaceXs = 4;
@@ -59,6 +59,10 @@ class AppConstants {
 
   /// Normal body font size, used to read the current text scale.
   static const double baseFontSize = 14;
+
+    /// Makes the floating + button and its small buttons bigger
+  /// (1.0 = the old size).
+  static const double addButtonScale = 1.2;
 
   /// Slide time when changing pages.
   static const Duration pageAnimationDuration = Duration(milliseconds: 250);
@@ -121,11 +125,13 @@ class AppConstants {
   static const String prefTextSize = 'settings.textSizeIndex';
   static const String prefFontStyle = 'settings.fontStyle';
   static const String prefBoldText = 'settings.boldText';
-  // NEW: saved transaction colors (Specific Color)
+  // Saved transaction colors (Specific Color)
   static const String prefIncomeColor = 'settings.transactionColor.income';
   static const String prefExpenseColor = 'settings.transactionColor.expense';
   static const String prefTransferColor = 'settings.transactionColor.transfer';
-  static const String prefNotificationColor = 'settings.transactionColor.notification';
+  // Key text kept from the old "notification" name so saved colors survive.
+  static const String prefReminderColor =
+      'settings.transactionColor.notification';
 
   static const List<String> textSizeLabels = [
     'Smallest',
