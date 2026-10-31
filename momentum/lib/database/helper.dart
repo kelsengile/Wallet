@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -35,12 +36,14 @@ class DatabaseStats {
   final int accounts;
   final int transactions;
   final int categories;
+  final int reminders;
   final int trashed;
 
   const DatabaseStats({
     required this.accounts,
     required this.transactions,
     required this.categories,
+    required this.reminders,
     required this.trashed,
   });
 
@@ -48,6 +51,7 @@ class DatabaseStats {
     accounts: 0,
     transactions: 0,
     categories: 0,
+    reminders: 0,
     trashed: 0,
   );
 }
@@ -82,6 +86,52 @@ class CategoryItem {
   final String name;
   final String? icon;
   const CategoryItem(this.id, this.name, [this.icon]);
+}
+
+/// An active account in a picker (Transfer From/To, Account fields).
+/// An active account in a picker (Transfer From/To, Account fields).
+class AccountOption {
+  final int id;
+  final String name;
+  final int typeId;
+  final String typeName;
+  final String? typeIcon;
+  const AccountOption(
+    this.id,
+    this.name,
+    this.typeId,
+    this.typeName,
+    this.typeIcon,
+  );
+}
+
+/// One saved reminder.
+class ReminderItem {
+  final int id;
+  final String type; // 'income' | 'expense'
+  final String title;
+  final double amount; // pesos
+  final String? categoryName;
+  final String? accountName;
+  final DateTime dueDate;
+  final String repeat; // none | daily | weekly | monthly | yearly
+  final String? note;
+  final String? imagePath;
+  final bool done;
+
+  const ReminderItem({
+    required this.id,
+    required this.type,
+    required this.title,
+    required this.amount,
+    required this.categoryName,
+    required this.accountName,
+    required this.dueDate,
+    required this.repeat,
+    required this.note,
+    required this.imagePath,
+    required this.done,
+  });
 }
 
 /// Opens the local SQLite database and holds every database function.
@@ -199,13 +249,15 @@ class DatabaseHelper {
     }
   }
 
-  /// Runs every time the database opens. Adds the icon and note columns to
+  /// Runs every time the database opens. Adds missing columns and tables to
   /// older files, then rebuilds the database only when the tables are missing
   /// or different from schema.sql, or when the default data was never
   /// inserted.
   Future<void> _ensureReady(Database db) async {
     await _addMissingIconColumns(db);
     await _addMissingNoteColumns(db);
+    await _addMissingTransactionColumns(db);
+    await _addMissingTables(db);
     final ready = await _schemaIsValid(db) && await _isSeeded(db);
     if (ready) {
       await _fillDefaultIcons(db);
@@ -234,6 +286,24 @@ class DatabaseHelper {
         await db.execute('ALTER TABLE accounts ADD COLUMN $column TEXT');
       }
     }
+  }
+
+  /// Older databases get the transaction title / image columns.
+  Future<void> _addMissingTransactionColumns(Database db) async {
+    final columns = await _columnsOf(db, 'transactions');
+    if (columns.isEmpty) return;
+    for (final column in const ['title', 'image_path']) {
+      if (!columns.contains(column)) {
+        await db.execute('ALTER TABLE transactions ADD COLUMN $column TEXT');
+      }
+    }
+  }
+
+  /// schema.sql is all "IF NOT EXISTS", so running it only adds what is
+  /// missing (for example the reminders table) and never touches data.
+  Future<void> _addMissingTables(Database db) async {
+    final schema = await rootBundle.loadString(AppConstants.schemaAsset);
+    await _runScript(db, schema);
   }
 
   Future<Set<String>> _columnsOf(Database db, String table) async {
@@ -273,6 +343,7 @@ class DatabaseHelper {
   /// block the drops.
   Future<void> _dropAll(DatabaseExecutor db) async {
     await db.execute('DROP VIEW IF EXISTS account_balances');
+    await db.execute('DROP TABLE IF EXISTS reminders');
     await db.execute('DROP TABLE IF EXISTS transactions');
     await db.execute('DROP TABLE IF EXISTS accounts');
     await db.execute('DROP TABLE IF EXISTS categories');
@@ -513,6 +584,237 @@ class DatabaseHelper {
     });
   }
 
+  // ---------- Transactions ----------
+  // Account balances come from the account_balances view, so every
+  // insert below updates the balance of the account(s) automatically.
+
+  String? _nonEmpty(String? text) {
+    final t = text?.trim();
+    return (t == null || t.isEmpty) ? null : t;
+  }
+
+  /// Removes picture files that no row points to anymore.
+  /// Never throws: a missing file is simply ignored.
+  Future<void> _deleteImageFiles(Iterable<Object?> paths) async {
+    for (final path in paths) {
+      if (path is! String || path.isEmpty) continue;
+      try {
+        final file = File(path);
+        if (await file.exists()) await file.delete();
+      } catch (_) {}
+    }
+  }
+
+  int _positiveCentavos(double pesos) {
+    final centavos = _toCentavos(pesos);
+    if (centavos <= 0) {
+      throw const ValidationFailure('Enter an amount greater than zero.');
+    }
+    return centavos;
+  }
+
+  Future<void> _requireActiveAccount(DatabaseExecutor db, int id) async {
+    final found = Sqflite.firstIntValue(
+          await db.rawQuery(
+            'SELECT COUNT(*) FROM accounts WHERE id = ? AND deleted_at IS NULL',
+            [id],
+          ),
+        ) ??
+        0;
+    if (found == 0) {
+      throw const ValidationFailure('That account no longer exists.');
+    }
+  }
+
+  /// Active accounts for the pickers, grouped by type order.
+  Future<List<AccountOption>> getAccountOptions() {
+    return _guard(() async {
+      final db = await database;
+      final rows = await db.rawQuery('''
+        SELECT a.id, a.name, t.id AS type_id, t.name AS type_name,
+               t.icon AS type_icon
+        FROM accounts a
+        JOIN account_types t ON t.id = a.type_id
+        WHERE a.deleted_at IS NULL
+        ORDER BY t.id, a.id
+      ''');
+      return [
+        for (final row in rows)
+          AccountOption(
+            (row['id'] as num).toInt(),
+            row['name'] as String,
+            (row['type_id'] as num).toInt(),
+            row['type_name'] as String,
+            row['type_icon'] as String?,
+          ),
+      ];
+    });
+  }
+
+  /// Adds an income or expense. [amount] is in pesos.
+  Future<void> addTransaction({
+    required String type,
+    required String title,
+    required double amount,
+    required DateTime date,
+    required int accountId,
+    required int categoryId,
+    String? note,
+    String? imagePath,
+  }) {
+    return _guard(() async {
+      if (type != 'income' && type != 'expense') {
+        throw const ValidationFailure('Unknown transaction type.');
+      }
+      final centavos = _positiveCentavos(amount);
+      final db = await database;
+      await db.transaction((txn) async {
+        await _requireActiveAccount(txn, accountId);
+        await txn.insert('transactions', {
+          'type': type,
+          'amount': centavos,
+          'account_id': accountId,
+          'category_id': categoryId,
+          'title': _cleanName(title),
+          'note': _nonEmpty(note),
+          'image_path': imagePath,
+          'date': date.toIso8601String(),
+        });
+      });
+      notifyChanged();
+    });
+  }
+
+  /// Moves money between two accounts: takes it from [fromAccountId] and
+  /// adds it to [toAccountId] (both balances change).
+  Future<void> addTransfer({
+    required String title,
+    required double amount,
+    required DateTime date,
+    required int fromAccountId,
+    required int toAccountId,
+    String? note,
+    String? imagePath,
+  }) {
+    return _guard(() async {
+      if (fromAccountId == toAccountId) {
+        throw const ValidationFailure('Pick two different accounts.');
+      }
+      final centavos = _positiveCentavos(amount);
+      final db = await database;
+      await db.transaction((txn) async {
+        await _requireActiveAccount(txn, fromAccountId);
+        await _requireActiveAccount(txn, toAccountId);
+        final categoryId = Sqflite.firstIntValue(
+          await txn.rawQuery(
+            "SELECT id FROM categories WHERE kind = 'transfer' LIMIT 1",
+          ),
+        );
+        await txn.insert('transactions', {
+          'type': 'transfer',
+          'amount': centavos,
+          'account_id': fromAccountId,
+          'to_account_id': toAccountId,
+          'category_id': categoryId,
+          'title': _cleanName(title),
+          'note': _nonEmpty(note),
+          'image_path': imagePath,
+          'date': date.toIso8601String(),
+        });
+      });
+      notifyChanged();
+    });
+  }
+
+  // ---------- Reminders ----------
+
+  static const _repeatRules = ['none', 'daily', 'weekly', 'monthly', 'yearly'];
+
+  Future<void> addReminder({
+    required String type,
+    required String title,
+    required double amount,
+    required DateTime dueDate,
+    int? categoryId,
+    int? accountId,
+    String repeat = 'none',
+    String? note,
+    String? imagePath,
+  }) {
+    return _guard(() async {
+      if (type != 'income' && type != 'expense') {
+        throw const ValidationFailure('Unknown reminder type.');
+      }
+      if (!_repeatRules.contains(repeat)) {
+        throw const ValidationFailure('Unknown repeat option.');
+      }
+      final centavos = _positiveCentavos(amount);
+      final db = await database;
+      await db.transaction((txn) async {
+        if (accountId != null) await _requireActiveAccount(txn, accountId);
+        await txn.insert('reminders', {
+          'type': type,
+          'title': _cleanName(title),
+          'amount': centavos,
+          'category_id': categoryId,
+          'account_id': accountId,
+          'due_date': dueDate.toIso8601String(),
+          'repeat_rule': repeat,
+          'note': _nonEmpty(note),
+          'image_path': imagePath,
+        });
+      });
+      notifyChanged();
+    });
+  }
+
+  /// Reminders that are not done, soonest first.
+  Future<List<ReminderItem>> getReminders() {
+    return _guard(() async {
+      final db = await database;
+      final rows = await db.rawQuery('''
+        SELECT r.*, c.name AS category_name, a.name AS account_name
+        FROM reminders r
+        LEFT JOIN categories c ON c.id = r.category_id
+        LEFT JOIN accounts a ON a.id = r.account_id
+        WHERE r.done = 0
+        ORDER BY r.due_date
+      ''');
+      return [
+        for (final row in rows)
+          ReminderItem(
+            id: (row['id'] as num).toInt(),
+            type: row['type'] as String,
+            title: row['title'] as String,
+            amount:
+                (row['amount'] as num).toInt() / AppConstants.centavosPerPeso,
+            categoryName: row['category_name'] as String?,
+            accountName: row['account_name'] as String?,
+            dueDate: DateTime.tryParse('${row['due_date']}') ?? DateTime.now(),
+            repeat: row['repeat_rule'] as String,
+            note: row['note'] as String?,
+            imagePath: row['image_path'] as String?,
+            done: (row['done'] as num).toInt() == 1,
+          ),
+      ];
+    });
+  }
+
+  Future<void> deleteReminder(int id) {
+    return _guard(() async {
+      final db = await database;
+      final rows = await db.query(
+        'reminders',
+        columns: ['image_path'],
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      await db.delete('reminders', where: 'id = ?', whereArgs: [id]);
+      await _deleteImageFiles(rows.map((r) => r['image_path']));
+      notifyChanged();
+    });
+  }
+
   // ---------- Soft delete (moves a row to the trash) ----------
 
   Future<void> softDeleteAccount(int id) {
@@ -554,7 +856,7 @@ class DatabaseHelper {
         where: 'deleted_at IS NOT NULL',
       );
       final transactionRows = await db.rawQuery('''
-        SELECT t.id, t.type, t.amount, t.note, t.deleted_at,
+        SELECT t.id, t.type, t.amount, t.note, t.title, t.deleted_at,
                c.name AS category_name
         FROM transactions t
         LEFT JOIN categories c ON c.id = t.category_id
@@ -574,7 +876,8 @@ class DatabaseHelper {
           TrashItem(
             kind: TrashKind.transaction,
             id: (row['id'] as num).toInt(),
-            title: (row['category_name'] as String?) ??
+            title: _nonEmpty(row['title'] as String?) ??
+                _nonEmpty(row['category_name'] as String?) ??
                 _capitalize(row['type'] as String),
             subtitle: _transactionSubtitle(row),
             deletedAt: DateTime.tryParse('${row['deleted_at']}'),
@@ -674,12 +977,20 @@ class DatabaseHelper {
   }
 
   /// Permanently removes one trashed row. Deleting an account also removes
-  /// the transactions that use it.
+  /// the transactions that use it (and their pictures).
   Future<void> deleteTrashItemForever(TrashItem item) {
     return _guard(() async {
       final db = await database;
+      final images = <Object?>[];
       await db.transaction((txn) async {
         if (item.kind == TrashKind.account) {
+          final rows = await txn.query(
+            'transactions',
+            columns: ['image_path'],
+            where: 'account_id = ? OR to_account_id = ?',
+            whereArgs: [item.id, item.id],
+          );
+          images.addAll(rows.map((r) => r['image_path']));
           await txn.delete(
             'transactions',
             where: 'account_id = ? OR to_account_id = ?',
@@ -691,6 +1002,13 @@ class DatabaseHelper {
             whereArgs: [item.id],
           );
         } else {
+          final rows = await txn.query(
+            'transactions',
+            columns: ['image_path'],
+            where: 'id = ?',
+            whereArgs: [item.id],
+          );
+          images.addAll(rows.map((r) => r['image_path']));
           await txn.delete(
             'transactions',
             where: 'id = ?',
@@ -698,23 +1016,30 @@ class DatabaseHelper {
           );
         }
       });
+      await _deleteImageFiles(images);
       notifyChanged();
     });
   }
 
-  /// Permanently removes everything in the trash.
+  /// Permanently removes everything in the trash (and the pictures).
   Future<void> emptyTrash() {
     return _guard(() async {
       final db = await database;
+      final images = <Object?>[];
       await db.transaction((txn) async {
-        await txn.rawDelete('''
-          DELETE FROM transactions
-          WHERE deleted_at IS NOT NULL
-             OR account_id IN (SELECT id FROM accounts WHERE deleted_at IS NOT NULL)
-             OR to_account_id IN (SELECT id FROM accounts WHERE deleted_at IS NOT NULL)
-        ''');
+        const doomed = '''
+          deleted_at IS NOT NULL
+          OR account_id IN (SELECT id FROM accounts WHERE deleted_at IS NOT NULL)
+          OR to_account_id IN (SELECT id FROM accounts WHERE deleted_at IS NOT NULL)
+        ''';
+        final rows = await txn.rawQuery(
+          'SELECT image_path FROM transactions WHERE $doomed',
+        );
+        images.addAll(rows.map((r) => r['image_path']));
+        await txn.rawDelete('DELETE FROM transactions WHERE $doomed');
         await txn.delete('accounts', where: 'deleted_at IS NOT NULL');
       });
+      await _deleteImageFiles(images);
       notifyChanged();
     });
   }
@@ -736,6 +1061,7 @@ class DatabaseHelper {
           'SELECT COUNT(*) FROM transactions WHERE deleted_at IS NULL',
         ),
         categories: await count('SELECT COUNT(*) FROM categories'),
+        reminders: await count('SELECT COUNT(*) FROM reminders WHERE done = 0'),
         trashed: await _countTrash(db),
       );
     });
@@ -743,10 +1069,18 @@ class DatabaseHelper {
 
   /// Deletes everything and puts the database back to its original
   /// configuration (same tables and default data as a fresh install).
+  /// Saved pictures are removed too.
   Future<void> resetDatabase() {
     return _guard(() async {
       final db = await database;
+      final images = <Object?>[
+        ...(await db.rawQuery('SELECT image_path FROM transactions'))
+            .map((r) => r['image_path']),
+        ...(await db.rawQuery('SELECT image_path FROM reminders'))
+            .map((r) => r['image_path']),
+      ];
       await _rebuild(db);
+      await _deleteImageFiles(images);
       notifyChanged();
     });
   }
@@ -777,10 +1111,26 @@ class DatabaseHelper {
       'account_id',
       'to_account_id',
       'category_id',
+      'title',
       'note',
+      'image_path',
       'date',
       'created_at',
       'deleted_at',
+    ],
+    'reminders': [
+      'id',
+      'type',
+      'title',
+      'amount',
+      'category_id',
+      'account_id',
+      'due_date',
+      'repeat_rule',
+      'note',
+      'image_path',
+      'done',
+      'created_at',
     ],
   };
 
@@ -823,10 +1173,12 @@ class DatabaseHelper {
       }
       final tables = decoded['tables'] as Map;
 
-      // Keep only known columns of every row.
+      // Keep only known columns of every row. Backups made before
+      // reminders existed simply have no reminders list.
       final data = <String, List<Map<String, Object?>>>{};
       for (final entry in _exportColumns.entries) {
-        final raw = tables[entry.key];
+        final raw = tables[entry.key] ??
+            (entry.key == 'reminders' ? <Object?>[] : null);
         if (raw is! List) throw _badBackup;
         final rows = <Map<String, Object?>>[];
         for (final row in raw) {

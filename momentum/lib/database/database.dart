@@ -247,6 +247,7 @@ class _DatabaseScreenState extends State<DatabaseScreen> {
                       subtitle: Text(
                         '${stats.accounts} accounts | '
                         '${stats.transactions} transactions | '
+                        '${stats.reminders} reminders | '
                         '${stats.categories} categories',
                       ),
                     ),
