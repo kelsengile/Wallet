@@ -295,11 +295,15 @@ class _HomeShellState extends State<HomeShell>
     _downPos = null;
   }
 
-  /// 1.0 at the default font size; grows / shrinks with the font setting.
-  double _buttonScale(BuildContext context) =>
-      MediaQuery.textScalerOf(context).scale(AppConstants.baseFontSize) /
-      AppConstants.baseFontSize *
-      AppConstants.addButtonScale;
+  /// 1.0 at the default font size. It follows the font setting only
+  /// partly (addButtonFollow), then is multiplied by addButtonScale.
+  double _buttonScale(BuildContext context) {
+    final fontScale =
+        MediaQuery.textScalerOf(context).scale(AppConstants.baseFontSize) /
+            AppConstants.baseFontSize;
+    return (1 + (fontScale - 1) * AppConstants.addButtonFollow) *
+        AppConstants.addButtonScale;
+  }
 
   /// The + is sucked into the middle, then the X grows out of it.
   /// Closing plays the same thing backwards.

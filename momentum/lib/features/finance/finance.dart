@@ -130,7 +130,9 @@ double _cardHeightFor(double width) => width / AppConstants.cardRatio;
 /// Empty space left under the lists so the floating + button
 /// (56 button + 8 ring, scaled with the font) never covers the last card.
 double _addButtonClearanceOf(BuildContext context) =>
-    (56 + 8) * _fontScale(context) * AppConstants.addButtonScale +
+    (56 + 8) *
+        (1 + (_fontScale(context) - 1) * AppConstants.addButtonFollow) *
+        AppConstants.addButtonScale +
     AppConstants.spaceMd * 2;
 
 class FinanceScreen extends StatefulWidget {

@@ -64,6 +64,11 @@ class AppConstants {
   /// (1.0 = the old size).
   static const double addButtonScale = 1.2;
 
+  /// How much the + button (and its small buttons) follow the font size.
+  /// 0 = always the same size, 1 = changes as much as the font setting.
+  /// Lower = the smallest size is bigger and the biggest size is smaller.
+  static const double addButtonFollow = 0.5;
+
   /// Slide time when changing pages.
   static const Duration pageAnimationDuration = Duration(milliseconds: 250);
 
