@@ -532,7 +532,6 @@ class _FinanceScreenState extends State<FinanceScreen> {
             ],
           ),
         ),
-
         // ----- Scrolling part: starts right below the My Accounts row -----
         Expanded(
           child: _rearranging
@@ -1849,24 +1848,28 @@ class TotalBalanceCard extends StatelessWidget {
             children: [
               // Big balance takes the leftover space and shrinks if needed.
               Expanded(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: hidden
-                      ? _maskedText(
-                          context,
-                          balanceStyle,
-                          prefix: AppConstants.currencyPrefix,
-                        )
-                      : Text(
-                          Utils.formatCurrency(
-                            summary.totalBalance,
-                            symbol: AppConstants.currencyPrefix,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => showTransactionHistory(context),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: hidden
+                        ? _maskedText(
+                            context,
+                            balanceStyle,
+                            prefix: AppConstants.currencyPrefix,
+                          )
+                        : Text(
+                            Utils.formatCurrency(
+                              summary.totalBalance,
+                              symbol: AppConstants.currencyPrefix,
+                            ),
+                            maxLines: 1,
+                            softWrap: false,
+                            style: balanceStyle,
                           ),
-                          maxLines: 1,
-                          softWrap: false,
-                          style: balanceStyle,
-                        ),
+                  ),
                 ),
               ),
               const SizedBox(width: AppConstants.spaceSm),
@@ -1915,14 +1918,2004 @@ class TotalBalanceCard extends StatelessWidget {
 }
 
 // ------------------------------------------------------------------
+// Transaction history pop-up
+// ------------------------------------------------------------------
+
+/// Height of the bottom nav bar in main.dart. The history panel stops here.
+const double _navBarHeight = 56;
+
+const List<String> _weekdayLong = [
+  'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday',
+  'Sunday',
+];
+
+String _fmtLong(DateTime d) =>
+    '${_monthNames[d.month - 1].substring(0, 3)} ${d.day}, ${d.year}';
+
+String _fmtTime12(DateTime d) {
+  final h = d.hour % 12 == 0 ? 12 : d.hour % 12;
+  return '$h:${_two(d.minute)} ${d.hour >= 12 ? 'PM' : 'AM'}';
+}
+
+TransactionColorType _typeOf(String type) {
+  switch (type) {
+    case 'income':
+      return TransactionColorType.income;
+    case 'expense':
+      return TransactionColorType.expense;
+    default:
+      return TransactionColorType.transfer;
+  }
+}
+
+/// The last date filter the user used. Kept while the app is open.
+_HistoryRange? _lastHistoryRange;
+
+/// Rich, bright version of a color (stays saturated, not pale).
+/// Grays are left as grays, so they never turn red.
+Color _vivid(Color c) {
+  final hsl = HSLColor.fromColor(c);
+  if (hsl.saturation < 0.08) {
+    return hsl.withLightness(hsl.lightness.clamp(0.6, 0.9).toDouble()).toColor();
+  }
+  return hsl
+      .withSaturation(math.max(hsl.saturation, 0.8))
+      .withLightness(hsl.lightness.clamp(0.58, 0.68).toDouble())
+      .toColor();
+}
+
+/// Darker version of a color (same hue). Used for overdue reminders.
+Color _darker(Color c) {
+  final hsl = HSLColor.fromColor(c);
+  return hsl.withLightness((hsl.lightness * 0.62).clamp(0.0, 1.0)).toColor();
+}
+
+/// True when the color is black or white (or close to it).
+bool _isBW(Color c) {
+  final l = HSLColor.fromColor(c).lightness;
+  return l < 0.1 || l > 0.92;
+}
+
+enum _Period { day, week, month, year, all, custom }
+
+/// The dates the history is showing. [end] is inclusive.
+class _HistoryRange {
+  final _Period period;
+  final DateTime start;
+  final DateTime end;
+  const _HistoryRange(this.period, this.start, this.end);
+
+  factory _HistoryRange.of(_Period p, DateTime a) {
+    final d = DateTime(a.year, a.month, a.day);
+    switch (p) {
+      case _Period.day:
+        return _HistoryRange(p, d, d);
+      case _Period.week:
+        final s = DateTime(d.year, d.month, d.day - (d.weekday - 1));
+        return _HistoryRange(p, s, DateTime(s.year, s.month, s.day + 6));
+      case _Period.month:
+        return _HistoryRange(
+          p,
+          DateTime(d.year, d.month),
+          DateTime(d.year, d.month + 1, 0),
+        );
+      case _Period.year:
+        return _HistoryRange(p, DateTime(d.year), DateTime(d.year, 12, 31));
+      case _Period.all:
+      case _Period.custom:
+        return _HistoryRange(p, d, d);
+    }
+  }
+
+  bool get isAll => period == _Period.all;
+
+  /// "All" and "Custom" have no arrows.
+  bool get canStep => period != _Period.all && period != _Period.custom;
+
+  DateTime? get from => isAll ? null : start;
+  DateTime? get until =>
+      isAll ? null : DateTime(end.year, end.month, end.day + 1);
+
+  bool get groupByMonth =>
+      period == _Period.year ||
+      isAll ||
+      (period == _Period.custom &&
+          (start.month != end.month || start.year != end.year));
+
+  bool get multiYear => isAll || start.year != end.year;
+
+  _HistoryRange shifted(int by) {
+    switch (period) {
+      case _Period.day:
+        return _HistoryRange.of(
+          period,
+          DateTime(start.year, start.month, start.day + by),
+        );
+      case _Period.week:
+        return _HistoryRange.of(
+          period,
+          DateTime(start.year, start.month, start.day + 7 * by),
+        );
+      case _Period.month:
+        return _HistoryRange.of(period, DateTime(start.year, start.month + by));
+      case _Period.year:
+        return _HistoryRange.of(period, DateTime(start.year + by));
+      case _Period.all:
+      case _Period.custom:
+        return this;
+    }
+  }
+
+  String get label {
+    String mon(DateTime d) => _monthNames[d.month - 1].substring(0, 3);
+    switch (period) {
+      case _Period.day:
+        return _fmtLong(start);
+      case _Period.week:
+        return start.year == end.year
+            ? '${mon(start)} ${start.day} – ${mon(end)} ${end.day}, ${end.year}'
+            : '${_fmtLong(start)} – ${_fmtLong(end)}';
+      case _Period.month:
+        return '${_monthNames[start.month - 1]} ${start.year}';
+      case _Period.year:
+        return '${start.year}';
+      case _Period.all:
+        return 'All Time';
+      case _Period.custom:
+        return '${_fmtLong(start)} – ${_fmtLong(end)}';
+    }
+  }
+}
+
+/// Opens the history. It drops down from the top and stops just above the
+/// bottom nav bar. Tap the dim area below, tap the handle, or swipe the
+/// handle up to close it.
+Future<void> showTransactionHistory(BuildContext context) {
+  final bottom = MediaQuery.viewPaddingOf(context).bottom + _navBarHeight;
+  return showGeneralDialog<void>(
+    context: context,
+    barrierDismissible: true,
+    barrierLabel: 'Close history',
+    barrierColor: AppConstants.popupBarrier,
+    transitionDuration: AppConstants.pageAnimationDuration,
+    pageBuilder: (_, _, _) => Padding(
+      padding: EdgeInsets.only(bottom: bottom),
+      child: const _HistoryPanel(),
+    ),
+    transitionBuilder: (context, animation, _, child) => SlideTransition(
+      position: Tween<Offset>(
+        begin: const Offset(0, -1),
+        end: Offset.zero,
+      ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+      child: child,
+    ),
+  );
+}
+
+class _HistoryPanel extends StatefulWidget {
+  const _HistoryPanel();
+
+  @override
+  State<_HistoryPanel> createState() => _HistoryPanelState();
+}
+
+class _HistoryPanelState extends State<_HistoryPanel> {
+  final _db = DatabaseHelper.instance;
+  late _HistoryRange _range;
+  List<HistoryEntry> _entries = const [];
+  List<ReminderItem> _reminders = const [];
+  bool _loaded = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _range =
+        _lastHistoryRange ?? _HistoryRange.of(_Period.month, DateTime.now());
+    _load();
+    _db.changes.addListener(_load);
+  }
+
+  @override
+  void dispose() {
+    _db.changes.removeListener(_load);
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final entries = await _db.getHistory(
+        from: _range.from,
+        until: _range.until,
+      );
+      final reminders = await _db.getReminders();
+      if (!mounted) return;
+      setState(() {
+        _entries = entries;
+        _reminders = reminders;
+        _loaded = true;
+        _error = null;
+      });
+    } on Failure catch (f) {
+      if (mounted) setState(() => _error = f.message);
+    } catch (_) {
+      if (mounted) setState(() => _error = const UnknownFailure().message);
+    }
+  }
+
+    Widget _swipeBackground(double radius) {
+    return Container(
+      alignment: Alignment.centerRight,
+      padding: const EdgeInsets.only(right: AppConstants.spaceLg),
+      decoration: BoxDecoration(
+        color: Colors.red,
+        borderRadius: BorderRadius.circular(radius),
+      ),
+      child: const Icon(Icons.delete_outline, color: Colors.white),
+    );
+  }
+
+  /// Same red pop-up as the Categories delete.
+  Future<bool> _confirmDelete(String title, String message) async {
+    const white = TextStyle(color: Colors.white);
+    final ok = await showDialog<bool>(
+      context: context,
+      barrierColor: AppConstants.popupBarrier,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.red,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppConstants.popupRadius),
+        ),
+        insetPadding: AppConstants.popupInsetPadding,
+        titlePadding: AppConstants.popupTitlePaddingCompact,
+        contentPadding: AppConstants.popupContentPaddingCompact,
+        actionsPadding: AppConstants.popupActionsPaddingCompact,
+        title: Text(
+          title,
+          style: white.copyWith(fontWeight: FontWeight.w600),
+        ),
+        content: Text(message, style: white),
+        actions: [
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: Colors.white),
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.red,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    return ok ?? false;
+  }
+
+  /// Called when a transaction is swiped. True only if really deleted.
+  Future<bool> _deleteEntry(HistoryEntry e) async {
+    if (!await _confirmDelete(
+      'Delete transaction?',
+      'It will be moved to the trash.',
+    )) {
+      return false;
+    }
+    try {
+      await _db.softDeleteTransaction(e.id);
+      return true;
+    } on Failure catch (f) {
+      _snack(f.message);
+    } catch (_) {
+      _snack(const UnknownFailure().message);
+    }
+    return false;
+  }
+
+  Future<bool> _deleteReminderItem(ReminderItem r) async {
+    if (!await _confirmDelete(
+      'Delete reminder?',
+      'This reminder will be deleted.',
+    )) {
+      return false;
+    }
+    try {
+      await _db.deleteReminder(r.id);
+      return true;
+    } on Failure catch (f) {
+      _snack(f.message);
+    } catch (_) {
+      _snack(const UnknownFailure().message);
+    }
+    return false;
+  }
+
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  double get _income => _entries
+      .where((e) => e.type == 'income')
+      .fold(0.0, (sum, e) => sum + e.amount);
+  double get _expense => _entries
+      .where((e) => e.type == 'expense')
+      .fold(0.0, (sum, e) => sum + e.amount);
+
+  void _shift(int by) {
+    setState(() => _range = _range.shifted(by));
+    _lastHistoryRange = _range;
+    _load();
+  }
+
+  Future<void> _pickRange() async {
+    final picked = await showDialog<_HistoryRange>(
+      context: context,
+      barrierColor: AppConstants.popupBarrier,
+      builder: (_) => _RangeDialog(initial: _range),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _range = picked);
+    _lastHistoryRange = picked;
+    _load();
+  }
+
+  // ---------- Receipts ----------
+
+  void _openEntry(HistoryEntry first) {
+    var current = first;
+    _showReceipt(
+      context,
+      _entryReceipt(first),
+      reload: () async {
+        final all = await _db.getHistory();
+        for (final x in all) {
+          if (x.id == first.id) {
+            current = x;
+            return _entryReceipt(x);
+          }
+        }
+        return null;
+      },
+      onEdit: () =>
+          showTransactionSheet(context, _typeOf(first.type), entry: current),
+    );
+  }
+
+  void _openReminder(ReminderItem first) {
+    var current = first;
+    _showReceipt(
+      context,
+      _reminderReceipt(first),
+      reload: () async {
+        final all = await _db.getReminders();
+        for (final x in all) {
+          if (x.id == first.id) {
+            current = x;
+            return _reminderReceipt(x);
+          }
+        }
+        return null; // done or deleted: the receipt closes
+      },
+      onEdit: () => showTransactionSheet(
+        context,
+        TransactionColorType.reminder,
+        reminder: current,
+      ),
+      onDone: () => _markDone(current),
+    );
+  }
+
+  Future<void> _markDone(ReminderItem r) async {
+    var accountId = r.accountId;
+    if (accountId == null) {
+      // No account saved on the reminder: ask which one to use.
+      final accounts = await _db.getAccountOptions();
+      if (!mounted) return;
+      final picked = await _pickItem(
+        context,
+        title: 'Account',
+        items: [for (final a in accounts) CategoryItem(a.id, a.name, a.typeIcon)],
+        iconFor: (item) => _iconForType('', item.icon),
+      );
+      if (picked == null) return;
+      accountId = picked.id;
+    }
+    try {
+      await _db.completeReminder(r, accountId: accountId);
+    } on Failure catch (f) {
+      _snack(f.message);
+    } catch (_) {
+      _snack(const UnknownFailure().message);
+    }
+  }
+
+  _ReceiptData _entryReceipt(HistoryEntry e) {
+    final s = AppSettings.instance;
+    final isTransfer = e.type == 'transfer';
+    final color = isTransfer
+        ? s.transferColor
+        : (e.type == 'income' ? s.incomeColor : s.expenseColor);
+    final dateText = '${_fmtLong(e.date)}  •  ${_fmtTime12(e.date)}';
+    return _ReceiptData(
+      color: color,
+      icon: isTransfer ? Icons.arrow_upward : _iconForCategory(e.categoryIcon),
+      title: e.title,
+      kind: _typeOf(e.type).label,
+      rows: isTransfer
+          ? [
+              ('From', e.accountName, null),
+              ('To', e.toAccountName ?? '', null),
+              ('Date', dateText, null),
+            ]
+          : [
+              ('Account', e.accountName, null),
+              (
+                'Category',
+                e.categoryName ?? '',
+                _iconForCategory(e.categoryIcon),
+              ),
+              ('Date', dateText, null),
+            ],
+      note: e.note?.trim(),
+      imagePath: e.imagePath,
+      totalLabel: 'TOTAL',
+      totalText: Utils.formatCurrency(
+        e.amount,
+        symbol: AppConstants.currencySymbol,
+      ),
+    );
+  }
+
+  bool _isOverdue(DateTime due) {
+    final n = DateTime.now();
+    return DateTime(due.year, due.month, due.day)
+        .isBefore(DateTime(n.year, n.month, n.day));
+  }
+
+  _ReceiptData _reminderReceipt(ReminderItem r) {
+    final s = AppSettings.instance;
+    const repeatLabels = {
+      'daily': 'Daily',
+      'weekly': 'Weekly',
+      'monthly': 'Monthly',
+      'yearly': 'Yearly',
+    };
+    return _ReceiptData(
+      color: s.reminderColor,
+      icon: _iconForCategory(r.categoryIcon),
+      title: r.title,
+      kind: 'Reminder',
+      overdue: _isOverdue(r.dueDate),
+      rows: [
+        ('Type', _capitalizeWord(r.type), null),
+        if (r.categoryName != null)
+          ('Category', r.categoryName!, _iconForCategory(r.categoryIcon)),
+        (
+          'Due date',
+          '${_fmtLong(r.dueDate)}, ${_weekdayShort[r.dueDate.weekday - 1]}',
+          null,
+        ),
+        if (repeatLabels.containsKey(r.repeat))
+          ('Repeat', repeatLabels[r.repeat]!, null),
+        if (r.accountName != null) ('Account', r.accountName!, null),
+      ],
+      note: r.note?.trim(),
+      imagePath: r.imagePath,
+      totalLabel: 'AMOUNT',
+      totalText: Utils.formatCurrency(
+        r.amount,
+        symbol: AppConstants.currencySymbol,
+      ),
+    );
+  }
+
+  String _capitalizeWord(String t) =>
+      t.isEmpty ? t : t[0].toUpperCase() + t.substring(1);
+
+  // ---------- Pieces ----------
+
+  Widget _stat(IconData icon, Color color, double value) {
+    return Expanded(
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: 4),
+            Text(
+              Utils.formatCurrency(value, symbol: AppConstants.currencySymbol),
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _dayHeader(DateTime d, Color fg) {
+    final muted = fg.withValues(alpha: AppConstants.mutedAlpha);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppConstants.spaceMd,
+        AppConstants.spaceSmMd,
+        AppConstants.spaceMd,
+        0,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${_monthNames[d.month - 1].substring(0, 3)} ${d.day}'
+            ',  ${_weekdayLong[d.weekday - 1]}',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: muted,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Divider(
+            height: 1,
+            thickness: 1,
+            color: fg.withValues(alpha: AppConstants.dividerAlpha),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _monthHeader(int year, int month, Color fg) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppConstants.spaceMd,
+        AppConstants.spaceLg,
+        AppConstants.spaceMd,
+        0,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _range.multiYear
+                ? '${_monthNames[month - 1]} $year'
+                : _monthNames[month - 1],
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: fg,
+            ),
+          ),
+          const SizedBox(height: AppConstants.spaceXs),
+          Divider(height: 1, thickness: 2, color: fg.withValues(alpha: 0.3)),
+        ],
+      ),
+    );
+  }
+
+  Widget _entryRow(HistoryEntry e, Color fg) {
+    final s = AppSettings.instance;
+    final theme = Theme.of(context);
+    final accent = AppTheme.accentOf(context);
+    final k = _fontScale(context).clamp(0.8, 1.3).toDouble();
+    final isTransfer = e.type == 'transfer';
+    final color = isTransfer
+        ? s.transferColor
+        : (e.type == 'income' ? s.incomeColor : s.expenseColor);
+    final sign = isTransfer ? '±' : (e.type == 'income' ? '+' : '−');
+    final sub = isTransfer
+        ? '${e.accountName} → ${e.toAccountName ?? ''}'
+        : e.accountName;
+
+    // Same size and shape as the reminder card.
+    final card = Material(
+      color: accent.background,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _openEntry(e),
+        child: Padding(
+          padding: EdgeInsets.all(AppConstants.spaceSmMd * k),
+          child: Row(
+            children: [
+              Container(
+                width: 42 * k,
+                height: 42 * k,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.22),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  isTransfer
+                      ? Icons.swap_horiz
+                      : _iconForCategory(e.categoryIcon),
+                  size: 22 * k,
+                  color: color,
+                ),
+              ),
+              const SizedBox(width: AppConstants.spaceSmMd),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      e.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: fg,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      sub,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontSize: 12,
+                        color: fg.withValues(alpha: AppConstants.mutedAlpha),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppConstants.spaceSm),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '$sign${Utils.formatCurrency(e.amount, symbol: AppConstants.currencySymbol)}',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: color,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _fmtTime12(e.date),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontSize: 11,
+                      color: fg.withValues(alpha: AppConstants.mutedAlpha),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppConstants.spaceMd),
+        child: Dismissible(
+        key: ValueKey('tx-${e.id}'),
+        direction: DismissDirection.endToStart,
+        confirmDismiss: (_) => _deleteEntry(e),
+        onDismissed: (_) => setState(() {
+          _entries = [
+            for (final x in _entries)
+              if (x.id != e.id) x,
+          ];
+        }),
+        background: _swipeBackground(16),
+        child: card,
+      ),
+    );
+  }
+
+  Widget _reminderCard(ReminderItem r, Color fg) {
+    final s = AppSettings.instance;
+    final theme = Theme.of(context);
+    final accent = AppTheme.accentOf(context);
+    final k = _fontScale(context).clamp(0.8, 1.3).toDouble();
+    final overdue = _isOverdue(r.dueDate);
+    final base = overdue ? _darker(s.reminderColor) : s.reminderColor;
+    final amountColor = r.type == 'income' ? s.incomeColor : s.expenseColor;
+    final due =
+        '${overdue ? 'Due ' : ''}${_monthNames[r.dueDate.month - 1].substring(0, 3)} '
+        '${r.dueDate.day}, ${_weekdayShort[r.dueDate.weekday - 1]}';
+
+    final card = Material(
+      // Solid color, so the red swipe background doesn't show through.
+      color: Color.alphaBlend(base.withValues(alpha: 0.14), accent.background),
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _openReminder(r),
+        child: Padding(
+          padding: EdgeInsets.all(AppConstants.spaceSmMd * k),
+          child: Row(
+            children: [
+              Container(
+                width: 42 * k,
+                height: 42 * k,
+                decoration: BoxDecoration(
+                  color: base.withValues(alpha: 0.22),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  overdue
+                      ? Icons.warning_amber_rounded
+                      : Icons.notifications_active,
+                  size: 22 * k,
+                  color: base,
+                ),
+              ),
+              const SizedBox(width: AppConstants.spaceSmMd),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      r.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: fg,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Icon(
+                          _iconForCategory(r.categoryIcon),
+                          size: 13 * k,
+                          color: amountColor,
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            r.categoryName ?? _capitalizeWord(r.type),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontSize: 12,
+                              color: fg.withValues(
+                                alpha: AppConstants.mutedAlpha,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppConstants.spaceSm),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '${r.type == 'income' ? '+' : '−'}'
+                    '${Utils.formatCurrency(r.amount, symbol: AppConstants.currencySymbol)}',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: amountColor,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    due,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontSize: 11,
+                      color: overdue
+                          ? base
+                          : fg.withValues(alpha: AppConstants.mutedAlpha),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppConstants.spaceMd,
+        0,
+        AppConstants.spaceMd,
+        AppConstants.spaceSm,
+      ),
+      child: Dismissible(
+        key: ValueKey('rem-${r.id}'),
+        direction: DismissDirection.endToStart,
+        confirmDismiss: (_) => _deleteReminderItem(r),
+        onDismissed: (_) => setState(() {
+          _reminders = [
+            for (final x in _reminders)
+              if (x.id != r.id) x,
+          ];
+        }),
+        background: _swipeBackground(16),
+        child: card,
+      ),
+    );
+  }
+
+  Widget _remindersSection(Color fg) {
+    final color = AppSettings.instance.reminderColor;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppConstants.spaceMd,
+            AppConstants.spaceMd,
+            AppConstants.spaceMd,
+            AppConstants.spaceSm,
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.notifications_outlined, size: 18, color: color),
+              ),
+              const SizedBox(width: AppConstants.spaceSm),
+              Text(
+                'REMINDERS',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.2,
+                  color: color,
+                ),
+              ),
+              const SizedBox(width: AppConstants.spaceSm),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${_reminders.length}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: color,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        for (final r in _reminders) _reminderCard(r, fg),
+      ],
+    );
+  }
+
+  List<Widget> _listChildren(Color fg) {
+    final out = <Widget>[];
+    if (_reminders.isNotEmpty) out.add(_remindersSection(fg));
+    if (!_loaded) {
+      out.add(const Padding(
+        padding: EdgeInsets.all(AppConstants.spaceXl),
+        child: Center(child: CircularProgressIndicator()),
+      ));
+      return out;
+    }
+    if (_entries.isEmpty) {
+      out.add(Padding(
+        padding: const EdgeInsets.all(AppConstants.spaceXl),
+        child: Center(
+          child: Text(
+            'No transactions',
+            style: TextStyle(
+              color: fg.withValues(alpha: AppConstants.mutedAlpha),
+            ),
+          ),
+        ),
+      ));
+      return out;
+    }
+    int? lastMonth;
+    String? lastDay;
+    for (final e in _entries) {
+      final d = e.date;
+      if (_range.groupByMonth) {
+        final mk = d.year * 100 + d.month;
+        if (mk != lastMonth) {
+          out.add(_monthHeader(d.year, d.month, fg));
+          lastMonth = mk;
+          lastDay = null;
+        }
+      }
+      final dk = '${d.year}-${d.month}-${d.day}';
+      if (dk != lastDay) {
+        out.add(_dayHeader(d, fg));
+        lastDay = dk;
+      }
+      out.add(_entryRow(e, fg));
+    }
+    return out;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accent = AppTheme.accentOf(context);
+    final fg = accent.foreground;
+    final s = AppSettings.instance;
+    final left = _income - _expense;
+
+    return Material(
+      color: accent.background,
+      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(28)),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          SizedBox(height: MediaQuery.viewPaddingOf(context).top),
+          // Title + date filter button
+                    // Title + date filter button
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppConstants.spaceMd + AppConstants.spaceXs,
+              AppConstants.spaceMd,
+              AppConstants.spaceSm,
+              0,
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: fg.withValues(alpha: AppConstants.tintAlpha),
+                    borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+                  ),
+                  child: Icon(Icons.receipt_long_outlined, color: fg),
+                ),
+                const SizedBox(width: AppConstants.spaceMd),
+                Expanded(
+                  child: Text(
+                    'Transaction History',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: fg,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.filter_list, color: fg),
+                  tooltip: 'Filter by date',
+                  onPressed: _pickRange,
+                ),
+              ],
+            ),
+          ),
+          // < date >
+                    // < date >
+          Row(
+            children: [
+              SizedBox(
+                width: 48,
+                height: 48,
+                child: _range.canStep
+                    ? IconButton(
+                        icon: Icon(Icons.chevron_left, color: fg),
+                        onPressed: () => _shift(-1),
+                      )
+                    : null,
+              ),
+              Expanded(
+                child: Center(
+                  child: Text(
+                    _range.label,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: fg,
+                    ),
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: 48,
+                height: 48,
+                child: _range.canStep
+                    ? IconButton(
+                        icon: Icon(Icons.chevron_right, color: fg),
+                        onPressed: () => _shift(1),
+                      )
+                    : null,
+              ),
+            ],
+          ),
+          // Income | Expense | What's left
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppConstants.spaceMd,
+              vertical: AppConstants.spaceSm,
+            ),
+            child: Row(
+              children: [
+                _stat(Icons.arrow_upward, s.incomeColor, _income),
+                _stat(Icons.arrow_downward, s.expenseColor, _expense),
+                _stat(
+                  Icons.account_balance_wallet_outlined,
+                  left >= 0 ? s.incomeColor : s.expenseColor,
+                  left,
+                ),
+              ],
+            ),
+          ),
+          // Line the list scrolls under
+          Divider(height: 1, thickness: 2, color: fg.withValues(alpha: 0.3)),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.all(AppConstants.spaceSm),
+              child: Text(
+                _error!,
+                style: TextStyle(color: theme.colorScheme.error),
+              ),
+            ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.only(bottom: AppConstants.spaceMd),
+              children: _listChildren(fg),
+            ),
+          ),
+          // Handle: tap or swipe up to close
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => Navigator.of(context).pop(),
+            onVerticalDragEnd: (d) {
+              if ((d.primaryVelocity ?? 0) < 0) Navigator.of(context).pop();
+            },
+            child: SizedBox(
+              height: 28,
+              width: double.infinity,
+              child: Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: fg.withValues(alpha: AppConstants.borderAlpha),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ------------------------------------------------------------------
+// Receipt pop-up
+// ------------------------------------------------------------------
+
+class _ReceiptData {
+  final Color color;
+  final IconData icon;
+  final String title;
+  final String kind; // Income / Expense / Transfer / Reminder
+  final bool overdue;
+  final List<(String, String, IconData?)> rows; // label, value, icon
+  final String? note;
+  final String? imagePath;
+  final String totalLabel;
+  final String totalText;
+
+  const _ReceiptData({
+    required this.color,
+    required this.icon,
+    required this.title,
+    required this.kind,
+    required this.rows,
+    required this.totalLabel,
+    required this.totalText,
+    this.overdue = false,
+    this.note,
+    this.imagePath,
+  });
+}
+
+/// [onDone] is only given for reminders (shows the Mark as Done button).
+/// [reload] returns fresh data after the database changes (null = close).
+Future<void> _showReceipt(
+  BuildContext context,
+  _ReceiptData data, {
+  required Future<_ReceiptData?> Function() reload,
+  required VoidCallback onEdit,
+  VoidCallback? onDone,
+}) {
+  return showDialog<void>(
+    context: context,
+    barrierColor: AppConstants.popupBarrier,
+    builder: (ctx) => _ReceiptDialog(
+      data: data,
+      reload: reload,
+      onEdit: onEdit, // the receipt stays open behind the edit sheet
+      onDone: onDone == null
+          ? null
+          : () {
+              Navigator.of(ctx).pop();
+              onDone();
+            },
+    ),
+  );
+}
+
+class _ReceiptDialog extends StatefulWidget {
+  final _ReceiptData data;
+  final Future<_ReceiptData?> Function() reload;
+  final VoidCallback onEdit;
+  final VoidCallback? onDone;
+
+  const _ReceiptDialog({
+    required this.data,
+    required this.reload,
+    required this.onEdit,
+    this.onDone,
+  });
+
+  @override
+  State<_ReceiptDialog> createState() => _ReceiptDialogState();
+}
+
+class _ReceiptDialogState extends State<_ReceiptDialog> {
+  /// Receipt size settings: edit these to resize it.
+  static const double _radius = 20; // corner roundness
+  static const double _imageMaxHeight = 200; // max picture height
+  static const double _sideInset = 32; // space left/right of the popup
+  static const double _bodyPad = 20; // side padding of the receipt body
+  /// 35% of the body padding: the picture almost touches the edges.
+  static const double _imageSidePad = _bodyPad * 0.20;
+
+  late _ReceiptData _data = widget.data;
+
+  @override
+  void initState() {
+    super.initState();
+    DatabaseHelper.instance.changes.addListener(_refresh);
+  }
+
+  @override
+  void dispose() {
+    DatabaseHelper.instance.changes.removeListener(_refresh);
+    super.dispose();
+  }
+
+  Future<void> _refresh() async {
+    try {
+      final fresh = await widget.reload();
+      if (!mounted) return;
+      if (fresh == null) {
+        Navigator.of(context).pop();
+      } else {
+        setState(() => _data = fresh);
+      }
+    } catch (_) {
+      // Keep showing what we have.
+    }
+  }
+
+  Widget _row(String label, String value, IconData? icon, Color fg, Color tint) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: fg.withValues(alpha: AppConstants.mutedAlpha),
+            ),
+          ),
+          const SizedBox(width: AppConstants.spaceMd),
+          Expanded(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (icon != null) ...[
+                  Icon(icon, size: 15, color: tint),
+                  const SizedBox(width: 6),
+                ],
+                Flexible(
+                  child: Text(
+                    value,
+                    textAlign: TextAlign.end,
+                    style: TextStyle(fontSize: 14, color: fg),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final data = _data;
+    final accentC = data.color;
+    final onDone = widget.onDone;
+    final accent = AppTheme.accentOf(context);
+    final fg = accent.foreground;
+    final body = accent.background;
+    final isBW = _isBW(accentC);
+    // Strong, saturated colors (not mixed with white).
+    final header = Color.alphaBlend(accentC.withValues(alpha: 0.4), body);
+    final bright = isBW ? accentC : _vivid(accentC);
+    final dash = fg.withValues(alpha: 0.35);
+    final note = data.note;
+    final image = data.imagePath;
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding:
+          const EdgeInsets.symmetric(horizontal: _sideInset, vertical: 24),
+      child: Stack(
+        clipBehavior: Clip.none, // lets the edit button sit on the edge
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(_radius),
+            child: Material(
+              color: body,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // ----- Colored top (taller) -----
+                    Container(
+                      width: double.infinity,
+                      color: header,
+                      padding: const EdgeInsets.fromLTRB(20, 40, 20, 26),
+                      child: Column(
+                        children: [
+                          Container(
+                            width: 68,
+                            height: 68,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: data.color.withValues(alpha: 0.3),
+                              border: Border.all(color: bright, width: 3),
+                            ),
+                            child: Icon(data.icon, size: 32, color: bright),
+                          ),
+                          const SizedBox(height: AppConstants.spaceMd),
+                          Text(
+                            data.title,
+                            textAlign: TextAlign.center,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.w800,
+                              color: fg,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            data.kind,
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w800,
+                              color: bright,
+                            ),
+                          ),
+                          if (data.overdue) ...[
+                            const SizedBox(height: AppConstants.spaceSmMd),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: _darker(data.color)
+                                    .withValues(alpha: 0.85),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.warning_amber_rounded,
+                                    size: 16,
+                                    color: bright,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Overdue',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: bright,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    // Scalloped edge
+                    LayoutBuilder(
+                      builder: (context, c) {
+                        final n = (c.maxWidth / 18).round();
+                        final r = c.maxWidth / n / 2;
+                        return SizedBox(
+                          width: c.maxWidth,
+                          height: r,
+                          child: CustomPaint(
+                            painter: _ScallopPainter(header, body, n),
+                          ),
+                        );
+                      },
+                    ),
+                    // ----- Picture: nearly the full width -----
+                    if (image != null && image.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          _imageSidePad,
+                          AppConstants.spaceSm,
+                          _imageSidePad,
+                          0,
+                        ),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(
+                            maxHeight: _imageMaxHeight,
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.file(
+                              File(image),
+                              width: double.infinity,
+                              fit: BoxFit.contain,
+                              errorBuilder: (_, _, _) => Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Icon(
+                                  Icons.broken_image_outlined,
+                                  color: fg,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    // ----- Receipt body (more spaced out) -----
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        _bodyPad,
+                        AppConstants.spaceMd,
+                        _bodyPad,
+                        28,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _Dashed(color: dash),
+                          const SizedBox(height: AppConstants.spaceSmMd),
+                          for (final r in data.rows)
+                            _row(r.$1, r.$2, r.$3, fg, bright),
+                          if (note != null && note.isNotEmpty) ...[
+                            const SizedBox(height: AppConstants.spaceSmMd),
+                            _Dashed(color: dash),
+                            const SizedBox(height: AppConstants.spaceSmMd),
+                            _row('Note', note, null, fg, bright),
+                          ],
+                          const SizedBox(height: AppConstants.spaceSmMd),
+                          _Dashed(color: dash),
+                          const SizedBox(height: AppConstants.spaceMd),
+                          Row(
+                            children: [
+                              Text(
+                                data.totalLabel,
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 1,
+                                  color: fg,
+                                ),
+                              ),
+                              const SizedBox(width: AppConstants.spaceMd),
+                              Expanded(
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerRight,
+                                  child: Text(
+                                    data.totalText,
+                                    maxLines: 1,
+                                    style: TextStyle(
+                                      fontSize: 26,
+                                      fontWeight: FontWeight.w800,
+                                      color: bright,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (onDone != null) ...[
+                            const SizedBox(height: AppConstants.spaceMd),
+                            Center(
+                              child: FilledButton.icon(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: const Color(0xFF1B6B3A),
+                                  foregroundColor: Colors.white,
+                                  minimumSize: const Size(0, 46),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 22,
+                                  ),
+                                ),
+                                onPressed: onDone,
+                                icon: const Icon(Icons.check_circle_outline),
+                                label: const Text(
+                                  'Mark as Done',
+                                  style: TextStyle(fontWeight: FontWeight.w700),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+                    // Edit button: receipt color, with white pen and shadow for black/white
+          Positioned(
+            top: -10,
+            right: -10,
+            child: Material(
+              color: accentC,
+              shape: const CircleBorder(),
+              elevation: 6,
+              shadowColor: isBW ? Colors.white : accentC,
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: widget.onEdit,
+                child: SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: Icon(
+                    Icons.edit,
+                    size: 20,
+                    color: isBW ? Colors.white : AppTheme.onColor(accentC),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Dashed separator line (- - - - -).
+class _Dashed extends StatelessWidget {
+  final Color color;
+  const _Dashed({required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, c) {
+        final n = (c.maxWidth / 9).floor();
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            for (var i = 0; i < n; i++)
+              Container(width: 5, height: 1.5, color: color),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// The round bumps between the colored top and the receipt body.
+class _ScallopPainter extends CustomPainter {
+  final Color top;
+  final Color body;
+  final int count;
+  const _ScallopPainter(this.top, this.body, this.count);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRect(Offset.zero & size, Paint()..color = top);
+    final r = size.width / count / 2;
+    final paint = Paint()..color = body;
+    for (var i = 0; i < count; i++) {
+      canvas.drawCircle(Offset(r * (2 * i + 1), size.height), r, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_ScallopPainter old) =>
+      old.top != top || old.body != body || old.count != count;
+}
+
+// ------------------------------------------------------------------
+// Date filter pop-up (Day / Week / Month / Year / All / Custom)
+// ------------------------------------------------------------------
+
+class _RangeDialog extends StatefulWidget {
+  final _HistoryRange initial;
+  const _RangeDialog({required this.initial});
+
+  @override
+  State<_RangeDialog> createState() => _RangeDialogState();
+}
+
+class _RangeDialogState extends State<_RangeDialog> {
+  /// Fixed height of the middle part, so the pop-up never changes shape.
+  static const double _bodyHeight = 262;
+
+  static const _tabs = <(_Period, String)>[
+    (_Period.day, 'Day'),
+    (_Period.week, 'Week'),
+    (_Period.month, 'Month'),
+    (_Period.year, 'Year'),
+    (_Period.all, 'All'),
+    (_Period.custom, 'Custom'),
+  ];
+
+  late _Period _period;
+  late DateTime _view; // month shown / year shown / decade shown
+  late DateTime _picked; // date only
+  DateTime? _cStart;
+  DateTime? _cEnd;
+
+  @override
+  void initState() {
+    super.initState();
+    final i = widget.initial;
+    final n = DateTime.now();
+    _period = i.period;
+    _picked = i.isAll ? DateTime(n.year, n.month, n.day) : i.start;
+    if (i.period == _Period.custom) {
+      _cStart = i.start;
+      _cEnd = i.end;
+    }
+    _view = DateTime(_picked.year, _picked.month);
+  }
+
+  _HistoryRange get _result {
+    switch (_period) {
+      case _Period.all:
+        return _HistoryRange.of(_Period.all, _picked);
+      case _Period.custom:
+        final s = _cStart ?? _picked;
+        return _HistoryRange(_Period.custom, s, _cEnd ?? s);
+      default:
+        return _HistoryRange.of(_period, _picked);
+    }
+  }
+
+  String get _pillText {
+    final r = _result;
+    if (r.period == _Period.day) {
+      return '${_weekdayShort[r.start.weekday - 1]}, ${r.label}';
+    }
+    return r.label;
+  }
+
+  int get _decadeStart => ((_view.year - 1) ~/ 10) * 10 + 1;
+
+  String get _viewTitle {
+    switch (_period) {
+      case _Period.month:
+        return '${_view.year}';
+      case _Period.year:
+        return '$_decadeStart – ${_decadeStart + 9}';
+      default:
+        return '${_monthNames[_view.month - 1]} ${_view.year}';
+    }
+  }
+
+  void _step(int by) {
+    setState(() {
+      switch (_period) {
+        case _Period.month:
+          _view = DateTime(_view.year + by);
+        case _Period.year:
+          _view = DateTime(_view.year + 10 * by);
+        default:
+          _view = DateTime(_view.year, _view.month + by);
+      }
+    });
+  }
+
+  void _tapDay(DateTime date) {
+    setState(() {
+      if (_period == _Period.custom) {
+        final s = _cStart;
+        if (s == null || _cEnd != null) {
+          _cStart = date;
+          _cEnd = null;
+        } else if (date.isBefore(s)) {
+          _cEnd = s;
+          _cStart = date;
+        } else {
+          _cEnd = date;
+        }
+      } else {
+        _picked = date;
+      }
+    });
+  }
+
+  Widget _tabBar(Color fg) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: fg.withValues(alpha: AppConstants.tintAlpha),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          for (final t in _tabs)
+            Expanded(
+              child: Material(
+                color: t.$1 == _period
+                    ? fg.withValues(alpha: 0.3)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(10),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: () => setState(() => _period = t.$1),
+                  child: SizedBox(
+                    height: 40,
+                    child: Center(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          t.$2,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: t.$1 == _period
+                                ? FontWeight.w800
+                                : FontWeight.w500,
+                            color: t.$1 == _period
+                                ? fg
+                                : fg.withValues(
+                                    alpha: AppConstants.mutedAlpha,
+                                  ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _navRow(Color fg) {
+    if (_period == _Period.all) return const SizedBox(height: 40);
+    return Row(
+      children: [
+        IconButton(
+          visualDensity: VisualDensity.compact,
+          icon: Icon(Icons.chevron_left, color: fg),
+          onPressed: () => _step(-1),
+        ),
+        Expanded(
+          child: Center(
+            child: Text(
+              _viewTitle,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: fg,
+              ),
+            ),
+          ),
+        ),
+        IconButton(
+          visualDensity: VisualDensity.compact,
+          icon: Icon(Icons.chevron_right, color: fg),
+          onPressed: () => _step(1),
+        ),
+      ],
+    );
+  }
+  Widget _dayCell(int day, int days, Color fg) {
+    if (day < 1 || day > days) return const SizedBox(height: 38);
+    final date = DateTime(_view.year, _view.month, day);
+    var inRange = false;
+    var strong = false;
+    switch (_period) {
+      case _Period.day:
+        strong = date == _picked;
+      case _Period.week:
+        final w = _HistoryRange.of(_Period.week, _picked);
+        inRange = !date.isBefore(w.start) && !date.isAfter(w.end);
+        strong = date == _picked;
+      case _Period.custom:
+        final s = _cStart;
+        if (s != null) {
+          final e = _cEnd ?? s;
+          inRange = !date.isBefore(s) && !date.isAfter(e);
+          strong = date == s || date == e;
+        }
+      default:
+        break;
+    }
+    final highlighted = inRange || strong;
+    return Padding(
+      padding: const EdgeInsets.all(2),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _tapDay(date),
+        child: Container(
+          height: 34,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: strong
+                ? fg.withValues(alpha: 0.38)
+                : (inRange ? fg.withValues(alpha: 0.16) : null),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            '$day',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: highlighted ? FontWeight.w700 : FontWeight.w400,
+              color: fg,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _calendar(Color fg) {
+    final lead = DateTime(_view.year, _view.month, 1).weekday - 1; // Mon = 0
+    final days = DateTime(_view.year, _view.month + 1, 0).day;
+    return Column(
+      children: [
+        SizedBox(
+          height: 28,
+          child: Row(
+            children: [
+              for (final l in const ['M', 'T', 'W', 'T', 'F', 'S', 'S'])
+                Expanded(
+                  child: Center(
+                    child: Text(
+                      l,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: fg.withValues(alpha: AppConstants.mutedAlpha),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        // Always 6 rows, so every month has the same height.
+        for (var r = 0; r < 6; r++)
+          Row(
+            children: [
+              for (var c = 0; c < 7; c++)
+                Expanded(child: _dayCell(r * 7 + c - lead + 1, days, fg)),
+            ],
+          ),
+      ],
+    );
+  }
+
+  Widget _gridCell(String text, bool selected, Color fg, VoidCallback onTap) {
+    return Padding(
+      padding: const EdgeInsets.all(4),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Container(
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? fg.withValues(alpha: 0.3) : null,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
+              color: fg,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _grid(int count, Widget Function(int i) cell) {
+    return Center(
+      child: GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 4,
+          mainAxisExtent: 54,
+        ),
+        itemCount: count,
+        itemBuilder: (_, i) => cell(i),
+      ),
+    );
+  }
+
+  Widget _body(Color fg) {
+    switch (_period) {
+      case _Period.month:
+        return _grid(
+          12,
+          (i) => _gridCell(
+            _monthNames[i].substring(0, 3),
+            _picked.year == _view.year && _picked.month == i + 1,
+            fg,
+            () => setState(() => _picked = DateTime(_view.year, i + 1)),
+          ),
+        );
+      case _Period.year:
+        return _grid(
+          10,
+          (i) => _gridCell(
+            '${_decadeStart + i}',
+            _picked.year == _decadeStart + i,
+            fg,
+            () => setState(() => _picked = DateTime(_decadeStart + i)),
+          ),
+        );
+      case _Period.all:
+        return Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.all_inclusive,
+                size: 64,
+                color: fg.withValues(alpha: AppConstants.mutedAlpha),
+              ),
+              const SizedBox(height: AppConstants.spaceMd),
+              Text(
+                'Showing all transactions',
+                style: TextStyle(
+                  fontSize: 18,
+                  color: fg.withValues(alpha: AppConstants.mutedAlpha),
+                ),
+              ),
+            ],
+          ),
+        );
+      default:
+        return _calendar(fg);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = AppTheme.accentOf(context);
+    final fg = accent.foreground;
+    final bg = accent.background;
+
+    return Dialog(
+      backgroundColor: bg,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _tabBar(fg),
+            const SizedBox(height: AppConstants.spaceSm),
+            _navRow(fg),
+            SizedBox(height: _bodyHeight, child: _body(fg)),
+            const SizedBox(height: AppConstants.spaceSm),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: fg.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(AppConstants.radiusSm),
+              ),
+              child: Text(
+                _pillText,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: fg,
+                ),
+              ),
+            ),
+            const SizedBox(height: AppConstants.spaceMd),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(48),
+                      shape: const StadiumBorder(),
+                      foregroundColor: fg,
+                      side: BorderSide(color: fg.withValues(alpha: 0.5)),
+                    ),
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: _sheetGap),
+                Expanded(
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(48),
+                      shape: const StadiumBorder(),
+                      backgroundColor: fg,
+                      foregroundColor: bg,
+                    ),
+                    onPressed: () => Navigator.of(context).pop(_result),
+                    child: const Text(
+                      'Apply',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ------------------------------------------------------------------
 // Transaction pop-ups: Income, Expense, Transfer and Reminder
 // ------------------------------------------------------------------
 
 /// Opens the pop-up for [type] (called by the + button in main.dart).
+/// Pass [entry] (or [reminder]) to edit an existing one.
 Future<void> showTransactionSheet(
   BuildContext context,
-  TransactionColorType type,
-) {
+  TransactionColorType type, {
+  HistoryEntry? entry,
+  ReminderItem? reminder,
+}) {
   final accent = AppTheme.accentOf(context);
   return showModalBottomSheet<void>(
     context: context,
@@ -1933,7 +3926,8 @@ Future<void> showTransactionSheet(
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
     ),
-    builder: (_) => _TransactionSheet(type: type),
+    builder: (_) =>
+        _TransactionSheet(type: type, entry: entry, reminder: reminder),
   );
 }
 
@@ -2177,7 +4171,9 @@ Widget _sheetSelector({
 
 class _TransactionSheet extends StatefulWidget {
   final TransactionColorType type;
-  const _TransactionSheet({required this.type});
+  final HistoryEntry? entry;
+  final ReminderItem? reminder;
+  const _TransactionSheet({required this.type, this.entry, this.reminder});
 
   @override
   State<_TransactionSheet> createState() => _TransactionSheetState();
@@ -2213,6 +4209,9 @@ class _TransactionSheetState extends State<_TransactionSheet> {
   bool _saving = false;
   String? _error;
 
+  String? _originalImage; // picture the edited item already had
+  bool get _editing => widget.entry != null || widget.reminder != null;
+
   bool get _isReminder => widget.type == TransactionColorType.reminder;
   bool get _isTransfer => widget.type == TransactionColorType.transfer;
   bool get _incomeLike =>
@@ -2226,6 +4225,26 @@ class _TransactionSheetState extends State<_TransactionSheet> {
     if (!_isReminder) {
       final n = DateTime.now();
       _date = DateTime(n.year, n.month, n.day, n.hour, n.minute); // prefilled
+    }
+    // Edit mode: start with the saved values.
+    final e = widget.entry;
+    final r = widget.reminder;
+    if (e != null) {
+      _title.text = e.title;
+      _amount.text = e.amount.toStringAsFixed(2);
+      _note.text = e.note ?? '';
+      _date = e.date;
+      _imagePath = _originalImage = e.imagePath;
+    }
+    if (r != null) {
+      _title.text = r.title;
+      _amount.text = r.amount.toStringAsFixed(2);
+      _note.text = r.note ?? '';
+      _date = r.dueDate;
+      _reminderIncome = r.type == 'income';
+      final i = _repeatKeys.indexOf(r.repeat);
+      _repeat = _repeatOptions[i < 0 ? 0 : i];
+      _imagePath = _originalImage = r.imagePath;
     }
     _title.addListener(_refresh);
     _amount.addListener(_refresh);
@@ -2241,7 +4260,7 @@ class _TransactionSheetState extends State<_TransactionSheet> {
     _note.dispose();
     // A picked image that was never saved is not kept.
     final path = _imagePath;
-    if (!_didSave && path != null) _deleteFile(path);
+    if (!_didSave && path != null && path != _originalImage) _deleteFile(path);
     super.dispose();
   }
 
@@ -2293,6 +4312,20 @@ class _TransactionSheetState extends State<_TransactionSheet> {
             ],
           ),
       ];
+      CategoryItem? find(List<CategoryItem> list, int? id) {
+        for (final i in list) {
+          if (i.id == id) return i;
+        }
+        return null;
+      }
+
+      CategoryItem? findAccount(int? id) {
+        for (final g in groups) {
+          final f = find(g.items, id);
+          if (f != null) return f;
+        }
+        return null;
+      }
 
       if (!mounted) return;
       setState(() {
@@ -2301,6 +4334,19 @@ class _TransactionSheetState extends State<_TransactionSheet> {
         _accountGroups = groups;
         for (final a in accounts) {
           _accountTypes[a.id] = a.typeName;
+        }
+        // Edit mode: select the saved category / accounts.
+        final e = widget.entry;
+        final r = widget.reminder;
+        if (e != null) {
+          _account = findAccount(e.accountId);
+          _toAccount = findAccount(e.toAccountId);
+          if (e.type == 'income') _category = find(income, e.categoryId);
+          if (e.type == 'expense') _category = find(expense, e.categoryId);
+        }
+        if (r != null) {
+          _account = findAccount(r.accountId);
+          _category = find(r.type == 'income' ? income : expense, r.categoryId);
         }
       });
     } on Failure catch (f) {
@@ -2330,41 +4376,45 @@ class _TransactionSheetState extends State<_TransactionSheet> {
     final db = DatabaseHelper.instance;
     final amount = double.tryParse(_amount.text.trim()) ?? 0;
     try {
-      switch (widget.type) {
-        case TransactionColorType.income:
-        case TransactionColorType.expense:
-          await db.addTransaction(
-            type: widget.type.name,
-            title: _title.text,
-            amount: amount,
-            date: _date!,
-            accountId: _account!.id,
-            categoryId: _category!.id,
-            note: _note.text,
-            imagePath: _imagePath,
-          );
-        case TransactionColorType.transfer:
-          await db.addTransfer(
-            title: _title.text.trim().isEmpty ? 'Transfer' : _title.text,
-            amount: amount,
-            date: _date!,
-            fromAccountId: _account!.id,
-            toAccountId: _toAccount!.id,
-            note: _note.text,
-            imagePath: _imagePath,
-          );
-        case TransactionColorType.reminder:
-          await db.addReminder(
-            type: _reminderIncome ? 'income' : 'expense',
-            title: _title.text,
-            amount: amount,
-            dueDate: _date!,
-            categoryId: _category?.id,
-            accountId: _account?.id,
-            repeat: _repeatKeys[_repeat?.id ?? 0],
-            note: _note.text,
-            imagePath: _imagePath,
-          );
+      if (_editing) {
+        await _saveEdit(db, amount);
+      } else {
+        switch (widget.type) {
+          case TransactionColorType.income:
+          case TransactionColorType.expense:
+            await db.addTransaction(
+              type: widget.type.name,
+              title: _title.text,
+              amount: amount,
+              date: _date!,
+              accountId: _account!.id,
+              categoryId: _category!.id,
+              note: _note.text,
+              imagePath: _imagePath,
+            );
+          case TransactionColorType.transfer:
+            await db.addTransfer(
+              title: _title.text.trim().isEmpty ? 'Transfer' : _title.text,
+              amount: amount,
+              date: _date!,
+              fromAccountId: _account!.id,
+              toAccountId: _toAccount!.id,
+              note: _note.text,
+              imagePath: _imagePath,
+            );
+          case TransactionColorType.reminder:
+            await db.addReminder(
+              type: _reminderIncome ? 'income' : 'expense',
+              title: _title.text,
+              amount: amount,
+              dueDate: _date!,
+              categoryId: _category?.id,
+              accountId: _account?.id,
+              repeat: _repeatKeys[_repeat?.id ?? 0],
+              note: _note.text,
+              imagePath: _imagePath,
+            );
+        }
       }
       _didSave = true;
       if (mounted) Navigator.of(context).pop();
@@ -2377,6 +4427,38 @@ class _TransactionSheetState extends State<_TransactionSheet> {
     }
   }
 
+  Future<void> _saveEdit(DatabaseHelper db, double amount) async {
+    final e = widget.entry;
+    if (e != null) {
+      await db.updateTransaction(
+        id: e.id,
+        type: e.type,
+        title: _isTransfer && _title.text.trim().isEmpty
+            ? 'Transfer'
+            : _title.text,
+        amount: amount,
+        date: _date!,
+        accountId: _account!.id,
+        toAccountId: _isTransfer ? _toAccount!.id : null,
+        categoryId: _isTransfer ? null : _category!.id,
+        note: _note.text,
+        imagePath: _imagePath,
+      );
+    } else {
+      await db.updateReminder(
+        id: widget.reminder!.id,
+        type: _reminderIncome ? 'income' : 'expense',
+        title: _title.text,
+        amount: amount,
+        dueDate: _date!,
+        categoryId: _category?.id,
+        accountId: _account?.id,
+        repeat: _repeatKeys[_repeat?.id ?? 0],
+        note: _note.text,
+        imagePath: _imagePath,
+      );
+    }
+  }
   // ---------- Pickers ----------
 
   IconData _accountIcon(CategoryItem item) =>
@@ -2476,7 +4558,7 @@ class _TransactionSheetState extends State<_TransactionSheet> {
       if (file == null) return;
       final saved = await _copyToAppFolder(file.path);
       final old = _imagePath;
-      if (old != null) _deleteFile(old);
+      if (old != null && old != _originalImage) _deleteFile(old);
       if (mounted) setState(() => _imagePath = saved);
     } catch (_) {
       if (mounted) setState(() => _error = 'Couldn\'t get that image.');
@@ -2485,7 +4567,7 @@ class _TransactionSheetState extends State<_TransactionSheet> {
 
   void _removeImage() {
     final old = _imagePath;
-    if (old != null) _deleteFile(old);
+    if (old != null && old != _originalImage) _deleteFile(old);
     setState(() => _imagePath = null);
   }
 
@@ -2670,19 +4752,21 @@ class _TransactionSheetState extends State<_TransactionSheet> {
   }
 
   String get _heading {
+    final edit = _editing;
     switch (widget.type) {
       case TransactionColorType.income:
-        return 'New Income';
+        return edit ? 'Edit Income' : 'New Income';
       case TransactionColorType.expense:
-        return 'New Expense';
+        return edit ? 'Edit Expense' : 'New Expense';
       case TransactionColorType.transfer:
-        return 'Transfer Funds';
+        return edit ? 'Edit Transfer' : 'Transfer Funds';
       case TransactionColorType.reminder:
-        return 'New Reminder';
+        return edit ? 'Edit Reminder' : 'New Reminder';
     }
   }
 
   String get _buttonLabel {
+    if (_editing) return 'Save Changes';
     switch (widget.type) {
       case TransactionColorType.transfer:
         return 'Transfer';
@@ -2694,6 +4778,7 @@ class _TransactionSheetState extends State<_TransactionSheet> {
   }
 
   IconData get _buttonIcon {
+    if (_editing) return Icons.save;
     switch (widget.type) {
       case TransactionColorType.transfer:
         return Icons.swap_horiz;
@@ -3076,7 +5161,7 @@ class _DateTimeDialogState extends State<_DateTimeDialog> {
 
   Widget _cell(int day, int daysInMonth, Color fg) {
     final color = widget.color;
-    if (day < 1 || day > daysInMonth) return const SizedBox(height: 44);
+    if (day < 1 || day > daysInMonth) return const SizedBox(height: 38);
     final date = DateTime(_month.year, _month.month, day);
     final selected = date == _selected;
     return Padding(
@@ -3085,7 +5170,7 @@ class _DateTimeDialogState extends State<_DateTimeDialog> {
         borderRadius: BorderRadius.circular(12),
         onTap: () => setState(() => _selected = date),
         child: Container(
-          height: 40,
+          height: 34,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: selected ? color.withValues(alpha: 0.2) : null,
@@ -3217,15 +5302,15 @@ class _DateTimeDialogState extends State<_DateTimeDialog> {
 
     final lead = DateTime(_month.year, _month.month, 1).weekday - 1; // Mon = 0
     final days = DateTime(_month.year, _month.month + 1, 0).day;
-    final rows = ((lead + days) / 7).ceil();
+    const rows = 6; 
 
     return Dialog(
       backgroundColor: bg,
       surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
       child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

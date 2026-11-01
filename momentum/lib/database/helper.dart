@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:convert';
 import 'dart:io';
 
@@ -111,7 +112,10 @@ class ReminderItem {
   final String type; // 'income' | 'expense'
   final String title;
   final double amount; // pesos
+  final int? categoryId;
   final String? categoryName;
+  final String? categoryIcon;
+  final int? accountId;
   final String? accountName;
   final DateTime dueDate;
   final String repeat; // none | daily | weekly | monthly | yearly
@@ -124,13 +128,51 @@ class ReminderItem {
     required this.type,
     required this.title,
     required this.amount,
+    required this.categoryId,
     required this.categoryName,
+    required this.categoryIcon,
+    required this.accountId,
     required this.accountName,
     required this.dueDate,
     required this.repeat,
     required this.note,
     required this.imagePath,
     required this.done,
+  });
+}
+
+/// One transaction row of the Transaction History list.
+class HistoryEntry {
+  final int id;
+  final String type; // income | expense | transfer
+  final String title;
+  final double amount; // pesos
+  final DateTime date;
+  final int accountId;
+  final int? toAccountId;
+  final int? categoryId;
+  final String accountName;
+  final String? toAccountName;
+  final String? categoryName;
+  final String? categoryIcon;
+  final String? note;
+  final String? imagePath;
+
+  const HistoryEntry({
+    required this.id,
+    required this.type,
+    required this.title,
+    required this.amount,
+    required this.date,
+    required this.accountId,
+    required this.toAccountId,
+    required this.categoryId,
+    required this.accountName,
+    required this.toAccountName,
+    required this.categoryName,
+    required this.categoryIcon,
+    required this.note,
+    required this.imagePath,
   });
 }
 
@@ -773,7 +815,8 @@ class DatabaseHelper {
     return _guard(() async {
       final db = await database;
       final rows = await db.rawQuery('''
-        SELECT r.*, c.name AS category_name, a.name AS account_name
+        SELECT r.*, c.name AS category_name, c.icon AS category_icon,
+               a.name AS account_name
         FROM reminders r
         LEFT JOIN categories c ON c.id = r.category_id
         LEFT JOIN accounts a ON a.id = r.account_id
@@ -788,7 +831,10 @@ class DatabaseHelper {
             title: row['title'] as String,
             amount:
                 (row['amount'] as num).toInt() / AppConstants.centavosPerPeso,
+            categoryId: (row['category_id'] as num?)?.toInt(),
             categoryName: row['category_name'] as String?,
+            categoryIcon: row['category_icon'] as String?,
+            accountId: (row['account_id'] as num?)?.toInt(),
             accountName: row['account_name'] as String?,
             dueDate: DateTime.tryParse('${row['due_date']}') ?? DateTime.now(),
             repeat: row['repeat_rule'] as String,
@@ -797,6 +843,235 @@ class DatabaseHelper {
             done: (row['done'] as num).toInt() == 1,
           ),
       ];
+    });
+  }
+
+  /// Transactions (not trashed) between [from] (inclusive) and [until]
+  /// (exclusive), newest first. Both null = everything.
+  Future<List<HistoryEntry>> getHistory({DateTime? from, DateTime? until}) {
+    return _guard(() async {
+      final db = await database;
+      final where = <String>[
+        't.deleted_at IS NULL',
+        'a.deleted_at IS NULL',
+      ];
+      final args = <Object?>[];
+      if (from != null) {
+        where.add('t.date >= ?');
+        args.add(from.toIso8601String());
+      }
+      if (until != null) {
+        where.add('t.date < ?');
+        args.add(until.toIso8601String());
+      }
+      final rows = await db.rawQuery('''
+        SELECT t.*, c.name AS category_name, c.icon AS category_icon,
+               a.name AS account_name, b.name AS to_account_name
+        FROM transactions t
+        JOIN accounts a ON a.id = t.account_id
+        LEFT JOIN accounts b ON b.id = t.to_account_id
+        LEFT JOIN categories c ON c.id = t.category_id
+        WHERE ${where.join(' AND ')}
+        ORDER BY t.date DESC, t.id DESC
+      ''', args);
+      return [
+        for (final row in rows)
+          HistoryEntry(
+            id: (row['id'] as num).toInt(),
+            type: row['type'] as String,
+            title: _nonEmpty(row['title'] as String?) ??
+                _nonEmpty(row['category_name'] as String?) ??
+                _capitalize(row['type'] as String),
+            amount:
+                (row['amount'] as num).toInt() / AppConstants.centavosPerPeso,
+            date: DateTime.tryParse('${row['date']}') ?? DateTime.now(),
+            accountId: (row['account_id'] as num).toInt(),
+            toAccountId: (row['to_account_id'] as num?)?.toInt(),
+            categoryId: (row['category_id'] as num?)?.toInt(),
+            accountName: row['account_name'] as String,
+            toAccountName: row['to_account_name'] as String?,
+            categoryName: row['category_name'] as String?,
+            categoryIcon: row['category_icon'] as String?,
+            note: row['note'] as String?,
+            imagePath: row['image_path'] as String?,
+          ),
+      ];
+    });
+  }
+
+  /// Saves the changes of an existing transaction (the type never changes).
+  Future<void> updateTransaction({
+    required int id,
+    required String type,
+    required String title,
+    required double amount,
+    required DateTime date,
+    required int accountId,
+    int? toAccountId,
+    int? categoryId,
+    String? note,
+    String? imagePath,
+  }) {
+    return _guard(() async {
+      final centavos = _positiveCentavos(amount);
+      final db = await database;
+      String? oldImage;
+      await db.transaction((txn) async {
+        await _requireActiveAccount(txn, accountId);
+        if (type == 'transfer') {
+          if (toAccountId == null || toAccountId == accountId) {
+            throw const ValidationFailure('Pick two different accounts.');
+          }
+          await _requireActiveAccount(txn, toAccountId);
+        }
+        final old = await txn.query(
+          'transactions',
+          columns: ['image_path'],
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+        if (old.isNotEmpty) oldImage = old.first['image_path'] as String?;
+        await txn.update(
+          'transactions',
+          {
+            'amount': centavos,
+            'account_id': accountId,
+            'to_account_id': type == 'transfer' ? toAccountId : null,
+            if (type != 'transfer') 'category_id': categoryId,
+            'title': _cleanName(title),
+            'note': _nonEmpty(note),
+            'image_path': imagePath,
+            'date': date.toIso8601String(),
+          },
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+      });
+      if (oldImage != null && oldImage != imagePath) {
+        await _deleteImageFiles([oldImage]);
+      }
+      notifyChanged();
+    });
+  }
+
+  /// Saves the changes of an existing (not done) reminder.
+  Future<void> updateReminder({
+    required int id,
+    required String type,
+    required String title,
+    required double amount,
+    required DateTime dueDate,
+    int? categoryId,
+    int? accountId,
+    String repeat = 'none',
+    String? note,
+    String? imagePath,
+  }) {
+    return _guard(() async {
+      if (type != 'income' && type != 'expense') {
+        throw const ValidationFailure('Unknown reminder type.');
+      }
+      if (!_repeatRules.contains(repeat)) {
+        throw const ValidationFailure('Unknown repeat option.');
+      }
+      final centavos = _positiveCentavos(amount);
+      final db = await database;
+      String? oldImage;
+      await db.transaction((txn) async {
+        if (accountId != null) await _requireActiveAccount(txn, accountId);
+        final old = await txn.query(
+          'reminders',
+          columns: ['image_path'],
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+        if (old.isNotEmpty) oldImage = old.first['image_path'] as String?;
+        await txn.update(
+          'reminders',
+          {
+            'type': type,
+            'title': _cleanName(title),
+            'amount': centavos,
+            'category_id': categoryId,
+            'account_id': accountId,
+            'due_date': dueDate.toIso8601String(),
+            'repeat_rule': repeat,
+            'note': _nonEmpty(note),
+            'image_path': imagePath,
+          },
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+      });
+      if (oldImage != null && oldImage != imagePath) {
+        await _deleteImageFiles([oldImage]);
+      }
+      notifyChanged();
+    });
+  }
+
+  DateTime? _nextDue(DateTime d, String repeat) {
+    switch (repeat) {
+      case 'daily':
+        return DateTime(d.year, d.month, d.day + 1, d.hour, d.minute);
+      case 'weekly':
+        return DateTime(d.year, d.month, d.day + 7, d.hour, d.minute);
+      case 'monthly':
+        final lastDay = DateTime(d.year, d.month + 2, 0).day;
+        return DateTime(
+          d.year,
+          d.month + 1,
+          math.min(d.day, lastDay),
+          d.hour,
+          d.minute,
+        );
+      case 'yearly':
+        final day = (d.month == 2 && d.day == 29) ? 28 : d.day;
+        return DateTime(d.year + 1, d.month, day, d.hour, d.minute);
+      default:
+        return null;
+    }
+  }
+
+  /// Marks a reminder as done and turns it into a regular transaction
+  /// (dated now). A repeating reminder also schedules its next one.
+  Future<void> completeReminder(ReminderItem r, {required int accountId}) {
+    return _guard(() async {
+      final db = await database;
+      await db.transaction((txn) async {
+        await _requireActiveAccount(txn, accountId);
+        await txn.insert('transactions', {
+          'type': r.type,
+          'amount': _positiveCentavos(r.amount),
+          'account_id': accountId,
+          'category_id': r.categoryId,
+          'title': r.title,
+          'note': _nonEmpty(r.note),
+          'image_path': r.imagePath,
+          'date': DateTime.now().toIso8601String(),
+        });
+        await txn.update(
+          'reminders',
+          {'done': 1, 'account_id': accountId},
+          where: 'id = ?',
+          whereArgs: [r.id],
+        );
+        final next = _nextDue(r.dueDate, r.repeat);
+        if (next != null) {
+          await txn.insert('reminders', {
+            'type': r.type,
+            'title': r.title,
+            'amount': _positiveCentavos(r.amount),
+            'category_id': r.categoryId,
+            'account_id': accountId,
+            'due_date': next.toIso8601String(),
+            'repeat_rule': r.repeat,
+            'note': _nonEmpty(r.note),
+            'image_path': null,
+          });
+        }
+      });
+      notifyChanged();
     });
   }
 
