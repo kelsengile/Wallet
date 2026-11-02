@@ -2861,6 +2861,7 @@ class _HistoryPanelState extends State<_HistoryPanel> {
     final fg = accent.foreground;
     final s = AppSettings.instance;
     final left = _income - _expense;
+    final scale = _fontScale(context).clamp(0.9, 1.3).toDouble();
 
     return Material(
       color: accent.background,
@@ -2881,8 +2882,8 @@ class _HistoryPanelState extends State<_HistoryPanel> {
             child: Row(
               children: [
                 Container(
-                  width: 40,
-                  height: 40,
+                  width: 40 * scale,
+                  height: 40 * scale,
                   decoration: BoxDecoration(
                     color: fg.withValues(alpha: AppConstants.tintAlpha),
                     borderRadius: BorderRadius.circular(AppConstants.radiusMd),
