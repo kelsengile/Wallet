@@ -557,14 +557,17 @@ class _FinanceScreenState extends State<FinanceScreen> {
 }
 
 // ------------------------------------------------------------------
-// New Account bottom sheet
+// New / Edit Account bottom sheet
 // ------------------------------------------------------------------
 
 /// Bottom sheet that opens from the "+" button next to "My Accounts".
+/// Pass [account] to edit an existing account instead (no balance field,
+/// plus a Delete Account button).
 /// Background = accent color, text / icons / outlines = glyph color.
 /// Types and categories come from the app's own database lists.
 class _AddAccountSheet extends StatefulWidget {
-  const _AddAccountSheet();
+  final _AccountCardData? account; // null = new account, set = edit
+  const _AddAccountSheet({this.account});
 
   @override
   State<_AddAccountSheet> createState() => _AddAccountSheetState();
@@ -595,9 +598,17 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
   bool _saving = false;
   String? _error;
 
+  bool get _editing => widget.account != null;
+
   @override
   void initState() {
     super.initState();
+    final a = widget.account;
+    if (a != null) {
+      _name.text = a.name;
+      _noteTitle.text = a.noteTitle ?? '';
+      _noteBody.text = a.noteBody ?? '';
+    }
     for (final c in [_name, _balance, _noteTitle, _noteBody]) {
       c.addListener(_refresh);
     }
@@ -628,6 +639,15 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
       setState(() {
         _types = types;
         _categories = categories;
+        final a = widget.account;
+        if (a != null) {
+          for (final t in types) {
+            if (t.id == a.typeId) _type = t;
+          }
+          for (final c in categories) {
+            if (c.name == a.category) _category = c;
+          }
+        }
       });
     } on Failure catch (f) {
       if (mounted) setState(() => _error = f.message);
@@ -646,14 +666,44 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
       _error = null;
     });
     try {
-      await DatabaseHelper.instance.addAccount(
-        name: _name.text,
-        typeId: _type!.id,
-        categoryId: _category!.id,
-        initialBalance: double.tryParse(_balance.text.trim()) ?? 0,
-        noteTitle: _noteTitle.text,
-        noteBody: _noteBody.text,
-      );
+      final a = widget.account;
+      if (a != null) {
+        await DatabaseHelper.instance.updateAccount(
+          id: a.id,
+          name: _name.text,
+          typeId: _type!.id,
+          categoryId: _category!.id,
+          noteTitle: _noteTitle.text,
+          noteBody: _noteBody.text,
+        );
+      } else {
+        await DatabaseHelper.instance.addAccount(
+          name: _name.text,
+          typeId: _type!.id,
+          categoryId: _category!.id,
+          initialBalance: double.tryParse(_balance.text.trim()) ?? 0,
+          noteTitle: _noteTitle.text,
+          noteBody: _noteBody.text,
+        );
+      }
+      if (mounted) Navigator.of(context).pop();
+    } on Failure catch (f) {
+      if (mounted) setState(() => _error = f.message);
+    } catch (_) {
+      if (mounted) setState(() => _error = const UnknownFailure().message);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  /// Moves the account to the trash (it can be restored from there).
+  Future<void> _delete() async {
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await DatabaseHelper.instance.softDeleteAccount(widget.account!.id);
       if (mounted) Navigator.of(context).pop();
     } on Failure catch (f) {
       if (mounted) setState(() => _error = f.message);
@@ -842,7 +892,7 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
                   ),
                   const SizedBox(width: AppConstants.spaceMd),
                   Text(
-                    'New Account',
+                    _editing ? 'Edit Account' : 'New Account',
                     style: base.textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.w700,
                       color: fg,
@@ -867,32 +917,36 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
               ),
               const SizedBox(height: _gap),
 
-              // Initial balance: no length limit, the text shrinks to fit.
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final size = _balanceFontSize(constraints.maxWidth);
-                  return TextField(
-                    controller: _balance,
-                    style: TextStyle(color: fg, fontSize: size),
-                    cursorColor: fg,
-                    maxLines: 1,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    inputFormatters: [
-                      FilteringTextInputFormatter.allow(
-                        RegExp(r'^\d*\.?\d{0,2}'),
+              // Initial balance (new accounts only): no length limit,
+              // the text shrinks to fit.
+              if (!_editing) ...[
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final size = _balanceFontSize(constraints.maxWidth);
+                    return TextField(
+                      controller: _balance,
+                      style: TextStyle(color: fg, fontSize: size),
+                      cursorColor: fg,
+                      maxLines: 1,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
                       ),
-                    ],
-                    decoration: _decoration(
-                      fg,
-                      label: 'Initial Balance (${AppConstants.currencySymbol})',
-                      icon: Icon(Icons.payments_outlined, color: fg),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: _gap),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(
+                          RegExp(r'^\d*\.?\d{0,2}'),
+                        ),
+                      ],
+                      decoration: _decoration(
+                        fg,
+                        label:
+                            'Initial Balance (${AppConstants.currencySymbol})',
+                        icon: Icon(Icons.payments_outlined, color: fg),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: _gap),
+              ],
 
               // Type + Category side by side
               Row(
@@ -1045,15 +1099,32 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
               ],
               const SizedBox(height: AppConstants.spaceMd),
 
-              // Add button (greyed out until name, type and category are set)
+              // Add / Save button (greyed out until name, type and
+              // category are set)
               SizedBox(
                 height: 48,
                 child: FilledButton.icon(
                   onPressed: _canSave ? _save : null,
-                  icon: const Icon(Icons.add),
-                  label: const Text('Add Account'),
+                  icon: Icon(_editing ? Icons.save : Icons.add),
+                  label: Text(_editing ? 'Save Changes' : 'Add Account'),
                 ),
               ),
+              if (_editing) ...[
+                const SizedBox(height: AppConstants.spaceSm),
+                SizedBox(
+                  height: 48,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red,
+                      side: const BorderSide(color: Colors.red, width: 1.5),
+                      shape: const StadiumBorder(),
+                    ),
+                    onPressed: _saving ? null : _delete,
+                    icon: const Icon(Icons.delete_outline),
+                    label: const Text('Delete Account'),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -1270,6 +1341,7 @@ class _AccountTypeSection extends StatelessWidget {
 
 /// One account as a row (list view). It has everything the front of
 /// the card has: category icon, name, balance and category.
+/// Long press opens the view-account pop-up.
 class _AccountListTile extends StatelessWidget {
   final _AccountCardData account;
   final bool hidden;
@@ -1287,36 +1359,41 @@ class _AccountListTile extends StatelessWidget {
       color: fg,
     );
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppConstants.spaceMd,
-        vertical: AppConstants.spaceSmMd,
-      ),
-      decoration: BoxDecoration(
-        color: accent.background,
-        borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-      ),
-      child: Row(
-        children: [
-          // Text first (left side)
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  account.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: fg.withValues(alpha: AppConstants.mutedAlpha),
+    return GestureDetector(
+      onLongPress: () {
+        HapticFeedback.mediumImpact();
+        _showAccountView(context, account, hidden: hidden);
+      },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppConstants.spaceMd,
+          vertical: AppConstants.spaceSmMd,
+        ),
+        decoration: BoxDecoration(
+          color: accent.background,
+          borderRadius: BorderRadius.circular(AppConstants.radiusLg),
+        ),
+        child: Row(
+          children: [
+            // Text first (left side)
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    account.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: fg.withValues(alpha: AppConstants.mutedAlpha),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 2),
-                // Balance shrinks to fit, however long it is.
-                SizedBox(
-                  width: double.infinity,
+                  const SizedBox(height: 2),
+                  // Balance shrinks to fit, however long it is.
+                  SizedBox(
+                    width: double.infinity,
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
                       alignment: Alignment.centerLeft,
@@ -1336,65 +1413,71 @@ class _AccountListTile extends StatelessWidget {
                               style: balanceStyle,
                             ),
                     ),
-                ),
-                const SizedBox(height: AppConstants.spaceXs),
-                // Smaller tag (smaller than the account name)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppConstants.spaceSm,
-                    vertical: 2,
                   ),
-                  decoration: BoxDecoration(
-                    color: fg.withValues(alpha: AppConstants.tintAlpha),
-                    borderRadius: BorderRadius.circular(AppConstants.radiusLg),
-                  ),
-                  child: Text(
-                    account.category.toUpperCase(),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      fontSize: 9,
-                      height: 1.2,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1,
-                      color: fg,
+                  const SizedBox(height: AppConstants.spaceXs),
+                  // Smaller tag (smaller than the account name)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppConstants.spaceSm,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: fg.withValues(alpha: AppConstants.tintAlpha),
+                      borderRadius:
+                          BorderRadius.circular(AppConstants.radiusLg),
+                    ),
+                    child: Text(
+                      account.category.toUpperCase(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        fontSize: 9,
+                        height: 1.2,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1,
+                        color: fg,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: AppConstants.spaceMd),
-          // Category icon on the right side
-          Container(
-            width: 33,
-            height: 33,
-            decoration: BoxDecoration(
-              color: fg.withValues(alpha: AppConstants.tintAlpha),
-              borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+            const SizedBox(width: AppConstants.spaceMd),
+            // Category icon on the right side
+            Container(
+              width: 33,
+              height: 33,
+              decoration: BoxDecoration(
+                color: fg.withValues(alpha: AppConstants.tintAlpha),
+                borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+              ),
+              child: Icon(
+                _iconForCategory(account.categoryIcon),
+                size: 26,
+                color: fg,
+              ),
             ),
-            child: Icon(
-              _iconForCategory(account.categoryIcon),
-              size: 26,
-              color: fg,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
 
 /// An account card that flips over when tapped (front <-> back).
+/// Long press opens the view-account pop-up (unless [allowLongPress] is
+/// false, which the pop-up itself uses for its own card).
 class _FlipAccountCard extends StatefulWidget {
   final _AccountCardData account;
   final bool hidden;
   final double width;
+  final bool allowLongPress;
 
   const _FlipAccountCard({
     required this.account,
     required this.hidden,
     required this.width,
+    this.allowLongPress = true,
   });
 
   @override
@@ -1437,6 +1520,16 @@ class _FlipAccountCardState extends State<_FlipAccountCard>
       data: MediaQuery.of(context).copyWith(textScaler: TextScaler.noScaling),
       child: GestureDetector(
         onTap: _flip,
+        onLongPress: widget.allowLongPress
+            ? () {
+                HapticFeedback.mediumImpact();
+                _showAccountView(
+                  context,
+                  widget.account,
+                  hidden: widget.hidden,
+                );
+              }
+            : null,
         child: AnimatedBuilder(
           animation: _controller,
           builder: (context, _) {
@@ -1565,25 +1658,25 @@ class _CardFront extends StatelessWidget {
                 // Balance: shrinks to fit the card width (no size limit).
                 SizedBox(
                   width: double.infinity,
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: hidden
-                          ? TotalBalanceCard._maskedText(
-                              context,
-                              balanceStyle,
-                              prefix: '${AppConstants.currencySymbol} ',
-                            )
-                          : Text(
-                              Utils.formatCurrency(
-                                account.balance,
-                                symbol: AppConstants.currencyPrefix,
-                              ),
-                              maxLines: 1,
-                              softWrap: false,
-                              style: balanceStyle,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: hidden
+                        ? TotalBalanceCard._maskedText(
+                            context,
+                            balanceStyle,
+                            prefix: '${AppConstants.currencySymbol} ',
+                          )
+                        : Text(
+                            Utils.formatCurrency(
+                              account.balance,
+                              symbol: AppConstants.currencyPrefix,
                             ),
-                    ),
+                            maxLines: 1,
+                            softWrap: false,
+                            style: balanceStyle,
+                          ),
+                  ),
                 ),
                 SizedBox(height: 17 * u),
                 // Category: only under the balance, as small as its text.
@@ -1926,6 +2019,846 @@ class TotalBalanceCard extends StatelessWidget {
 }
 
 // ------------------------------------------------------------------
+// View account pop-up (long press an account card)
+// ------------------------------------------------------------------
+
+/// Loads one active account with its current balance (null = gone).
+Future<_AccountCardData?> _queryAccount(int id) async {
+  final db = await DatabaseHelper.instance.database;
+  final rows = await db.rawQuery('''
+    SELECT a.id, a.name, a.type_id, a.note_title, a.note_body,
+           t.name AS type_name, t.icon AS type_icon,
+           c.name AS category_name, c.icon AS category_icon,
+           b.balance AS balance
+    FROM accounts a
+    JOIN account_types t ON t.id = a.type_id
+    JOIN account_categories c ON c.id = a.category_id
+    JOIN account_balances b ON b.account_id = a.id
+    WHERE a.id = ? AND a.deleted_at IS NULL
+  ''', [id]);
+  if (rows.isEmpty) return null;
+  final row = rows.first;
+  return _AccountCardData(
+    id: (row['id'] as num).toInt(),
+    name: row['name'] as String,
+    typeId: (row['type_id'] as num).toInt(),
+    typeName: row['type_name'] as String,
+    typeIcon: row['type_icon'] as String?,
+    category: row['category_name'] as String,
+    categoryIcon: row['category_icon'] as String?,
+    balance: (row['balance'] as num).toInt() / AppConstants.centavosPerPeso,
+    noteTitle: row['note_title'] as String?,
+    noteBody: row['note_body'] as String?,
+  );
+}
+
+/// Receipt data for a transaction (same as the history receipt).
+_ReceiptData _entryReceiptData(HistoryEntry e) {
+  final s = AppSettings.instance;
+  final isTransfer = e.type == 'transfer';
+  final color = isTransfer
+      ? s.transferColor
+      : (e.type == 'income' ? s.incomeColor : s.expenseColor);
+  final dateText = '${_fmtLong(e.date)}  •  ${_fmtTime12(e.date)}';
+  return _ReceiptData(
+    color: color,
+    icon: isTransfer ? Icons.arrow_upward : _iconForCategory(e.categoryIcon),
+    title: e.title,
+    kind: _typeOf(e.type).label,
+    rows: isTransfer
+        ? [
+            ('From', e.accountName, null),
+            ('To', e.toAccountName ?? '', null),
+            ('Date', dateText, null),
+          ]
+        : [
+            ('Account', e.accountName, null),
+            (
+              'Category',
+              e.categoryName ?? '',
+              _iconForCategory(e.categoryIcon),
+            ),
+            ('Date', dateText, null),
+          ],
+    note: e.note?.trim(),
+    imagePath: e.imagePath,
+    totalLabel: 'TOTAL',
+    totalText: Utils.formatCurrency(
+      e.amount,
+      symbol: AppConstants.currencySymbol,
+    ),
+  );
+}
+
+/// The card floats on top (transparent background, flippable), the
+/// transaction list sits at the bottom. Both slide up from the bottom.
+Future<void> _showAccountView(
+  BuildContext context,
+  _AccountCardData account, {
+  required bool hidden,
+}) {
+  return showGeneralDialog<void>(
+    context: context,
+    barrierDismissible: true,
+    barrierLabel: 'Close account',
+    barrierColor: AppConstants.popupBarrier,
+    transitionDuration: const Duration(milliseconds: 400),
+    pageBuilder: (_, _, _) =>
+        _AccountViewSheet(account: account, hidden: hidden),
+    // No default fade: the sheet slides its own two halves.
+    transitionBuilder: (context, animation, _, child) => child,
+  );
+}
+
+class _AccountViewSheet extends StatefulWidget {
+  final _AccountCardData account;
+  final bool hidden;
+  const _AccountViewSheet({required this.account, required this.hidden});
+
+  @override
+  State<_AccountViewSheet> createState() => _AccountViewSheetState();
+}
+
+class _AccountViewSheetState extends State<_AccountViewSheet> {
+  final _db = DatabaseHelper.instance;
+  late _AccountCardData _account = widget.account;
+  late _HistoryRange _range = _HistoryRange.of(_Period.month, DateTime.now());
+  List<HistoryEntry> _entries = const [];
+  final Set<String> _collapsed = {}; // day headers that are folded
+  bool _loaded = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    // Any edit (transaction or account) refreshes the card and the list.
+    _db.changes.addListener(_load);
+  }
+
+  @override
+  void dispose() {
+    _db.changes.removeListener(_load);
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final fresh = await _queryAccount(widget.account.id);
+      if (!mounted) return;
+      if (fresh == null) {
+        // The account was deleted: close this pop-up.
+        final route = ModalRoute.of(context);
+        if (route != null) Navigator.of(context).removeRoute(route);
+        return;
+      }
+      final all = await _db.getHistory(from: _range.from, until: _range.until);
+      if (!mounted) return;
+      setState(() {
+        _account = fresh;
+        _entries = [
+          for (final e in all)
+            if (e.accountId == fresh.id || e.toAccountId == fresh.id) e,
+        ];
+        _loaded = true;
+        _error = null;
+      });
+    } on Failure catch (f) {
+      if (mounted) setState(() => _error = f.message);
+    } catch (_) {
+      if (mounted) setState(() => _error = const UnknownFailure().message);
+    }
+  }
+
+  double get _income => _entries
+      .where((e) => e.type == 'income' && e.accountId == _account.id)
+      .fold(0.0, (sum, e) => sum + e.amount);
+  double get _expense => _entries
+      .where((e) => e.type == 'expense' && e.accountId == _account.id)
+      .fold(0.0, (sum, e) => sum + e.amount);
+    /// Balance change of this account inside the selected date range.
+  double get _rangeBalance {
+    var total = 0.0;
+    for (final e in _entries) {
+      if (e.type == 'income' && e.accountId == _account.id) {
+        total += e.amount;
+      } else if (e.type == 'expense' && e.accountId == _account.id) {
+        total -= e.amount;
+      } else if (e.type == 'transfer') {
+        if (e.accountId == _account.id) total -= e.amount;
+        if (e.toAccountId == _account.id) total += e.amount;
+      }
+    }
+    return total;
+  }
+
+
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  // ---------- Actions ----------
+
+  /// Opens the date picker used by the transaction history.
+  Future<void> _pickRange() async {
+    final picked = await showDialog<_HistoryRange>(
+      context: context,
+      barrierColor: AppConstants.popupBarrier,
+      builder: (_) => _RangeDialog(initial: _range),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _range = picked);
+    _load();
+  }
+
+  /// Long press on the account name.
+  Future<void> _editAccount() {
+    HapticFeedback.mediumImpact();
+    final accent = AppTheme.accentOf(context);
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: accent.background,
+      barrierColor: AppConstants.popupBarrier,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (_) => _AddAccountSheet(account: _account),
+    );
+  }
+
+  void _openEntry(HistoryEntry first) {
+    var current = first;
+    _showReceipt(
+      context,
+      _entryReceiptData(first),
+      reload: () async {
+        final all = await _db.getHistory();
+        for (final x in all) {
+          if (x.id == first.id) {
+            current = x;
+            return _entryReceiptData(x);
+          }
+        }
+        return null;
+      },
+      onEdit: () =>
+          showTransactionSheet(context, _typeOf(first.type), entry: current),
+    );
+  }
+
+  Future<void> _removeEntry(HistoryEntry e) async {
+    setState(() {
+      _entries = [
+        for (final x in _entries)
+          if (x.id != e.id) x,
+      ];
+    });
+    try {
+      await _db.softDeleteTransaction(e.id);
+    } on Failure catch (f) {
+      _snack(f.message);
+      _load();
+    } catch (_) {
+      _snack(const UnknownFailure().message);
+      _load();
+    }
+  }
+
+  // ---------- Pieces ----------
+
+  Widget _miniStat(IconData icon, Color color, double value) {
+    final style = TextStyle(
+      fontSize: 12,
+      fontWeight: FontWeight.w600,
+      color: color,
+    );
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 12, color: color),
+        const SizedBox(width: 2),
+        widget.hidden
+            ? TotalBalanceCard._maskedText(context, style)
+            : Text(
+                Utils.formatCurrency(
+                  value,
+                  symbol: AppConstants.currencyPrefix,
+                ),
+                style: style,
+              ),
+      ],
+    );
+  }
+
+  Widget _header(Color fg) {
+    final theme = Theme.of(context);
+    final s = AppSettings.instance;
+    final muted = fg.withValues(alpha: AppConstants.mutedAlpha);
+    final shown = _rangeBalance;
+    final balanceColor = shown >= 0 ? s.incomeColor : s.expenseColor;
+    final balanceStyle = theme.textTheme.titleLarge?.copyWith(
+      fontWeight: FontWeight.w800,
+      color: balanceColor,
+    );
+    final nameStyle = theme.textTheme.titleLarge?.copyWith(
+      fontWeight: FontWeight.w800,
+      color: fg,
+    );
+
+    // The icon box follows the size of the account name text.
+    final nameSize = MediaQuery.textScalerOf(
+      context,
+    ).scale(nameStyle?.fontSize ?? 22);
+    final boxSize = nameSize * 2.4;
+    final iconSize = nameSize * 1.2;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppConstants.spaceMd,
+        AppConstants.spaceMd,
+        AppConstants.spaceMd,
+        0,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: boxSize,
+            height: boxSize,
+            decoration: BoxDecoration(
+              color: fg.withValues(alpha: AppConstants.tintAlpha),
+              borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+            ),
+            child: Icon(
+              _iconForType(_account.typeName, _account.typeIcon),
+              size: iconSize,
+              color: fg,
+            ),
+          ),
+          const SizedBox(width: AppConstants.spaceMd),
+          // Long press the name to edit the account.
+          Expanded(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onLongPress: _editAccount,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _account.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: nameStyle,
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          _account.typeName.toUpperCase(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.5,
+                            color: fg,
+                          ),
+                        ),
+                      ),
+                      Flexible(
+                        child: Text(
+                          '  ·  ${_account.category}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 12, color: muted),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: AppConstants.spaceSm),
+          // Not flexible: it is only as wide as its content (up to half the
+          // screen), so it sits flush against the right padding.
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.sizeOf(context).width * 0.5,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: widget.hidden
+                      ? TotalBalanceCard._maskedText(
+                          context,
+                          balanceStyle,
+                          prefix: AppConstants.currencyPrefix,
+                        )
+                      : Text(
+                          Utils.formatCurrency(
+                            shown,
+                            symbol: AppConstants.currencyPrefix,
+                          ),
+                          maxLines: 1,
+                          softWrap: false,
+                          textAlign: TextAlign.right,
+                          style: balanceStyle,
+                        ),
+                ),
+                const SizedBox(height: 2),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _miniStat(Icons.arrow_upward, s.incomeColor, _income),
+                      const SizedBox(width: AppConstants.spaceSm),
+                      Container(
+                        width: 1,
+                        height: 12,
+                        color: fg.withValues(
+                          alpha: AppConstants.separatorAlpha,
+                        ),
+                      ),
+                      const SizedBox(width: AppConstants.spaceSm),
+                      _miniStat(
+                        Icons.arrow_downward,
+                        s.expenseColor,
+                        _expense,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// "Transactions" (left) and the selected date (right).
+  /// Tap the row to open the history date picker.
+  Widget _titleRow(Color fg) {
+    final theme = Theme.of(context);
+    final muted = fg.withValues(alpha: AppConstants.mutedAlpha);
+    return InkWell(
+      onTap: _pickRange,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppConstants.spaceMd,
+          AppConstants.spaceSm,
+          AppConstants.spaceMd,
+          AppConstants.spaceMd, // space below, before the separator
+        ),
+        child: Row(
+          children: [
+            Text(
+              'Transactions',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: fg,
+              ),
+            ),
+            const SizedBox(width: AppConstants.spaceMd),
+            Expanded(
+              child: Text(
+                _range.label,
+                textAlign: TextAlign.end,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 13, color: muted),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+    /// Bigger month header, shown when the picked dates cover several months.
+  Widget _monthHeader(int year, int month, Color fg) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppConstants.spaceMd,
+        AppConstants.spaceLg,
+        AppConstants.spaceMd,
+        0,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _range.multiYear
+                ? '${_monthNames[month - 1]} $year'
+                : _monthNames[month - 1],
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: fg,
+            ),
+          ),
+          const SizedBox(height: AppConstants.spaceXs),
+          Divider(height: 1, thickness: 2, color: fg.withValues(alpha: 0.3)),
+        ],
+      ),
+    );
+  }
+
+  Widget _dayHeader(DateTime d, String key, Color fg) {
+    final muted = fg.withValues(alpha: AppConstants.mutedAlpha);
+    final folded = _collapsed.contains(key);
+    final year = _range.multiYear ? ', ${d.year}' : '';
+    return InkWell(
+      onTap: () => setState(() {
+        folded ? _collapsed.remove(key) : _collapsed.add(key);
+      }),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          AppConstants.spaceMd,
+          AppConstants.spaceSmMd,
+          AppConstants.spaceMd,
+          0,
+        ),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${_monthNames[d.month - 1].substring(0, 3)} ${d.day}'
+                    '$year,  ${_weekdayLong[d.weekday - 1]}',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: muted,
+                    ),
+                  ),
+                ),
+                Icon(
+                  folded ? Icons.chevron_right : Icons.expand_more,
+                  size: 20,
+                  color: muted,
+                ),
+              ],
+            ),
+            const SizedBox(height: 2),
+            Divider(
+              height: 1,
+              thickness: 1,
+              color: fg.withValues(alpha: AppConstants.dividerAlpha),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Same row design as the transaction history.
+  Widget _entryRow(HistoryEntry e, Color fg) {
+    final s = AppSettings.instance;
+    final theme = Theme.of(context);
+    final accent = AppTheme.accentOf(context);
+    final k = _fontScale(context).clamp(0.8, 1.3).toDouble();
+    final isTransfer = e.type == 'transfer';
+    final color = isTransfer
+        ? s.transferColor
+        : (e.type == 'income' ? s.incomeColor : s.expenseColor);
+    final sign = isTransfer ? '±' : (e.type == 'income' ? '+' : '−');
+    final sub = isTransfer
+        ? '${e.accountName} → ${e.toAccountName ?? ''}'
+        : e.accountName;
+
+    final card = Material(
+      color: _lighter(accent.background),
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _openEntry(e),
+        child: Padding(
+          padding: EdgeInsets.all(AppConstants.spaceSmMd * k),
+          child: Row(
+            children: [
+              Container(
+                width: 42 * k,
+                height: 42 * k,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.22),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  isTransfer
+                      ? Icons.swap_horiz
+                      : _iconForCategory(e.categoryIcon),
+                  size: 22 * k,
+                  color: color,
+                ),
+              ),
+              const SizedBox(width: AppConstants.spaceSmMd),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      e.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: fg,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      sub,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontSize: 12,
+                        color: fg.withValues(alpha: AppConstants.mutedAlpha),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: AppConstants.spaceSm),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '$sign${Utils.formatCurrency(e.amount, symbol: AppConstants.currencySymbol)}',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: color,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _fmtTime12(e.date),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontSize: 11,
+                      color: fg.withValues(alpha: AppConstants.mutedAlpha),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppConstants.spaceMd,
+        vertical: 2,
+      ),
+      child: Dismissible(
+        key: ValueKey('acc-tx-${e.id}'),
+        direction: DismissDirection.endToStart,
+        resizeDuration: const Duration(milliseconds: 250),
+        onDismissed: (_) => _removeEntry(e),
+        background: Container(
+          alignment: Alignment.centerRight,
+          padding: const EdgeInsets.only(right: AppConstants.spaceLg),
+          decoration: BoxDecoration(
+            color: Colors.red,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: const Icon(Icons.delete_outline, color: Colors.white),
+        ),
+        child: card,
+      ),
+    );
+  }
+
+  List<Widget> _listChildren(Color fg) {
+    if (!_loaded) {
+      return const [
+        Padding(
+          padding: EdgeInsets.all(AppConstants.spaceXl),
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      ];
+    }
+    if (_entries.isEmpty) {
+      return [
+        Padding(
+          padding: const EdgeInsets.all(AppConstants.spaceXl),
+          child: Center(
+            child: Text(
+              'No transactions',
+              style: TextStyle(
+                color: fg.withValues(alpha: AppConstants.mutedAlpha),
+              ),
+            ),
+          ),
+        ),
+      ];
+    }
+    final out = <Widget>[];
+    int? lastMonth;
+    String? lastDay;
+    for (final e in _entries) {
+      final d = e.date;
+      if (_range.groupByMonth) {
+        final mk = d.year * 100 + d.month;
+        if (mk != lastMonth) {
+          out.add(_monthHeader(d.year, d.month, fg));
+          lastMonth = mk;
+          lastDay = null;
+        }
+      }
+      final key = '${d.year}-${d.month}-${d.day}';
+      if (key != lastDay) {
+        out.add(_dayHeader(d, key, fg));
+        lastDay = key;
+      }
+      if (!_collapsed.contains(key)) out.add(_entryRow(e, fg));
+    }
+    return out;
+  }
+  @override
+  Widget build(BuildContext context) {
+    // Rebuilds when a Specific Color changes.
+    return ListenableBuilder(
+      listenable: AppSettings.instance,
+      builder: (context, _) => _buildSheet(context),
+    );
+  }
+
+  Widget _buildSheet(BuildContext context) {
+    final accent = AppTheme.accentOf(context);
+    final fg = accent.foreground;
+    final screenW = MediaQuery.sizeOf(context).width;
+    final cardW = math.min(_cardWidthFor(context) * 1.25, screenW - 32);
+    final cardH = _cardHeightFor(cardW);
+    final panelH = MediaQuery.sizeOf(context).height * 0.62;
+    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
+
+    final route = ModalRoute.of(context)?.animation ??
+        const AlwaysStoppedAnimation<double>(1);
+    final eased = route.drive(CurveTween(curve: Curves.easeOutCubic));
+    final fromTop = eased.drive(
+      Tween<Offset>(begin: const Offset(0, -1.5), end: Offset.zero),
+    );
+    final fromBottom = eased.drive(
+      Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero),
+    );
+
+    return Material(
+      type: MaterialType.transparency,
+      child: SafeArea(
+        bottom: false,
+        child: SizedBox.expand(
+          child: Column(
+            children: [
+              // Card: slides down from the top. Tap outside to close.
+              Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => Navigator.of(context).pop(),
+                  child: SlideTransition(
+                    position: fromTop,
+                    child: Center(
+                      child: SizedBox(
+                        width: cardW,
+                        height: cardH,
+                        child: _FlipAccountCard(
+                          account: _account,
+                          hidden: widget.hidden,
+                          width: cardW,
+                          allowLongPress: false,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              // Bottom panel: slides up from the bottom.
+              SlideTransition(
+                position: fromBottom,
+                child: Container(
+                  height: panelH,
+                  clipBehavior: Clip.antiAlias,
+                  decoration: BoxDecoration(
+                    color: accent.background,
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(28),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding:
+                            const EdgeInsets.only(top: AppConstants.spaceSmMd),
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color:
+                                fg.withValues(alpha: AppConstants.borderAlpha),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                      _header(fg),
+                      // Title + selected date, above the separator.
+                      _titleRow(fg),
+                      if (_error != null)
+                        Padding(
+                          padding: const EdgeInsets.all(AppConstants.spaceSm),
+                          child: Text(
+                            _error!,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
+                        ),
+                      // Separator, same as the transaction history popup.
+                      Divider(
+                        height: 1,
+                        thickness: 2,
+                        color: fg.withValues(alpha: 0.3),
+                      ),
+                      Expanded(
+                        child: ColoredBox(
+                          color: _lighter(accent.background),
+                          child: ListView(
+                            padding: EdgeInsets.only(
+                              bottom: bottomInset + AppConstants.spaceMd,
+                            ),
+                            children: _listChildren(fg),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ------------------------------------------------------------------
 // Transaction history pop-up
 // ------------------------------------------------------------------
 
@@ -2157,7 +3090,7 @@ class _HistoryPanelState extends State<_HistoryPanel> {
     }
   }
 
-    Widget _swipeBackground(double radius) {
+  Widget _swipeBackground(double radius) {
     return Container(
       alignment: Alignment.centerRight,
       padding: const EdgeInsets.only(right: AppConstants.spaceLg),
@@ -2210,25 +3143,25 @@ class _HistoryPanelState extends State<_HistoryPanel> {
     return ok ?? false;
   }
 
-/// Called after the swipe and shrink animation are finished.
-Future<void> _removeEntry(HistoryEntry e) async {
-  // Remove it locally first, so the list is already correct.
-  setState(() {
-    _entries = [
-      for (final x in _entries)
-        if (x.id != e.id) x,
-    ];
-  });
-  try {
-    await _db.softDeleteTransaction(e.id);
-  } on Failure catch (f) {
-    _snack(f.message);
-    _load(); // bring the transaction back
-  } catch (_) {
-    _snack(const UnknownFailure().message);
-    _load();
+  /// Called after the swipe and shrink animation are finished.
+  Future<void> _removeEntry(HistoryEntry e) async {
+    // Remove it locally first, so the list is already correct.
+    setState(() {
+      _entries = [
+        for (final x in _entries)
+          if (x.id != e.id) x,
+      ];
+    });
+    try {
+      await _db.softDeleteTransaction(e.id);
+    } on Failure catch (f) {
+      _snack(f.message);
+      _load(); // bring the transaction back
+    } catch (_) {
+      _snack(const UnknownFailure().message);
+      _load();
+    }
   }
-}
 
   Future<bool> _deleteReminderItem(ReminderItem r) async {
     if (!await _confirmDelete(
@@ -2350,42 +3283,7 @@ Future<void> _removeEntry(HistoryEntry e) async {
     }
   }
 
-  _ReceiptData _entryReceipt(HistoryEntry e) {
-    final s = AppSettings.instance;
-    final isTransfer = e.type == 'transfer';
-    final color = isTransfer
-        ? s.transferColor
-        : (e.type == 'income' ? s.incomeColor : s.expenseColor);
-    final dateText = '${_fmtLong(e.date)}  •  ${_fmtTime12(e.date)}';
-    return _ReceiptData(
-      color: color,
-      icon: isTransfer ? Icons.arrow_upward : _iconForCategory(e.categoryIcon),
-      title: e.title,
-      kind: _typeOf(e.type).label,
-      rows: isTransfer
-          ? [
-              ('From', e.accountName, null),
-              ('To', e.toAccountName ?? '', null),
-              ('Date', dateText, null),
-            ]
-          : [
-              ('Account', e.accountName, null),
-              (
-                'Category',
-                e.categoryName ?? '',
-                _iconForCategory(e.categoryIcon),
-              ),
-              ('Date', dateText, null),
-            ],
-      note: e.note?.trim(),
-      imagePath: e.imagePath,
-      totalLabel: 'TOTAL',
-      totalText: Utils.formatCurrency(
-        e.amount,
-        symbol: AppConstants.currencySymbol,
-      ),
-    );
-  }
+  _ReceiptData _entryReceipt(HistoryEntry e) => _entryReceiptData(e);
 
   bool _isOverdue(DateTime due) {
     final n = DateTime.now();
@@ -2463,9 +3361,9 @@ Future<void> _removeEntry(HistoryEntry e) async {
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppConstants.spaceMd,
-        AppConstants.spaceSmMd,
+        AppConstants.spaceLg,
         AppConstants.spaceMd,
-        0,
+        AppConstants.spaceMd,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2534,7 +3432,7 @@ Future<void> _removeEntry(HistoryEntry e) async {
 
     // Same size and shape as the reminder card.
     final card = Material(
-      color: _lighter(accent.background),   // was: accent.background
+      color: _lighter(accent.background),
       borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -2643,7 +3541,7 @@ Future<void> _removeEntry(HistoryEntry e) async {
       // Solid color, so the red swipe background doesn't show through.
       color: Color.alphaBlend(
         base.withValues(alpha: 0.14),
-        _lighter(accent.background),        // was: accent.background
+        _lighter(accent.background),
       ),
       borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
@@ -2884,7 +3782,6 @@ Future<void> _removeEntry(HistoryEntry e) async {
         children: [
           SizedBox(height: MediaQuery.viewPaddingOf(context).top),
           // Title + date filter button
-                    // Title + date filter button
           Padding(
             padding: const EdgeInsets.fromLTRB(
               AppConstants.spaceMd + AppConstants.spaceXs,
@@ -2922,7 +3819,6 @@ Future<void> _removeEntry(HistoryEntry e) async {
             ),
           ),
           // < date >
-                    // < date >
           Row(
             children: [
               SizedBox(
@@ -2961,9 +3857,11 @@ Future<void> _removeEntry(HistoryEntry e) async {
           ),
           // Income | Expense | What's left
           Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppConstants.spaceMd,
-              vertical: AppConstants.spaceSm,
+            padding: const EdgeInsets.fromLTRB(
+              AppConstants.spaceMd,
+              AppConstants.spaceSm,
+              AppConstants.spaceMd,
+              AppConstants.spaceMd,
             ),
             child: Row(
               children: [
@@ -3106,7 +4004,7 @@ class _ReceiptDialogState extends State<_ReceiptDialog> {
   static const double _imageMaxHeight = 200; // max picture height
   static const double _sideInset = 32; // space left/right of the popup
   static const double _bodyPad = 20; // side padding of the receipt body
-  /// 35% of the body padding: the picture almost touches the edges.
+  /// 20% of the body padding: the picture almost touches the edges.
   static const double _imageSidePad = _bodyPad * 0.20;
 
   late _ReceiptData _data = widget.data;
@@ -3670,6 +4568,7 @@ class _RangeDialogState extends State<_RangeDialog> {
       ],
     );
   }
+
   Widget _dayCell(int day, int days, Color fg) {
     if (day < 1 || day > days) return const SizedBox(height: 38);
     final date = DateTime(_view.year, _view.month, day);
@@ -4480,6 +5379,7 @@ class _TransactionSheetState extends State<_TransactionSheet> {
       );
     }
   }
+
   // ---------- Pickers ----------
 
   IconData _accountIcon(CategoryItem item) =>
@@ -5323,7 +6223,7 @@ class _DateTimeDialogState extends State<_DateTimeDialog> {
 
     final lead = DateTime(_month.year, _month.month, 1).weekday - 1; // Mon = 0
     final days = DateTime(_month.year, _month.month + 1, 0).day;
-    const rows = 6; 
+    const rows = 6;
 
     return Dialog(
       backgroundColor: bg,

@@ -496,6 +496,33 @@ class DatabaseHelper {
     });
   }
 
+    /// Saves changes to an existing account (the balance is not changed here).
+  Future<void> updateAccount({
+    required int id,
+    required String name,
+    required int typeId,
+    required int categoryId,
+    String? noteTitle,
+    String? noteBody,
+  }) {
+    return _guard(() async {
+      final db = await database;
+      await db.update(
+        'accounts',
+        {
+          'name': _cleanName(name),
+          'type_id': typeId,
+          'category_id': categoryId,
+          'note_title': _nonEmpty(noteTitle),
+          'note_body': _nonEmpty(noteBody),
+        },
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      notifyChanged();
+    });
+  }
+
   // ---------- Categories ----------
 
   String _tableOf(CategoryGroup group) {
