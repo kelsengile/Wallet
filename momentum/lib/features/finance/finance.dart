@@ -1282,12 +1282,10 @@ class _AccountListTile extends StatelessWidget {
     final accent = AppTheme.accentOf(context);
     final fg = accent.foreground;
 
-    final balanceText = hidden
-        ? '${AppConstants.currencySymbol} ${AppConstants.maskText}'
-        : Utils.formatCurrency(
-            account.balance,
-            symbol: AppConstants.currencyPrefix,
-          );
+    final balanceStyle = theme.textTheme.titleLarge?.copyWith(
+      fontWeight: FontWeight.w700,
+      color: fg,
+    );
 
     return Container(
       width: double.infinity,
@@ -1319,19 +1317,25 @@ class _AccountListTile extends StatelessWidget {
                 // Balance shrinks to fit, however long it is.
                 SizedBox(
                   width: double.infinity,
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      balanceText,
-                      maxLines: 1,
-                      softWrap: false,
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: fg,
-                      ),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: hidden
+                          ? TotalBalanceCard._maskedText(
+                              context,
+                              balanceStyle,
+                              prefix: '${AppConstants.currencySymbol} ',
+                            )
+                          : Text(
+                              Utils.formatCurrency(
+                                account.balance,
+                                symbol: AppConstants.currencyPrefix,
+                              ),
+                              maxLines: 1,
+                              softWrap: false,
+                              style: balanceStyle,
+                            ),
                     ),
-                  ),
                 ),
                 const SizedBox(height: AppConstants.spaceXs),
                 // Smaller tag (smaller than the account name)
@@ -1499,12 +1503,12 @@ class _CardFront extends StatelessWidget {
     final u = width / AppConstants.cardSampleWidth;
     final k = u * textFactor; // text size unit
 
-    final balanceText = hidden
-        ? '${AppConstants.currencySymbol} ${AppConstants.maskText}'
-        : Utils.formatCurrency(
-            account.balance,
-            symbol: AppConstants.currencyPrefix,
-          );
+    final balanceStyle = theme.textTheme.titleLarge?.copyWith(
+      fontSize: 52 * k,
+      height: 1.1,
+      fontWeight: FontWeight.w700,
+      color: fg,
+    );
 
     return Container(
       width: width,
@@ -1561,21 +1565,25 @@ class _CardFront extends StatelessWidget {
                 // Balance: shrinks to fit the card width (no size limit).
                 SizedBox(
                   width: double.infinity,
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      balanceText,
-                      maxLines: 1,
-                      softWrap: false,
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontSize: 52 * k,
-                        height: 1.1,
-                        fontWeight: FontWeight.w700,
-                        color: fg,
-                      ),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: hidden
+                          ? TotalBalanceCard._maskedText(
+                              context,
+                              balanceStyle,
+                              prefix: '${AppConstants.currencySymbol} ',
+                            )
+                          : Text(
+                              Utils.formatCurrency(
+                                account.balance,
+                                symbol: AppConstants.currencyPrefix,
+                              ),
+                              maxLines: 1,
+                              softWrap: false,
+                              style: balanceStyle,
+                            ),
                     ),
-                  ),
                 ),
                 SizedBox(height: 17 * u),
                 // Category: only under the balance, as small as its text.
