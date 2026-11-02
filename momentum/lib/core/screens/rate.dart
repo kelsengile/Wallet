@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../constants.dart';
+
 class RateScreen extends StatelessWidget {
   const RateScreen({super.key});
 
@@ -11,7 +13,7 @@ class RateScreen extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.star_outline),
-            SizedBox(width: 8),
+            SizedBox(width: AppConstants.spaceSm),
             Text('Rate'),
           ],
         ),

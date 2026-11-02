@@ -6,9 +6,6 @@ import '../constants.dart';
 import '../failures.dart';
 import '../themes.dart';
 
-/// Darker dim behind every pop-up, so the pop-up colors stand out more.
-const Color _popupBarrier = Color(0xCC000000);
-
 /// The icons a category can use, and the default icon of each seed item.
 /// The key is what gets saved in the database.
 class _CategoryIcons {
@@ -145,7 +142,7 @@ ThemeData _popupTheme(
       primary: fg,
       onPrimary: bg,
       onSurface: fg,
-      onSurfaceVariant: fg.withValues(alpha: 0.7),
+      onSurfaceVariant: fg.withValues(alpha: AppConstants.mutedAlpha),
     ),
   );
 }
@@ -173,17 +170,19 @@ Widget _accentDialog(
     child: AlertDialog(
       backgroundColor: bg,
       surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppConstants.popupRadius),
+      ),
+      insetPadding: AppConstants.popupInsetPadding,
       titlePadding: compact
-          ? const EdgeInsets.fromLTRB(20, 14, 20, 0)
-          : const EdgeInsets.fromLTRB(20, 18, 20, 0),
+          ? AppConstants.popupTitlePaddingCompact
+          : AppConstants.popupTitlePadding,
       contentPadding: compact
-          ? const EdgeInsets.fromLTRB(20, 6, 20, 0)
-          : const EdgeInsets.fromLTRB(20, 12, 20, 4),
+          ? AppConstants.popupContentPaddingCompact
+          : AppConstants.popupContentPadding,
       actionsPadding: compact
-          ? const EdgeInsets.fromLTRB(12, 0, 12, 6)
-          : const EdgeInsets.fromLTRB(12, 0, 12, 10),
+          ? AppConstants.popupActionsPaddingCompact
+          : AppConstants.popupActionsPadding,
       titleTextStyle: compact
           ? theme.textTheme.titleLarge?.copyWith(
               color: fg,
@@ -325,7 +324,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
   Future<bool> _confirmDelete(CategoryGroup group, CategoryItem item) async {
     final ok = await showDialog<bool>(
       context: context,
-      barrierColor: _popupBarrier,
+      barrierColor: AppConstants.popupBarrier,
       builder: (ctx) {
         const fg = Colors.white;
         return _accentDialog(
@@ -375,7 +374,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
         : _CategoryIcons.keyOf(group, item);
     final result = await showDialog<_NameResult>(
       context: context,
-      barrierColor: _popupBarrier,
+      barrierColor: AppConstants.popupBarrier,
       builder: (_) => _NameDialog(
         title: item == null
             ? 'Add ${_singular(group)}'
@@ -464,7 +463,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.category_outlined),
-              SizedBox(width: 8),
+              SizedBox(width: AppConstants.spaceSm),
               Text('Categories'),
             ],
           ),
@@ -522,8 +521,6 @@ class _SectionHeader extends StatelessWidget {
 ///
 /// Text sizes, big to small: section header > card title > category name.
 class _CategoryGroupCard extends StatelessWidget {
-  static const double _barRadius = 16;
-
   final String title;
   final List<CategoryItem> items;
   final bool editable;
@@ -559,14 +556,14 @@ class _CategoryGroupCard extends StatelessWidget {
 
     final bar = Material(
       color: barColor,
-      borderRadius: BorderRadius.circular(_barRadius),
+      borderRadius: BorderRadius.circular(AppConstants.categoryBarRadius),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: editable ? () => onTapItem(item) : null,
         child: Padding(
           padding: EdgeInsets.only(
-            left: AppConstants.spaceSm + 4,
-            right: editable ? AppConstants.spaceXs : AppConstants.spaceSm + 4,
+            left: AppConstants.spaceSmMd,
+            right: editable ? AppConstants.spaceXs : AppConstants.spaceSmMd,
             top: AppConstants.spaceSm,
             bottom: AppConstants.spaceSm,
           ),
@@ -577,7 +574,7 @@ class _CategoryGroupCard extends StatelessWidget {
                 height: 44,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: fg.withValues(alpha: 0.12),
+                  color: fg.withValues(alpha: AppConstants.categoryAvatarAlpha),
                 ),
                 child: Icon(iconFor(item), size: 22, color: fg),
               ),
@@ -599,7 +596,7 @@ class _CategoryGroupCard extends StatelessWidget {
                   icon: Icon(
                     Icons.edit_outlined,
                     size: 22,
-                    color: fg.withValues(alpha: 0.7),
+                    color: fg.withValues(alpha: AppConstants.mutedAlpha),
                   ),
                   tooltip: 'Edit',
                   onPressed: () => onTapItem(item),
@@ -612,7 +609,7 @@ class _CategoryGroupCard extends StatelessWidget {
                     child: Icon(
                       Icons.drag_handle,
                       size: 24,
-                      color: fg.withValues(alpha: 0.7),
+                      color: fg.withValues(alpha: AppConstants.mutedAlpha),
                     ),
                   ),
                 ),
@@ -636,7 +633,7 @@ class _CategoryGroupCard extends StatelessWidget {
         padding: const EdgeInsets.only(right: AppConstants.spaceLg),
         decoration: BoxDecoration(
           color: Colors.red,
-          borderRadius: BorderRadius.circular(_barRadius),
+          borderRadius: BorderRadius.circular(AppConstants.categoryBarRadius),
         ),
         child: Icon(Icons.delete_outline, color: fg),
       ),
@@ -649,9 +646,9 @@ class _CategoryGroupCard extends StatelessWidget {
     return Padding(
       key: key,
       padding: const EdgeInsets.fromLTRB(
-        AppConstants.spaceSm + 4,
+        AppConstants.spaceSmMd,
         0,
-        AppConstants.spaceSm + 4,
+        AppConstants.spaceSmMd,
         AppConstants.spaceSm,
       ),
       child: child,
@@ -697,7 +694,11 @@ class _CategoryGroupCard extends StatelessWidget {
     final accent = AppTheme.accentOf(context);
     final fg = accent.foreground;
     // A lighter version of the accent color for the category bars.
-    final barColor = Color.lerp(accent.background, Colors.white, 0.15)!;
+    final barColor = Color.lerp(
+      accent.background,
+      Colors.white,
+      AppConstants.categoryBarLighten,
+    )!;
 
     return Padding(
       padding: const EdgeInsets.symmetric(
@@ -718,7 +719,7 @@ class _CategoryGroupCard extends StatelessWidget {
                 AppConstants.spaceXs,
               ),
               child: SizedBox(
-                height: 48,
+                height: AppConstants.categoryCardHeaderHeight,
                 child: Row(
                   children: [
                     Expanded(
@@ -742,7 +743,7 @@ class _CategoryGroupCard extends StatelessWidget {
                         child: Icon(
                           Icons.lock_outline,
                           size: 18,
-                          color: fg.withValues(alpha: 0.7),
+                          color: fg.withValues(alpha: AppConstants.mutedAlpha),
                         ),
                       ),
                   ],
@@ -755,7 +756,7 @@ class _CategoryGroupCard extends StatelessWidget {
               thickness: 1,
               indent: AppConstants.spaceMd,
               endIndent: AppConstants.spaceMd,
-              color: fg.withValues(alpha: 0.25),
+              color: fg.withValues(alpha: AppConstants.dividerAlpha),
             ),
             const SizedBox(height: AppConstants.spaceSm),
             if (items.isEmpty && editable)
@@ -763,7 +764,9 @@ class _CategoryGroupCard extends StatelessWidget {
                 dense: true,
                 title: Text(
                   'Nothing yet. Tap + to add.',
-                  style: TextStyle(color: fg.withValues(alpha: 0.7)),
+                  style: TextStyle(
+                    color: fg.withValues(alpha: AppConstants.mutedAlpha),
+                  ),
                 ),
               ),
             _bars(context, fg, barColor),
@@ -800,9 +803,6 @@ class _NameDialog extends StatefulWidget {
 }
 
 class _NameDialogState extends State<_NameDialog> {
-  static const int _columns = 8;
-  static const double _gap = 4;
-
   late final TextEditingController _controller;
   late String _icon;
   String? _errorText;
@@ -834,9 +834,13 @@ class _NameDialogState extends State<_NameDialog> {
     return AspectRatio(
       aspectRatio: 1,
       child: Material(
-        color: fg.withValues(alpha: selected ? 0.28 : 0.10),
+        color: fg.withValues(
+          alpha: selected
+              ? AppConstants.iconTileSelectedAlpha
+              : AppConstants.iconTileAlpha,
+        ),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(AppConstants.iconTileRadius),
           side: selected
               ? BorderSide(color: fg, width: 2)
               : BorderSide.none,
@@ -850,14 +854,16 @@ class _NameDialogState extends State<_NameDialog> {
     );
   }
 
-  /// The icon grid: rows of [_columns] tiles.
+  /// The icon grid: rows of [AppConstants.iconGridColumns] tiles.
   Widget _iconGrid(Color fg) {
+    const columns = AppConstants.iconGridColumns;
+    const gap = AppConstants.iconGridGap;
     final entries = _CategoryIcons.all.entries.toList();
     final rows = <Widget>[];
-    for (var start = 0; start < entries.length; start += _columns) {
+    for (var start = 0; start < entries.length; start += columns) {
       final cells = <Widget>[];
-      for (var i = 0; i < _columns; i++) {
-        if (i > 0) cells.add(const SizedBox(width: _gap));
+      for (var i = 0; i < columns; i++) {
+        if (i > 0) cells.add(const SizedBox(width: gap));
         final index = start + i;
         cells.add(
           Expanded(
@@ -867,7 +873,7 @@ class _NameDialogState extends State<_NameDialog> {
           ),
         );
       }
-      if (start > 0) rows.add(const SizedBox(height: _gap));
+      if (start > 0) rows.add(const SizedBox(height: gap));
       rows.add(Row(children: cells));
     }
     return Column(children: rows);
@@ -900,12 +906,15 @@ class _NameDialogState extends State<_NameDialog> {
               textCapitalization: TextCapitalization.words,
               decoration: InputDecoration(
                 labelText: 'Name',
-                labelStyle: TextStyle(color: fg.withValues(alpha: 0.7)),
+                labelStyle: TextStyle(
+                  color: fg.withValues(alpha: AppConstants.mutedAlpha),
+                ),
                 floatingLabelStyle: TextStyle(color: fg),
                 errorText: _errorText,
                 isDense: true,
-                border: border(fg.withValues(alpha: 0.5), 1),
-                enabledBorder: border(fg.withValues(alpha: 0.5), 1),
+                border: border(fg.withValues(alpha: AppConstants.borderAlpha), 1),
+                enabledBorder:
+                    border(fg.withValues(alpha: AppConstants.borderAlpha), 1),
                 focusedBorder: border(fg, 2),
               ),
               onChanged: (_) {

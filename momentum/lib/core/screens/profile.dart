@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../constants.dart';
+
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
@@ -11,7 +13,7 @@ class ProfileScreen extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.person_outline),
-            SizedBox(width: 8),
+            SizedBox(width: AppConstants.spaceSm),
             Text('Profile'),
           ],
         ),

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../constants.dart';
+
 class FeedbackScreen extends StatelessWidget {
   const FeedbackScreen({super.key});
 
@@ -11,7 +13,7 @@ class FeedbackScreen extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.feedback_outlined),
-            SizedBox(width: 8),
+            SizedBox(width: AppConstants.spaceSm),
             Text('Feedback'),
           ],
         ),

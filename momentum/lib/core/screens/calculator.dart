@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../constants.dart';
+
 class CalculatorScreen extends StatelessWidget {
   const CalculatorScreen({super.key});
 
@@ -11,7 +13,7 @@ class CalculatorScreen extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.info_outline),
-            SizedBox(width: 8),
+            SizedBox(width: AppConstants.spaceSm),
             Text('Calculator'),
           ],
         ),

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../core/constants.dart';
+
 class AnalyticsScreen extends StatelessWidget {
   const AnalyticsScreen({super.key});
 
@@ -11,7 +13,7 @@ class AnalyticsScreen extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.analytics_outlined),
-            SizedBox(width: 8),
+            SizedBox(width: AppConstants.spaceSm),
             Text('Analytics'),
           ],
         ),

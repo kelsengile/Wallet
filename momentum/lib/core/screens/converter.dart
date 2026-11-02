@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../constants.dart';
+
 class ConverterScreen extends StatelessWidget {
   const ConverterScreen({super.key});
 
@@ -11,7 +13,7 @@ class ConverterScreen extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.info_outline),
-            SizedBox(width: 8),
+            SizedBox(width: AppConstants.spaceSm),
             Text('Converter'),
           ],
         ),

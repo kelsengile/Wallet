@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../core/constants.dart';
+
 class NotificationScreen extends StatelessWidget {
   const NotificationScreen({super.key});
 
@@ -11,7 +13,7 @@ class NotificationScreen extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.notifications_outlined),
-            SizedBox(width: 8),
+            SizedBox(width: AppConstants.spaceSm),
             Text('Notifications'),
           ],
         ),
