@@ -2077,7 +2077,7 @@ Future<void> showTransactionHistory(BuildContext context) {
     barrierDismissible: true,
     barrierLabel: 'Close history',
     barrierColor: AppConstants.popupBarrier,
-    transitionDuration: AppConstants.pageAnimationDuration,
+    transitionDuration: const Duration(milliseconds: 400),
     pageBuilder: (_, _, _) => Padding(
       padding: EdgeInsets.only(bottom: bottom),
       child: const _HistoryPanel(),
@@ -2196,24 +2196,25 @@ class _HistoryPanelState extends State<_HistoryPanel> {
     return ok ?? false;
   }
 
-  /// Called when a transaction is swiped. True only if really deleted.
-  Future<bool> _deleteEntry(HistoryEntry e) async {
-    if (!await _confirmDelete(
-      'Delete transaction?',
-      'It will be moved to the trash.',
-    )) {
-      return false;
-    }
-    try {
-      await _db.softDeleteTransaction(e.id);
-      return true;
-    } on Failure catch (f) {
-      _snack(f.message);
-    } catch (_) {
-      _snack(const UnknownFailure().message);
-    }
-    return false;
+/// Called after the swipe and shrink animation are finished.
+Future<void> _removeEntry(HistoryEntry e) async {
+  // Remove it locally first, so the list is already correct.
+  setState(() {
+    _entries = [
+      for (final x in _entries)
+        if (x.id != e.id) x,
+    ];
+  });
+  try {
+    await _db.softDeleteTransaction(e.id);
+  } on Failure catch (f) {
+    _snack(f.message);
+    _load(); // bring the transaction back
+  } catch (_) {
+    _snack(const UnknownFailure().message);
+    _load();
   }
+}
 
   Future<bool> _deleteReminderItem(ReminderItem r) async {
     if (!await _confirmDelete(
@@ -2601,16 +2602,11 @@ class _HistoryPanelState extends State<_HistoryPanel> {
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppConstants.spaceMd),
-        child: Dismissible(
+      child: Dismissible(
         key: ValueKey('tx-${e.id}'),
         direction: DismissDirection.endToStart,
-        confirmDismiss: (_) => _deleteEntry(e),
-        onDismissed: (_) => setState(() {
-          _entries = [
-            for (final x in _entries)
-              if (x.id != e.id) x,
-          ];
-        }),
+        resizeDuration: const Duration(milliseconds: 250),
+        onDismissed: (_) => _removeEntry(e),
         background: _swipeBackground(16),
         child: card,
       ),
