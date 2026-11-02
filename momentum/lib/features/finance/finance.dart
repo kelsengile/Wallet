@@ -479,6 +479,10 @@ class _FinanceScreenState extends State<FinanceScreen> {
     final theme = Theme.of(context);
     final groups = _groups;
 
+    // Same color the rearrange button's icon uses (the glyph color).
+    final glyphColor =
+        IconTheme.of(context).color ?? theme.colorScheme.onSurface;
+
     // Column: the top part stays fixed, only the Expanded part scrolls.
     // Nothing is padded at the top so the card still starts behind the
     // status bar and the transparent app bar.
@@ -513,12 +517,14 @@ class _FinanceScreenState extends State<FinanceScreen> {
               ),
               const Spacer(),
               IconButton(
+                color: glyphColor,
                 icon: const Icon(Icons.add),
                 tooltip: 'Add Account',
                 onPressed: _addAccount,
               ),
               // Eye button. Open eye = amounts shown, closed = hidden.
               IconButton(
+                color: glyphColor,
                 icon: Icon(
                   _hideAmounts
                       ? Icons.visibility_off_outlined
