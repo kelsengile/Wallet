@@ -1978,6 +1978,12 @@ Color _darker(Color c) {
   return hsl.withLightness((hsl.lightness * 0.62).clamp(0.0, 1.0)).toColor();
 }
 
+/// Lighter version of a color (mixes in white). Used for the cards
+/// in the history list so they stand out from the panel behind them.
+/// [amount] = how much white: 0.0 = none, 1.0 = pure white.
+Color _lighter(Color c, [double amount = 0.08]) =>
+    Color.alphaBlend(Colors.white.withValues(alpha: amount), c);
+
 /// True when the color is black or white (or close to it).
 bool _isBW(Color c) {
   final l = HSLColor.fromColor(c).lightness;
@@ -2528,7 +2534,7 @@ Future<void> _removeEntry(HistoryEntry e) async {
 
     // Same size and shape as the reminder card.
     final card = Material(
-      color: accent.background,
+      color: _lighter(accent.background),   // was: accent.background
       borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -2635,7 +2641,10 @@ Future<void> _removeEntry(HistoryEntry e) async {
 
     final card = Material(
       // Solid color, so the red swipe background doesn't show through.
-      color: Color.alphaBlend(base.withValues(alpha: 0.14), accent.background),
+      color: Color.alphaBlend(
+        base.withValues(alpha: 0.14),
+        _lighter(accent.background),        // was: accent.background
+      ),
       borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -2979,9 +2988,12 @@ Future<void> _removeEntry(HistoryEntry e) async {
               ),
             ),
           Expanded(
-            child: ListView(
-              padding: const EdgeInsets.only(bottom: AppConstants.spaceMd),
-              children: _listChildren(fg),
+            child: ColoredBox(
+              color: _lighter(accent.background),
+              child: ListView(
+                padding: const EdgeInsets.only(bottom: AppConstants.spaceMd),
+                children: _listChildren(fg),
+              ),
             ),
           ),
           // Handle: tap or swipe up to close
@@ -2991,16 +3003,19 @@ Future<void> _removeEntry(HistoryEntry e) async {
             onVerticalDragEnd: (d) {
               if ((d.primaryVelocity ?? 0) < 0) Navigator.of(context).pop();
             },
-            child: SizedBox(
-              height: 28,
-              width: double.infinity,
-              child: Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: fg.withValues(alpha: AppConstants.borderAlpha),
-                    borderRadius: BorderRadius.circular(2),
+            child: ColoredBox(
+              color: _lighter(accent.background),
+              child: SizedBox(
+                height: 28,
+                width: double.infinity,
+                child: Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: fg.withValues(alpha: AppConstants.borderAlpha),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
                 ),
               ),
