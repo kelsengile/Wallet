@@ -3387,15 +3387,16 @@ class _ReceiptDialogState extends State<_ReceiptDialog> {
               ),
             ),
           ),
-                    // Edit button: receipt color, with white pen and shadow for black/white
+          // Edit button: dulled version of the total's bright color, pen = glyph color
           Positioned(
             top: -10,
             right: -10,
             child: Material(
-              color: accentC,
+              // 0.75 = how much of the bright color is kept. Lower = duller.
+              color: Color.alphaBlend(bright.withValues(alpha: 0.75), body),
+              elevation: 0,
+              shadowColor: Colors.transparent,
               shape: const CircleBorder(),
-              elevation: 6,
-              shadowColor: isBW ? Colors.white : accentC,
               clipBehavior: Clip.antiAlias,
               child: InkWell(
                 onTap: widget.onEdit,
@@ -3405,7 +3406,7 @@ class _ReceiptDialogState extends State<_ReceiptDialog> {
                   child: Icon(
                     Icons.edit,
                     size: 20,
-                    color: isBW ? Colors.white : AppTheme.onColor(accentC),
+                    color: fg,
                   ),
                 ),
               ),
