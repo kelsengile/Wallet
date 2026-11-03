@@ -328,6 +328,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
 
   /// The Rearrange button. Tap = view, long press = reorder types.
   Widget _viewButton() {
+    final glyphColor = AppTheme.accentOf(context).foreground;
     final IconData icon;
     final String label;
     if (_rearranging) {
@@ -350,7 +351,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
         child: SizedBox(
           width: 48,
           height: 48,
-          child: Center(child: Icon(icon)),
+          child: Center(child: Icon(icon, color: glyphColor)),
         ),
       ),
     );
@@ -479,9 +480,9 @@ class _FinanceScreenState extends State<FinanceScreen> {
     final theme = Theme.of(context);
     final groups = _groups;
 
-    // Same color the rearrange button's icon uses (the glyph color).
-    final glyphColor =
-        IconTheme.of(context).color ?? theme.colorScheme.onSurface;
+      // The Glyph color from Settings > Theme > General Color
+      // (fonts, icons and buttons).
+      final glyphColor = AppTheme.accentOf(context).foreground;
 
     // Column: the top part stays fixed, only the Expanded part scrolls.
     // Nothing is padded at the top so the card still starts behind the
