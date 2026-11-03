@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/scheduler.dart' show timeDilation;
 
 import '../constants.dart';
 import '../font.dart';
@@ -163,6 +164,14 @@ class AppSettings extends ChangeNotifier {
       _textSizeIndex = sizeIndex;
     }
 
+    final animIndex = prefs.getInt(AppConstants.prefAnimSpeed);
+    if (animIndex != null &&
+        animIndex >= 0 &&
+        animIndex < AppConstants.animSpeedLabels.length) {
+      _animSpeedIndex = animIndex;
+    }
+    _applyAnimSpeed();
+
     final colorValue = prefs.getInt(AppConstants.prefColor);
     if (colorValue != null) _customColor = Color(colorValue);
 
@@ -299,6 +308,24 @@ class AppSettings extends ChangeNotifier {
     _prefs?.setInt(AppConstants.prefTextSize, index);
     notifyListeners();
   }
+
+    // ---- Animation speed ----
+  int _animSpeedIndex = AppConstants.defaultAnimSpeedIndex;
+  int get animSpeedIndex => _animSpeedIndex;
+  String get animSpeedLabel => AppConstants.animSpeedLabels[_animSpeedIndex];
+
+  /// Speeds up / slows down every animation in the app at once.
+  void _applyAnimSpeed() {
+    timeDilation = AppConstants.animTimeDilations[_animSpeedIndex];
+  }
+
+  void setAnimSpeedIndex(int index) {
+    if (index == _animSpeedIndex) return;
+    _animSpeedIndex = index;
+    _applyAnimSpeed();
+    _prefs?.setInt(AppConstants.prefAnimSpeed, index);
+    notifyListeners();
+  }
 }
 
 /// Name of the current theme: "Custom", the built-in one, or the system one.
@@ -338,6 +365,7 @@ class SettingsScreen extends StatelessWidget {
                 children: [
                   _buildThemeTile(context, settings),
                   _buildFontTile(context, settings),
+                  _buildAnimationTile(context, settings),
                 ],
               ),
               const SizedBox(height: AppConstants.spaceSm),
@@ -432,6 +460,30 @@ class SettingsScreen extends StatelessWidget {
       builder: (_) => _FontConfigDialog(settings: settings),
     );
   }
+}
+
+// ---------- Animation speed ----------
+
+/// One inline row (no pop-up): text on the left, short draggable
+/// slider on the right, 5 steps like the font size.
+Widget _buildAnimationTile(BuildContext context, AppSettings settings) {
+  final maxIndex = AppConstants.animSpeedLabels.length - 1;
+  return ListTile(
+    leading: const Icon(Icons.speed),
+    title: const Text('Animation speed'),
+    subtitle: Text(settings.animSpeedLabel),
+    trailing: SizedBox(
+      width: AppConstants.fontSliderWidth,
+      child: Slider(
+        value: settings.animSpeedIndex.toDouble(),
+        min: 0,
+        max: maxIndex.toDouble(),
+        divisions: maxIndex,
+        label: settings.animSpeedLabel,
+        onChanged: (v) => settings.setAnimSpeedIndex(v.round()),
+      ),
+    ),
+  );
 }
 
 /// Small colored circle shown next to the current theme.
