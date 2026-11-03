@@ -2809,16 +2809,30 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
                   ),
                   child: Column(
                     children: [
-                      Padding(
-                        padding:
-                            const EdgeInsets.only(top: AppConstants.spaceSmMd),
-                        child: Container(
-                          width: 40,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color:
-                                fg.withValues(alpha: AppConstants.borderAlpha),
-                            borderRadius: BorderRadius.circular(2),
+                      // Handle: swipe down to close the pop-up.
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onVerticalDragEnd: (d) {
+                          if ((d.primaryVelocity ?? 0) > 200) {
+                            Navigator.of(context).pop();
+                          }
+                        },
+                        child: SizedBox(
+                          height: 28,
+                          width: double.infinity,
+                          child: Align(
+                            alignment: Alignment.bottomCenter,
+                            child: Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Container(
+                                width: 40,
+                                height: 4,
+                                decoration: BoxDecoration(
+                                  color: fg.withValues(alpha: AppConstants.borderAlpha),
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       ),
