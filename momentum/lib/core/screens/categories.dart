@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../database/helper.dart';
 import '../constants.dart';
@@ -386,41 +385,17 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
 
   // ---------- Saved order ----------
 
-  /// The order is saved on the phone (per list) as a list of item ids.
-  String _orderKey(CategoryGroup g) => 'category_order_${g.name}';
-
-  /// Sorts [items] by the saved order. Items that aren't in the saved
-  /// order yet (new ones) go to the end, in their normal (id) order.
-  List<CategoryItem> _applySavedOrder(
-    SharedPreferences prefs,
-    CategoryGroup group,
-    List<CategoryItem> items,
-  ) {
-    final saved = prefs.getStringList(_orderKey(group)) ?? const <String>[];
-    if (saved.isEmpty) return items;
-    final rank = {for (var i = 0; i < saved.length; i++) saved[i]: i};
-    const last = 1 << 30;
-    final sorted = [...items];
-    sorted.sort((a, b) {
-      final ra = rank['${a.id}'] ?? last;
-      final rb = rank['${b.id}'] ?? last;
-      if (ra != rb) return ra.compareTo(rb);
-      return a.id.compareTo(b.id);
-    });
-    return sorted;
-  }
-
   Future<void> _load() async {
     try {
       final groups = CategoryGroup.values;
-      final prefs = await SharedPreferences.getInstance();
+      // getCategoryItems already returns each list in its saved order.
       final results = await Future.wait(
         groups.map(DatabaseHelper.instance.getCategoryItems),
       );
       if (!mounted) return;
       setState(() {
         for (var i = 0; i < groups.length; i++) {
-          _items[groups[i]] = _applySavedOrder(prefs, groups[i], results[i]);
+          _items[groups[i]] = results[i];
         }
         _error = null;
       });
@@ -442,10 +417,9 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     list.insert(newIndex, moved);
     setState(() => _items[group] = list);
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setStringList(
-        _orderKey(group),
-        [for (final item in list) '${item.id}'],
+      await DatabaseHelper.instance.saveCategoryOrder(
+        group,
+        [for (final item in list) item.id],
       );
     } catch (_) {
       _snack('Couldn\'t save the new order.');

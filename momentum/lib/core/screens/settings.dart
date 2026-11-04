@@ -6,6 +6,7 @@ import 'package:flutter/scheduler.dart' show timeDilation;
 import '../constants.dart';
 import '../font.dart';
 import '../themes.dart';
+import '../../database/helper.dart';
 
 /// Colors a pop-up: [background] behind, [foreground] for text, buttons,
 /// sliders and switches. Built on top of [base].
@@ -140,74 +141,132 @@ class AppSettings extends ChangeNotifier {
   AppSettings._();
   static final AppSettings instance = AppSettings._();
 
-  SharedPreferences? _prefs;
+  /// Every saved setting, name -> text. Mirrors the `settings` table.
+  Map<String, String> _store = {};
 
-  /// Call once before runApp so saved settings apply from the first frame.
-  Future<void> load() async {
+  void _save(String name, String value) {
+    _store[name] = value;
+    DatabaseHelper.instance.setSetting(name, value).catchError((_) {});
+  }
+
+  void _remove(String name) {
+    _store.remove(name);
+    DatabaseHelper.instance.removeSetting(name).catchError((_) {});
+  }
+
+  /// Old versions kept settings in SharedPreferences. Copies them into the
+  /// database once.
+  Future<void> _migrateFromPrefs() async {
+    const flag = 'migratedFromPrefs';
+    if (_store.containsKey(flag)) return;
+    final db = DatabaseHelper.instance;
     final prefs = await SharedPreferences.getInstance();
-    _prefs = prefs;
+    for (final key in prefs.getKeys()) {
+      final Object? value = prefs.get(key);
+      String? text;
+      if (key.startsWith('settings.') && value != null) {
+        text = '$value';
+      } else if (key == AppConstants.prefTypeOrder && value is List<String>) {
+        text = value.join(',');
+      }
+      if (text == null || _store.containsKey(key)) continue;
+      _store[key] = text;
+      await db.setSetting(key, text);
+    }
+    _store[flag] = '1';
+    await db.setSetting(flag, '1');
+  }
 
-    final themeName = prefs.getString(AppConstants.prefTheme);
-    if (themeName != null) {
-      for (final option in AppThemeOption.values) {
-        if (option.name == themeName) {
-          _themeOption = option;
-          break;
+  /// Category order used to live in SharedPreferences (one string list per
+  /// list, key "category_order_<group>"). Moves it into the settings table
+  /// once, so it is included in backups.
+  Future<void> _migrateCategoryOrderFromPrefs() async {
+    const flag = 'migratedCategoryOrder';
+    if (_store.containsKey(flag)) return;
+    final db = DatabaseHelper.instance;
+    final prefs = await SharedPreferences.getInstance();
+    for (final key in prefs.getKeys().toList()) {
+      if (!key.startsWith('category_order_')) continue;
+      final value = prefs.get(key);
+      if (value is List<String>) {
+        final name = key.replaceFirst(
+          'category_order_',
+          AppConstants.prefCategoryOrder,
+        );
+        if (!_store.containsKey(name)) {
+          final text = value.join(',');
+          _store[name] = text;
+          await db.setSetting(name, text);
         }
       }
+      await prefs.remove(key); // so an old value can't come back after an import
+    }
+    _store[flag] = '1';
+    await db.setSetting(flag, '1');
+  }
+
+  /// Call before runApp (and again after an import) so saved settings
+  /// apply from the first frame.
+  Future<void> load() async {
+    try {
+      _store = await DatabaseHelper.instance.getAllSettings();
+      await _migrateFromPrefs();
+      await _migrateCategoryOrderFromPrefs();
+    } catch (_) {
+      _store = {}; // database unreadable: defaults are used
     }
 
-    final sizeIndex = prefs.getInt(AppConstants.prefTextSize);
-    if (sizeIndex != null &&
-        sizeIndex >= 0 &&
-        sizeIndex < AppConstants.textSizeLabels.length) {
-      _textSizeIndex = sizeIndex;
+    _themeOption = null;
+    final themeName = _store[AppConstants.prefTheme];
+    for (final option in AppThemeOption.values) {
+      if (option.name == themeName) _themeOption = option;
     }
 
-    final animIndex = prefs.getInt(AppConstants.prefAnimSpeed);
-    if (animIndex != null &&
-        animIndex >= 0 &&
-        animIndex < AppConstants.animSpeedLabels.length) {
-      _animSpeedIndex = animIndex;
-    }
+    final sizeIndex = int.tryParse(_store[AppConstants.prefTextSize] ?? '');
+    _textSizeIndex = (sizeIndex != null &&
+            sizeIndex >= 0 &&
+            sizeIndex < AppConstants.textSizeLabels.length)
+        ? sizeIndex
+        : AppConstants.defaultTextSizeIndex;
+
+    final animIndex = int.tryParse(_store[AppConstants.prefAnimSpeed] ?? '');
+    _animSpeedIndex = (animIndex != null &&
+            animIndex >= 0 &&
+            animIndex < AppConstants.animSpeedLabels.length)
+        ? animIndex
+        : AppConstants.defaultAnimSpeedIndex;
     _applyAnimSpeed();
 
-    final colorValue = prefs.getInt(AppConstants.prefColor);
-    if (colorValue != null) _customColor = Color(colorValue);
-
-    final accentValue = prefs.getInt(AppConstants.prefAccent);
-    if (accentValue != null) _accentColor = Color(accentValue);
-
-    final textValue = prefs.getInt(AppConstants.prefText);
-    if (textValue != null) _textColor = Color(textValue);
-
-    // Saved transaction colors (Specific Color).
-    for (final type in TransactionColorType.values) {
-      final value = prefs.getInt(type.prefKey);
-      if (value != null) _transactionColors[type] = Color(value);
+    Color? colorOf(String key) {
+      final v = int.tryParse(_store[key] ?? '');
+      return v == null ? null : Color(v);
     }
 
-    _fontStyle =
-        AppFonts.byLabel(prefs.getString(AppConstants.prefFontStyle));
-    _boldText = prefs.getBool(AppConstants.prefBoldText) ?? false;
+    _customColor = colorOf(AppConstants.prefColor);
+    _accentColor = colorOf(AppConstants.prefAccent);
+    _textColor = colorOf(AppConstants.prefText);
+
+    _transactionColors.clear();
+    for (final type in TransactionColorType.values) {
+      final c = colorOf(type.prefKey);
+      if (c != null) _transactionColors[type] = c;
+    }
+
+    _fontStyle = AppFonts.byLabel(_store[AppConstants.prefFontStyle]);
+    _boldText = _store[AppConstants.prefBoldText] == 'true';
+    notifyListeners();
   }
 
   // ---- Theme ----
-  /// null = follow the system (light/dark) until the user picks one.
   AppThemeOption? _themeOption;
   AppThemeOption? get themeOption => _themeOption;
 
-  /// Background / main color picked with the color picker.
-  /// Takes priority over [themeOption].
   Color? _customColor;
   Color? get customColor => _customColor;
 
-  /// Accent color (nav bar, drawer header, version box, settings sections).
-  /// null = derived from [customColor].
   Color? _accentColor;
   Color? get accentColor => _accentColor;
 
-  /// Glyph color: fonts, icons and buttons. null = derived from [customColor].
   Color? _textColor;
   Color? get textColor => _textColor;
 
@@ -217,15 +276,13 @@ class AppSettings extends ChangeNotifier {
     _customColor = null;
     _accentColor = null;
     _textColor = null;
-    _prefs?.setString(AppConstants.prefTheme, option.name);
-    _prefs?.remove(AppConstants.prefColor);
-    _prefs?.remove(AppConstants.prefAccent);
-    _prefs?.remove(AppConstants.prefText);
+    _save(AppConstants.prefTheme, option.name);
+    _remove(AppConstants.prefColor);
+    _remove(AppConstants.prefAccent);
+    _remove(AppConstants.prefText);
     notifyListeners();
   }
 
-  /// Saves a custom theme. Pass null for [accent] or [text] to have
-  /// that color derived automatically from [background].
   void setCustomTheme({
     required Color background,
     Color? accent,
@@ -235,23 +292,22 @@ class AppSettings extends ChangeNotifier {
     _accentColor = accent;
     _textColor = text;
     _themeOption = null;
-    _prefs?.setInt(AppConstants.prefColor, background.toARGB32());
+    _save(AppConstants.prefColor, background.toARGB32().toString());
     if (accent != null) {
-      _prefs?.setInt(AppConstants.prefAccent, accent.toARGB32());
+      _save(AppConstants.prefAccent, accent.toARGB32().toString());
     } else {
-      _prefs?.remove(AppConstants.prefAccent);
+      _remove(AppConstants.prefAccent);
     }
     if (text != null) {
-      _prefs?.setInt(AppConstants.prefText, text.toARGB32());
+      _save(AppConstants.prefText, text.toARGB32().toString());
     } else {
-      _prefs?.remove(AppConstants.prefText);
+      _remove(AppConstants.prefText);
     }
-    _prefs?.remove(AppConstants.prefTheme);
+    _remove(AppConstants.prefTheme);
     notifyListeners();
   }
 
   // ---- Specific colors: transaction types ----
-  /// Colors the user changed. A type that is not here uses its default.
   final Map<TransactionColorType, Color> _transactionColors = {};
 
   Color transactionColor(TransactionColorType type) =>
@@ -265,21 +321,19 @@ class AppSettings extends ChangeNotifier {
   void setTransactionColor(TransactionColorType type, Color color) {
     if (transactionColor(type) == color) return;
     _transactionColors[type] = color;
-    _prefs?.setInt(type.prefKey, color.toARGB32());
+    _save(type.prefKey, color.toARGB32().toString());
     notifyListeners();
   }
 
   // ---- Font style ----
   AppFont _fontStyle = AppFonts.defaultFont;
   AppFont get fontStyle => _fontStyle;
-
-  /// Font family passed to the theme. null = platform default.
   String? get fontFamily => _fontStyle.family;
 
   void setFontStyle(AppFont font) {
     if (font.label == _fontStyle.label) return;
     _fontStyle = font;
-    _prefs?.setString(AppConstants.prefFontStyle, font.label);
+    _save(AppConstants.prefFontStyle, font.label);
     notifyListeners();
   }
 
@@ -290,7 +344,7 @@ class AppSettings extends ChangeNotifier {
   void setBoldText(bool value) {
     if (value == _boldText) return;
     _boldText = value;
-    _prefs?.setBool(AppConstants.prefBoldText, value);
+    _save(AppConstants.prefBoldText, '$value');
     notifyListeners();
   }
 
@@ -298,23 +352,20 @@ class AppSettings extends ChangeNotifier {
   int _textSizeIndex = AppConstants.defaultTextSizeIndex;
   int get textSizeIndex => _textSizeIndex;
   String get textSizeLabel => AppConstants.textSizeLabels[_textSizeIndex];
-
-  /// Multiplier applied on top of the system text scale.
   double get textScale => AppConstants.textScales[_textSizeIndex];
 
   void setTextSizeIndex(int index) {
     if (index == _textSizeIndex) return;
     _textSizeIndex = index;
-    _prefs?.setInt(AppConstants.prefTextSize, index);
+    _save(AppConstants.prefTextSize, '$index');
     notifyListeners();
   }
 
-    // ---- Animation speed ----
+  // ---- Animation speed ----
   int _animSpeedIndex = AppConstants.defaultAnimSpeedIndex;
   int get animSpeedIndex => _animSpeedIndex;
   String get animSpeedLabel => AppConstants.animSpeedLabels[_animSpeedIndex];
 
-  /// Speeds up / slows down every animation in the app at once.
   void _applyAnimSpeed() {
     timeDilation = AppConstants.animTimeDilations[_animSpeedIndex];
   }
@@ -323,7 +374,7 @@ class AppSettings extends ChangeNotifier {
     if (index == _animSpeedIndex) return;
     _animSpeedIndex = index;
     _applyAnimSpeed();
-    _prefs?.setInt(AppConstants.prefAnimSpeed, index);
+    _save(AppConstants.prefAnimSpeed, '$index');
     notifyListeners();
   }
 }

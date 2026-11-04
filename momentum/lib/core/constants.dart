@@ -137,6 +137,11 @@ class AppConstants {
   // Key text kept from the old "notification" name so saved colors survive.
   static const String prefReminderColor =
       'settings.transactionColor.notification';
+  // Order of the account types on the Finance screen.
+  static const String prefTypeOrder = 'finance.typeOrder';
+  // Order of each category list on the Categories screen.
+  // The full key is this prefix + the group name (e.g. "category.order.income").
+  static const String prefCategoryOrder = 'category.order.';
 
   static const List<String> textSizeLabels = [
     'Smallest',

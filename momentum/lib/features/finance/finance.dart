@@ -6,7 +6,6 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/constants.dart';
 import '../../core/failures.dart';
@@ -143,8 +142,6 @@ class FinanceScreen extends StatefulWidget {
 }
 
 class _FinanceScreenState extends State<FinanceScreen> {
-  /// Where the order of the account types is saved on the phone.
-  static const String _orderPref = 'finance.typeOrder';
 
   AccountsSummary _summary = AccountsSummary.empty;
   List<_AccountCardData> _accounts = const [];
@@ -179,15 +176,9 @@ class _FinanceScreenState extends State<FinanceScreen> {
 
   Future<void> _loadOrder() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final saved = prefs.getStringList(_orderPref) ?? const <String>[];
+      final order = await DatabaseHelper.instance.getTypeOrder();
       if (!mounted) return;
-      setState(() {
-        _typeOrder = [
-          for (final id in saved)
-            if (int.tryParse(id) != null) int.parse(id),
-        ];
-      });
+      setState(() => _typeOrder = order);
     } catch (_) {
       // No saved order: the normal (id) order is used.
     }
@@ -195,8 +186,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
 
   Future<void> _saveOrder(List<int> ids) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setStringList(_orderPref, [for (final id in ids) '$id']);
+      await DatabaseHelper.instance.saveTypeOrder(ids);
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -5419,12 +5409,9 @@ class _TransactionSheetState extends State<_TransactionSheet> {
       final accounts = await db.getAccountOptions();
 
       // Same type order as the Finance screen.
-      final prefs = await SharedPreferences.getInstance();
-      final saved = prefs.getStringList(_FinanceScreenState._orderPref) ??
-          const <String>[];
+      final saved = await db.getTypeOrder();
       final rank = <int, int>{
-        for (var i = 0; i < saved.length; i++)
-          (int.tryParse(saved[i]) ?? -1): i,
+        for (var i = 0; i < saved.length; i++) saved[i]: i,
       };
       final byType = <int, List<AccountOption>>{};
       for (final a in accounts) {
