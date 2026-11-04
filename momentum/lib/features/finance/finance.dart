@@ -4218,11 +4218,11 @@ class _ReceiptDialog extends StatefulWidget {
 class _ReceiptDialogState extends State<_ReceiptDialog> {
   /// Receipt size settings: edit these to resize it.
   static const double _radius = 20; // corner roundness
-  static const double _imageMaxHeight = 200; // max picture height
+  static const double _imageMaxHeight = 400; // max picture height
   static const double _sideInset = 32; // space left/right of the popup
   static const double _bodyPad = 20; // side padding of the receipt body
   /// 20% of the body padding: the picture almost touches the edges.
-  static const double _imageSidePad = _bodyPad * 0.20;
+  static const double _imageSidePad = _bodyPad * 0.5;
 
   late _ReceiptData _data = widget.data;
 
