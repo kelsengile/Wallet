@@ -703,12 +703,20 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
     }
   }
 
-  /// Moves the account to the trash (it can be restored from there).
   Future<void> _delete() async {
+    final a = widget.account!;
+    final confirmed = await _confirmDeleteAccount(
+      context,
+      name: a.name,
+      icon: _iconForType(a.typeName, a.typeIcon),
+    );
+    if (!confirmed || !mounted) return;
+
     setState(() {
       _saving = true;
       _error = null;
     });
+    // ...the rest stays the same
     try {
       await DatabaseHelper.instance.softDeleteAccount(widget.account!.id);
       if (mounted) Navigator.of(context).pop();
@@ -1138,6 +1146,162 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
       ),
     );
   }
+}
+
+/// Delete-account confirm pop-up. Same size and shape as the date pop-up.
+/// Red top with a trash icon, accent-colored body, account chip, message,
+/// Cancel (outlined) and Delete (red) buttons.
+Future<bool> _confirmDeleteAccount(
+  BuildContext context, {
+  required String name,
+  required IconData icon,
+  String message =
+      'All transactions linked to this account will be permanently '
+      'removed. This action cannot be undone.',
+}) async {
+  final accent = AppTheme.accentOf(context);
+  final fg = accent.foreground;
+  final bg = accent.background;
+  final red = Colors.red.shade600;
+
+  final ok = await showDialog<bool>(
+    context: context,
+    barrierColor: AppConstants.popupBarrier,
+    builder: (ctx) => Dialog(
+      backgroundColor: bg,
+      surfaceTintColor: Colors.transparent,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // ----- Red top -----
+            Container(
+              color: red,
+              padding: const EdgeInsets.fromLTRB(20, 28, 20, 22),
+              child: Column(
+                children: [
+                  Container(
+                    width: 68,
+                    height: 68,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withValues(alpha: 0.25),
+                    ),
+                    child: const Icon(
+                      Icons.delete_forever,
+                      size: 32,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: AppConstants.spaceMd),
+                  const Text(
+                    'Delete Account',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // ----- Body -----
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+              child: Column(
+                children: [
+                  // Account chip
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: red.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: red.withValues(alpha: 0.4)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(icon, size: 20, color: red),
+                        const SizedBox(width: AppConstants.spaceSm),
+                        Flexible(
+                          child: Text(
+                            name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: red,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppConstants.spaceMd),
+                  Text(
+                    message,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 15,
+                      height: 1.4,
+                      color: fg.withValues(alpha: AppConstants.mutedAlpha),
+                    ),
+                  ),
+                  const SizedBox(height: AppConstants.spaceLg),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(48),
+                            shape: const StadiumBorder(),
+                            foregroundColor: fg,
+                            side: BorderSide(color: fg.withValues(alpha: 0.5)),
+                          ),
+                          onPressed: () => Navigator.of(ctx).pop(false),
+                          child: const Text(
+                            'Cancel',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: _sheetGap),
+                      Expanded(
+                        child: FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size.fromHeight(48),
+                            shape: const StadiumBorder(),
+                            backgroundColor: red,
+                            foregroundColor: Colors.white,
+                          ),
+                          onPressed: () => Navigator.of(ctx).pop(true),
+                          icon: const Icon(Icons.delete, size: 20),
+                          label: const Text(
+                            'Delete',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+  return ok ?? false;
 }
 
 /// Second bottom sheet: a wrap of chips (icon + name) to pick one item.
