@@ -79,13 +79,18 @@ class MomentumApp extends StatelessWidget {
             final systemScale =
                 mq.textScaler.scale(AppConstants.baseFontSize) /
                     AppConstants.baseFontSize;
-            return MediaQuery(
-              data: mq.copyWith(
-                textScaler: TextScaler.linear(systemScale * settings.textScale),
-                // Bold text: on if either the app setting or system is on.
-                boldText: settings.boldText || mq.boldText,
+            // Turns off every long-press tooltip in the app.
+            return TooltipVisibility(
+              visible: false,
+              child: MediaQuery(
+                data: mq.copyWith(
+                  textScaler:
+                      TextScaler.linear(systemScale * settings.textScale),
+                  // Bold text: on if either the app setting or system is on.
+                  boldText: settings.boldText || mq.boldText,
+                ),
+                child: child!,
               ),
-              child: child!,
             );
           },
           home: const HomeShell(),

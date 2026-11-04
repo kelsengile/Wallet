@@ -67,6 +67,11 @@ CREATE TABLE IF NOT EXISTS reminders (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS settings (
+  name TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
 CREATE VIEW IF NOT EXISTS account_balances AS
 SELECT
   a.id AS account_id,

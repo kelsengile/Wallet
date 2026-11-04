@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../core/constants.dart';
 import '../core/failures.dart';
@@ -460,6 +461,87 @@ class DatabaseHelper {
     }
   }
 
+  int _imageCounter = 0;
+
+  // ---------- Settings (name / value) ----------
+
+  Future<Map<String, String>> getAllSettings() {
+    return _guard(() async {
+      final db = await database;
+      final rows = await db.query('settings');
+      return {
+        for (final r in rows) r['name'] as String: r['value'] as String,
+      };
+    });
+  }
+
+  /// No notifyChanged here: settings must not reload the finance screens.
+  Future<void> setSetting(String name, String value) {
+    return _guard(() async {
+      final db = await database;
+      await db.insert(
+        'settings',
+        {'name': name, 'value': value},
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    });
+  }
+
+  Future<void> removeSetting(String name) {
+    return _guard(() async {
+      final db = await database;
+      await db.delete('settings', where: 'name = ?', whereArgs: [name]);
+    });
+  }
+
+  /// Reads a comma-separated list of ids saved in the settings table.
+  Future<List<int>> _readIdList(DatabaseExecutor db, String name) async {
+    final rows = await db.query(
+      'settings',
+      columns: ['value'],
+      where: 'name = ?',
+      whereArgs: [name],
+    );
+    if (rows.isEmpty) return <int>[];
+    return [
+      for (final s in (rows.first['value'] as String).split(','))
+        if (int.tryParse(s) != null) int.parse(s),
+    ];
+  }
+
+  /// Saved order of the account type ids on the Finance screen.
+  Future<List<int>> getTypeOrder() {
+    return _guard(() async => _readIdList(await database, AppConstants.prefTypeOrder));
+  }
+
+  Future<void> saveTypeOrder(List<int> ids) =>
+      setSetting(AppConstants.prefTypeOrder, ids.join(','));
+
+  // ---------- Category order (Categories screen) ----------
+
+  String _categoryOrderKey(CategoryGroup group) =>
+      '${AppConstants.prefCategoryOrder}${group.name}';
+
+  /// Saves the drag order of one list. No notifyChanged, so the screen
+  /// doesn't reload while the user is dragging.
+  Future<void> saveCategoryOrder(CategoryGroup group, List<int> ids) =>
+      setSetting(_categoryOrderKey(group), ids.join(','));
+
+  /// Sorts by the saved order. Items not in the saved order yet (new ones)
+  /// go to the end, in id order.
+  List<CategoryItem> _applyOrder(List<CategoryItem> items, List<int> saved) {
+    if (saved.isEmpty) return items;
+    final rank = {for (var i = 0; i < saved.length; i++) saved[i]: i};
+    const last = 1 << 30;
+    final sorted = [...items];
+    sorted.sort((a, b) {
+      final ra = rank[a.id] ?? last;
+      final rb = rank[b.id] ?? last;
+      return ra != rb ? ra.compareTo(rb) : a.id.compareTo(b.id);
+    });
+    return sorted;
+  }
+
   /// Pesos -> whole centavos. Refuses numbers too big for the database
   /// instead of crashing.
   int _toCentavos(double pesos) {
@@ -584,6 +666,7 @@ class DatabaseHelper {
     return clean;
   }
 
+  /// Items of one list, in the order set on the Categories screen.
   Future<List<CategoryItem>> getCategoryItems(CategoryGroup group) {
     return _guard(() async {
       final db = await database;
@@ -595,7 +678,7 @@ class DatabaseHelper {
         whereArgs: kind == null ? null : [kind],
         orderBy: 'id',
       );
-      return [
+      final items = [
         for (final row in rows)
           CategoryItem(
             (row['id'] as num).toInt(),
@@ -603,6 +686,7 @@ class DatabaseHelper {
             row['icon'] as String?,
           ),
       ];
+      return _applyOrder(items, await _readIdList(db, _categoryOrderKey(group)));
     });
   }
 
@@ -1382,6 +1466,11 @@ class DatabaseHelper {
             .map((r) => r['image_path']),
       ];
       await _rebuild(db);
+            await db.delete(
+        'settings',
+        where: 'name LIKE ? OR name = ?',
+        whereArgs: ['${AppConstants.prefCategoryOrder}%', AppConstants.prefTypeOrder],
+      );
       await _deleteImageFiles(images);
       notifyChanged();
     });
@@ -1434,6 +1523,10 @@ class DatabaseHelper {
       'done',
       'created_at',
     ],
+    'settings': [
+      'name', 
+      'value'
+    ],
   };
 
   /// Every table (trash included) as one JSON text, ready to save as a file.
@@ -1442,7 +1535,10 @@ class DatabaseHelper {
       final db = await database;
       final tables = <String, Object?>{};
       for (final table in _exportColumns.keys) {
-        tables[table] = await db.query(table, orderBy: 'id');
+        final rows = await db.query(table, orderBy: 'rowid');
+        tables[table] = (table == 'transactions' || table == 'reminders')
+            ? [for (final row in rows) await _withImage(row)]
+            : rows;
       }
       return const JsonEncoder.withIndent('  ').convert({
         'app': AppConstants.exportApp,
@@ -1475,20 +1571,41 @@ class DatabaseHelper {
       }
       final tables = decoded['tables'] as Map;
 
+      // Pictures written from this backup (removed again if import fails).
+      final written = <String>[];
+
       // Keep only known columns of every row. Backups made before
-      // reminders existed simply have no reminders list.
+      // reminders / settings existed simply have no such list.
       final data = <String, List<Map<String, Object?>>>{};
       for (final entry in _exportColumns.entries) {
         final raw = tables[entry.key] ??
-            (entry.key == 'reminders' ? <Object?>[] : null);
+            ((entry.key == 'reminders' || entry.key == 'settings')
+                ? <Object?>[]
+                : null);
         if (raw is! List) throw _badBackup;
         final rows = <Map<String, Object?>>[];
         for (final row in raw) {
           if (row is! Map) throw _badBackup;
-          rows.add({
+          final map = <String, Object?>{
             for (final column in entry.value)
               if (row.containsKey(column)) column: row[column] as Object?,
-          });
+          };
+          final b64 = row['image_base64'];
+          if ((entry.key == 'transactions' || entry.key == 'reminders') &&
+              b64 is String &&
+              b64.isNotEmpty) {
+            try {
+              final path = await _writeImage(
+                base64Decode(b64),
+                map['image_path'] as String?,
+              );
+              written.add(path);
+              map['image_path'] = path;
+            } catch (_) {
+              map['image_path'] = null;
+            }
+          }
+          rows.add(map);
         }
         data[entry.key] = rows;
       }
@@ -1496,14 +1613,32 @@ class DatabaseHelper {
       // The app needs account types and the locked Transfer category.
       final hasTransfer =
           data['categories']!.any((row) => row['kind'] == 'transfer');
-      if (data['account_types']!.isEmpty || !hasTransfer) throw _badBackup;
+      if (data['account_types']!.isEmpty || !hasTransfer) {
+        await _deleteImageFiles(written);
+        throw _badBackup;
+      }
 
       final schema = await rootBundle.loadString(AppConstants.schemaAsset);
       final db = await database;
+
+      // Pictures of the data that is about to be replaced.
+      final oldImages = <Object?>[
+        ...(await db.rawQuery('SELECT image_path FROM transactions'))
+            .map((r) => r['image_path']),
+        ...(await db.rawQuery('SELECT image_path FROM reminders'))
+            .map((r) => r['image_path']),
+      ];
+      final keep = <Object?>{
+        for (final t in ['transactions', 'reminders'])
+          for (final row in data[t]!) row['image_path'],
+      };
+
+      final hasSettings = tables['settings'] is List;
       try {
         await db.transaction((txn) async {
           await _dropAll(txn);
           await _runScript(txn, schema);
+          if (hasSettings) await txn.delete('settings');
           for (final table in _exportColumns.keys) {
             for (final row in data[table]!) {
               await txn.insert(table, row);
@@ -1513,11 +1648,45 @@ class DatabaseHelper {
         });
       } catch (error) {
         debugPrint('Import failed: $error');
+        await _deleteImageFiles(written);
         throw const ValidationFailure(
           'The backup file is damaged or doesn\'t match this app.',
         );
       }
+      await _deleteImageFiles(oldImages.where((p) => !keep.contains(p)));
       notifyChanged();
     });
   }
+
+    /// Copy of [row] with the picture bytes added (base64), if the file exists.
+  Future<Map<String, Object?>> _withImage(Map<String, Object?> row) async {
+    final copy = Map<String, Object?>.from(row);
+    final path = row['image_path'];
+    if (path is String && path.isNotEmpty) {
+      try {
+        final file = File(path);
+        if (await file.exists()) {
+          copy['image_base64'] = base64Encode(await file.readAsBytes());
+        }
+      } catch (_) {}
+    }
+    return copy;
+  }
+
+  /// Writes picture bytes into the app's attachments folder.
+  Future<String> _writeImage(List<int> bytes, String? oldPath) async {
+    final dir = await getApplicationDocumentsDirectory();
+    final folder = Directory(p.join(dir.path, 'attachments'));
+    if (!await folder.exists()) await folder.create(recursive: true);
+    final ext = (oldPath == null || p.extension(oldPath).isEmpty)
+        ? '.jpg'
+        : p.extension(oldPath);
+    final target = p.join(
+      folder.path,
+      '${DateTime.now().microsecondsSinceEpoch}_${_imageCounter++}$ext',
+    );
+    await File(target).writeAsBytes(bytes);
+    return target;
+  }
+
 }

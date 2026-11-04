@@ -137,6 +137,11 @@ class AppConstants {
   // Key text kept from the old "notification" name so saved colors survive.
   static const String prefReminderColor =
       'settings.transactionColor.notification';
+  // Order of the account types on the Finance screen.
+  static const String prefTypeOrder = 'finance.typeOrder';
+  // Order of each category list on the Categories screen.
+  // The full key is this prefix + the group name (e.g. "category.order.income").
+  static const String prefCategoryOrder = 'category.order.';
 
   static const List<String> textSizeLabels = [
     'Smallest',
@@ -156,6 +161,19 @@ class AppConstants {
   static const double gradientSliderHeight = 32;
   static const double gradientTrackHeight = 12;
   static const double segmentSelectedAlpha = 0.25;
+
+  // Animation speed (Settings > Appearance). Same 5 steps as font size.
+  // Each value is a time dilation: bigger = slower, smaller = faster.
+  static const String prefAnimSpeed = 'settings.animationSpeedIndex';
+  static const List<String> animSpeedLabels = [
+    'Slowest',
+    'Slow',
+    'Default',
+    'Fast',
+    'Fastest',
+  ];
+  static const List<double> animTimeDilations = [2.0, 1.5, 1.0, 0.7, 0.45];
+  static const int defaultAnimSpeedIndex = 2;
 
   // ---------- Finance screen: account cards ----------
   // The card has the real card ratio (ISO/IEC 7810 ID-1: 85.60 x 53.98 mm).

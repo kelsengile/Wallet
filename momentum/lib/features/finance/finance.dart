@@ -6,7 +6,6 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/constants.dart';
 import '../../core/failures.dart';
@@ -143,8 +142,6 @@ class FinanceScreen extends StatefulWidget {
 }
 
 class _FinanceScreenState extends State<FinanceScreen> {
-  /// Where the order of the account types is saved on the phone.
-  static const String _orderPref = 'finance.typeOrder';
 
   AccountsSummary _summary = AccountsSummary.empty;
   List<_AccountCardData> _accounts = const [];
@@ -179,15 +176,9 @@ class _FinanceScreenState extends State<FinanceScreen> {
 
   Future<void> _loadOrder() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final saved = prefs.getStringList(_orderPref) ?? const <String>[];
+      final order = await DatabaseHelper.instance.getTypeOrder();
       if (!mounted) return;
-      setState(() {
-        _typeOrder = [
-          for (final id in saved)
-            if (int.tryParse(id) != null) int.parse(id),
-        ];
-      });
+      setState(() => _typeOrder = order);
     } catch (_) {
       // No saved order: the normal (id) order is used.
     }
@@ -195,8 +186,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
 
   Future<void> _saveOrder(List<int> ids) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setStringList(_orderPref, [for (final id in ids) '$id']);
+      await DatabaseHelper.instance.saveTypeOrder(ids);
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -244,10 +234,42 @@ class _FinanceScreenState extends State<FinanceScreen> {
     try {
       final summary = await DatabaseHelper.instance.getAccountsSummary();
       final accounts = await _loadAccounts();
+
+      // Latest transaction date of each account (as the source account
+      // or as the receiving side of a transfer).
+      final history = await DatabaseHelper.instance.getHistory();
+      final lastUsed = <int, DateTime>{};
+      void touch(int? id, DateTime date) {
+        if (id == null) return;
+        final current = lastUsed[id];
+        if (current == null || date.isAfter(current)) lastUsed[id] = date;
+      }
+
+      for (final e in history) {
+        touch(e.accountId, e.date);
+        touch(e.toAccountId, e.date);
+      }
+
+      // Most recent transaction first. Accounts with no transactions go
+      // to the end of their type, in their normal (id) order.
+      final sorted = [...accounts]..sort((a, b) {
+          final da = lastUsed[a.id];
+          final db = lastUsed[b.id];
+          if (da != null && db != null) {
+            final c = db.compareTo(da);
+            if (c != 0) return c;
+          } else if (da != null) {
+            return -1;
+          } else if (db != null) {
+            return 1;
+          }
+          return a.id.compareTo(b.id);
+        });
+
       if (!mounted) return;
       setState(() {
         _summary = summary;
-        _accounts = accounts;
+        _accounts = sorted;
         _error = null;
       });
     } on Failure catch (f) {
@@ -328,6 +350,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
 
   /// The Rearrange button. Tap = view, long press = reorder types.
   Widget _viewButton() {
+    final glyphColor = AppTheme.accentOf(context).foreground;
     final IconData icon;
     final String label;
     if (_rearranging) {
@@ -350,7 +373,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
         child: SizedBox(
           width: 48,
           height: 48,
-          child: Center(child: Icon(icon)),
+          child: Center(child: Icon(icon, color: glyphColor)),
         ),
       ),
     );
@@ -479,9 +502,9 @@ class _FinanceScreenState extends State<FinanceScreen> {
     final theme = Theme.of(context);
     final groups = _groups;
 
-    // Same color the rearrange button's icon uses (the glyph color).
-    final glyphColor =
-        IconTheme.of(context).color ?? theme.colorScheme.onSurface;
+      // The Glyph color from Settings > Theme > General Color
+      // (fonts, icons and buttons).
+      final glyphColor = AppTheme.accentOf(context).foreground;
 
     // Column: the top part stays fixed, only the Expanded part scrolls.
     // Nothing is padded at the top so the card still starts behind the
@@ -702,12 +725,20 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
     }
   }
 
-  /// Moves the account to the trash (it can be restored from there).
   Future<void> _delete() async {
+    final a = widget.account!;
+    final confirmed = await _confirmDeleteAccount(
+      context,
+      name: a.name,
+      icon: _iconForType(a.typeName, a.typeIcon),
+    );
+    if (!confirmed || !mounted) return;
+
     setState(() {
       _saving = true;
       _error = null;
     });
+    // ...the rest stays the same
     try {
       await DatabaseHelper.instance.softDeleteAccount(widget.account!.id);
       if (mounted) Navigator.of(context).pop();
@@ -1137,6 +1168,162 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
       ),
     );
   }
+}
+
+/// Delete-account confirm pop-up. Same size and shape as the date pop-up.
+/// Red top with a trash icon, accent-colored body, account chip, message,
+/// Cancel (outlined) and Delete (red) buttons.
+Future<bool> _confirmDeleteAccount(
+  BuildContext context, {
+  required String name,
+  required IconData icon,
+  String message =
+      'All transactions linked to this account will be permanently '
+      'removed. This action cannot be undone.',
+}) async {
+  final accent = AppTheme.accentOf(context);
+  final fg = accent.foreground;
+  final bg = accent.background;
+  final red = Colors.red.shade600;
+
+  final ok = await showDialog<bool>(
+    context: context,
+    barrierColor: AppConstants.popupBarrier,
+    builder: (ctx) => Dialog(
+      backgroundColor: bg,
+      surfaceTintColor: Colors.transparent,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // ----- Red top -----
+            Container(
+              color: red,
+              padding: const EdgeInsets.fromLTRB(20, 28, 20, 22),
+              child: Column(
+                children: [
+                  Container(
+                    width: 68,
+                    height: 68,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withValues(alpha: 0.25),
+                    ),
+                    child: const Icon(
+                      Icons.delete_forever,
+                      size: 32,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: AppConstants.spaceMd),
+                  const Text(
+                    'Delete Account',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // ----- Body -----
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+              child: Column(
+                children: [
+                  // Account chip
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: red.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: red.withValues(alpha: 0.4)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(icon, size: 20, color: red),
+                        const SizedBox(width: AppConstants.spaceSm),
+                        Flexible(
+                          child: Text(
+                            name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: red,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppConstants.spaceMd),
+                  Text(
+                    message,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 15,
+                      height: 1.4,
+                      color: fg.withValues(alpha: AppConstants.mutedAlpha),
+                    ),
+                  ),
+                  const SizedBox(height: AppConstants.spaceLg),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(48),
+                            shape: const StadiumBorder(),
+                            foregroundColor: fg,
+                            side: BorderSide(color: fg.withValues(alpha: 0.5)),
+                          ),
+                          onPressed: () => Navigator.of(ctx).pop(false),
+                          child: const Text(
+                            'Cancel',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: _sheetGap),
+                      Expanded(
+                        child: FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size.fromHeight(48),
+                            shape: const StadiumBorder(),
+                            backgroundColor: red,
+                            foregroundColor: Colors.white,
+                          ),
+                          onPressed: () => Navigator.of(ctx).pop(true),
+                          icon: const Icon(Icons.delete, size: 20),
+                          label: const Text(
+                            'Delete',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+  return ok ?? false;
 }
 
 /// Second bottom sheet: a wrap of chips (icon + name) to pick one item.
@@ -2809,16 +2996,30 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
                   ),
                   child: Column(
                     children: [
-                      Padding(
-                        padding:
-                            const EdgeInsets.only(top: AppConstants.spaceSmMd),
-                        child: Container(
-                          width: 40,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color:
-                                fg.withValues(alpha: AppConstants.borderAlpha),
-                            borderRadius: BorderRadius.circular(2),
+                      // Handle: swipe down to close the pop-up.
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onVerticalDragEnd: (d) {
+                          if ((d.primaryVelocity ?? 0) > 200) {
+                            Navigator.of(context).pop();
+                          }
+                        },
+                        child: SizedBox(
+                          height: 28,
+                          width: double.infinity,
+                          child: Align(
+                            alignment: Alignment.bottomCenter,
+                            child: Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Container(
+                                width: 40,
+                                height: 4,
+                                decoration: BoxDecoration(
+                                  color: fg.withValues(alpha: AppConstants.borderAlpha),
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -4007,11 +4208,11 @@ class _ReceiptDialog extends StatefulWidget {
 class _ReceiptDialogState extends State<_ReceiptDialog> {
   /// Receipt size settings: edit these to resize it.
   static const double _radius = 20; // corner roundness
-  static const double _imageMaxHeight = 200; // max picture height
+  static const double _imageMaxHeight = 400; // max picture height
   static const double _sideInset = 32; // space left/right of the popup
   static const double _bodyPad = 20; // side padding of the receipt body
   /// 20% of the body padding: the picture almost touches the edges.
-  static const double _imageSidePad = _bodyPad * 0.20;
+  static const double _imageSidePad = _bodyPad * 0.5;
 
   late _ReceiptData _data = widget.data;
 
@@ -5208,12 +5409,9 @@ class _TransactionSheetState extends State<_TransactionSheet> {
       final accounts = await db.getAccountOptions();
 
       // Same type order as the Finance screen.
-      final prefs = await SharedPreferences.getInstance();
-      final saved = prefs.getStringList(_FinanceScreenState._orderPref) ??
-          const <String>[];
+      final saved = await db.getTypeOrder();
       final rank = <int, int>{
-        for (var i = 0; i < saved.length; i++)
-          (int.tryParse(saved[i]) ?? -1): i,
+        for (var i = 0; i < saved.length; i++) saved[i]: i,
       };
       final byType = <int, List<AccountOption>>{};
       for (final a in accounts) {

@@ -8,6 +8,7 @@ import '../core/constants.dart';
 import '../core/failures.dart';
 import '../core/screens/trash.dart';
 import '../core/themes.dart';
+import '../core/screens/settings.dart';
 import 'helper.dart';
 
 class DatabaseScreen extends StatefulWidget {
@@ -120,6 +121,7 @@ class _DatabaseScreenState extends State<DatabaseScreen> {
       }
 
       await _db.importFromJson(text);
+      await AppSettings.instance.load();
       _say('Data imported.');
     });
   }
