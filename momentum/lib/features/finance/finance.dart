@@ -244,10 +244,42 @@ class _FinanceScreenState extends State<FinanceScreen> {
     try {
       final summary = await DatabaseHelper.instance.getAccountsSummary();
       final accounts = await _loadAccounts();
+
+      // Latest transaction date of each account (as the source account
+      // or as the receiving side of a transfer).
+      final history = await DatabaseHelper.instance.getHistory();
+      final lastUsed = <int, DateTime>{};
+      void touch(int? id, DateTime date) {
+        if (id == null) return;
+        final current = lastUsed[id];
+        if (current == null || date.isAfter(current)) lastUsed[id] = date;
+      }
+
+      for (final e in history) {
+        touch(e.accountId, e.date);
+        touch(e.toAccountId, e.date);
+      }
+
+      // Most recent transaction first. Accounts with no transactions go
+      // to the end of their type, in their normal (id) order.
+      final sorted = [...accounts]..sort((a, b) {
+          final da = lastUsed[a.id];
+          final db = lastUsed[b.id];
+          if (da != null && db != null) {
+            final c = db.compareTo(da);
+            if (c != 0) return c;
+          } else if (da != null) {
+            return -1;
+          } else if (db != null) {
+            return 1;
+          }
+          return a.id.compareTo(b.id);
+        });
+
       if (!mounted) return;
       setState(() {
         _summary = summary;
-        _accounts = accounts;
+        _accounts = sorted;
         _error = null;
       });
     } on Failure catch (f) {
