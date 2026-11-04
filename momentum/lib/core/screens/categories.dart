@@ -196,6 +196,161 @@ Widget _accentDialog(
   );
 }
 
+/// Red delete confirm pop-up. Same size and shape as the date pop-up.
+/// Red top with a trash icon, accent-colored body, a chip with the item's
+/// icon and name, a message, then Cancel (outlined) and Delete (red).
+/// Returns true only when Delete is tapped.
+Future<bool> _confirmDeleteDialog(
+  BuildContext context, {
+  required String title,
+  required String name,
+  required IconData icon,
+  required String message,
+}) async {
+  final accent = AppTheme.accentOf(context);
+  final fg = accent.foreground;
+  final bg = accent.background;
+  final red = Colors.red.shade600;
+
+  final ok = await showDialog<bool>(
+    context: context,
+    barrierColor: AppConstants.popupBarrier,
+    builder: (ctx) => Dialog(
+      backgroundColor: bg,
+      surfaceTintColor: Colors.transparent,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // ----- Red top -----
+            Container(
+              color: red,
+              padding: const EdgeInsets.fromLTRB(20, 28, 20, 22),
+              child: Column(
+                children: [
+                  Container(
+                    width: 68,
+                    height: 68,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withValues(alpha: 0.25),
+                    ),
+                    child: const Icon(
+                      Icons.delete_forever,
+                      size: 32,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: AppConstants.spaceMd),
+                  Text(
+                    title,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // ----- Body -----
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+              child: Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: red.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: red.withValues(alpha: 0.4)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(icon, size: 20, color: red),
+                        const SizedBox(width: AppConstants.spaceSm),
+                        Flexible(
+                          child: Text(
+                            name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: red,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppConstants.spaceMd),
+                  Text(
+                    message,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 15,
+                      height: 1.4,
+                      color: fg.withValues(alpha: AppConstants.mutedAlpha),
+                    ),
+                  ),
+                  const SizedBox(height: AppConstants.spaceLg),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(48),
+                            shape: const StadiumBorder(),
+                            foregroundColor: fg,
+                            side: BorderSide(color: fg.withValues(alpha: 0.5)),
+                          ),
+                          onPressed: () => Navigator.of(ctx).pop(false),
+                          child: const Text(
+                            'Cancel',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size.fromHeight(48),
+                            shape: const StadiumBorder(),
+                            backgroundColor: red,
+                            foregroundColor: Colors.white,
+                          ),
+                          onPressed: () => Navigator.of(ctx).pop(true),
+                          icon: const Icon(Icons.delete, size: 20),
+                          label: const Text(
+                            'Delete',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+  return ok ?? false;
+}
+
 /// Categories, split into sections: Finance | Schedule | Health.
 /// Only Finance is built for now. It has two headers:
 ///  - Accounts: Types and Categories
@@ -320,37 +475,19 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
   }
 
   /// Asks the person to confirm before an item is removed.
-  /// Same pop-up design as the edit pop-up, but red and shorter.
-  Future<bool> _confirmDelete(CategoryGroup group, CategoryItem item) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      barrierColor: AppConstants.popupBarrier,
-      builder: (ctx) {
-        const fg = Colors.white;
-        return _accentDialog(
-          ctx,
-          title: 'Delete ${_singular(group)}?',
-          background: Colors.red,
-          foreground: fg,
-          compact: true,
-          content: const Text(
-            'This will be removed.',
-            style: TextStyle(color: fg),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Delete'),
-            ),
-          ],
-        );
-      },
+  Future<bool> _confirmDelete(CategoryGroup group, CategoryItem item) {
+    final kind = _singular(group)
+        .split(' ')
+        .map((w) => w[0].toUpperCase() + w.substring(1))
+        .join(' ');
+    return _confirmDeleteDialog(
+      context,
+      title: 'Delete $kind',
+      name: item.name,
+      icon: _CategoryIcons.of(_CategoryIcons.keyOf(group, item)),
+      message: 'This ${_singular(group)} will be removed. '
+          'This action cannot be undone.',
     );
-    return ok ?? false;
   }
 
   /// Called when a bar is swiped. Confirms, deletes the category and returns
