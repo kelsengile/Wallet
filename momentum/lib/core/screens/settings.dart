@@ -178,6 +178,7 @@ class AppSettings extends ChangeNotifier {
   }
 
   /// Category order used to live in SharedPreferences (one string list per
+  // ignore: unintended_html_in_doc_comment
   /// list, key "category_order_<group>"). Moves it into the settings table
   /// once, so it is included in backups.
   Future<void> _migrateCategoryOrderFromPrefs() async {
