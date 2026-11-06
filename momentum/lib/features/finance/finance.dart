@@ -3260,6 +3260,8 @@ class _HistoryPanelState extends State<_HistoryPanel> {
   List<ReminderItem> _reminders = const [];
   bool _loaded = false;
   String? _error;
+    // null = show everything (What's left), 'income' or 'expense' = only those.
+  String? _typeFilter;
 
   @override
   void initState() {
@@ -3540,24 +3542,34 @@ class _HistoryPanelState extends State<_HistoryPanel> {
 
   // ---------- Pieces ----------
 
-  Widget _stat(IconData icon, Color color, double value) {
+  Widget _stat(IconData icon, Color color, double value, String? filter) {
     return Expanded(
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 16, color: color),
-            const SizedBox(width: 4),
-            Text(
-              Utils.formatCurrency(value, symbol: AppConstants.currencySymbol),
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: color,
-              ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+        onTap: () => setState(() {
+          // Tapping the same one again shows everything again.
+          _typeFilter = (_typeFilter == filter) ? null : filter;
+        }),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppConstants.spaceSm),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 16, color: color),
+                const SizedBox(width: 4),
+                Text(
+                  Utils.formatCurrency(value, symbol: AppConstants.currencySymbol),
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: color,
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -3936,7 +3948,14 @@ class _HistoryPanelState extends State<_HistoryPanel> {
       ));
       return out;
     }
-    if (_entries.isEmpty) {
+    // Only the transactions that match the pressed analytic.
+    final visible = _typeFilter == null
+        ? _entries
+        : [
+            for (final e in _entries)
+              if (e.type == _typeFilter) e,
+          ];
+    if (visible.isEmpty) {
       out.add(Padding(
         padding: const EdgeInsets.all(AppConstants.spaceXl),
         child: Center(
@@ -3952,7 +3971,7 @@ class _HistoryPanelState extends State<_HistoryPanel> {
     }
     int? lastMonth;
     String? lastDay;
-    for (final e in _entries) {
+    for (final e in visible) {
       final d = e.date;
       if (_range.groupByMonth) {
         final mk = d.year * 100 + d.month;
@@ -4072,12 +4091,13 @@ class _HistoryPanelState extends State<_HistoryPanel> {
             ),
             child: Row(
               children: [
-                _stat(Icons.arrow_upward, s.incomeColor, _income),
-                _stat(Icons.arrow_downward, s.expenseColor, _expense),
+                _stat(Icons.arrow_upward, s.incomeColor, _income, 'income'),
+                _stat(Icons.arrow_downward, s.expenseColor, _expense, 'expense'),
                 _stat(
                   Icons.account_balance_wallet_outlined,
                   left >= 0 ? s.incomeColor : s.expenseColor,
                   left,
+                  null,
                 ),
               ],
             ),
