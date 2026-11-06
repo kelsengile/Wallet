@@ -2317,6 +2317,8 @@ Future<void> _showAccountView(
   BuildContext context,
   _AccountCardData account, {
   required bool hidden,
+  bool analytics = false,
+  _HistoryRange? range,
 }) {
   return showGeneralDialog<void>(
     context: context,
@@ -2324,8 +2326,12 @@ Future<void> _showAccountView(
     barrierLabel: 'Close account',
     barrierColor: AppConstants.popupBarrier,
     transitionDuration: const Duration(milliseconds: 400),
-    pageBuilder: (_, _, _) =>
-        _AccountViewSheet(account: account, hidden: hidden),
+    pageBuilder: (_, _, _) => _AccountViewSheet(
+      account: account,
+      hidden: hidden,
+      analytics: analytics,
+      range: range,
+    ),
     // No default fade: the sheet slides its own two halves.
     transitionBuilder: (context, animation, _, child) => child,
   );
@@ -2334,7 +2340,14 @@ Future<void> _showAccountView(
 class _AccountViewSheet extends StatefulWidget {
   final _AccountCardData account;
   final bool hidden;
-  const _AccountViewSheet({required this.account, required this.hidden});
+  final bool analytics;
+  final _HistoryRange? range;
+  const _AccountViewSheet({
+    required this.account,
+    required this.hidden,
+    this.analytics = false,
+    this.range,
+  });
 
   @override
   State<_AccountViewSheet> createState() => _AccountViewSheetState();
@@ -2343,19 +2356,46 @@ class _AccountViewSheet extends StatefulWidget {
 class _AccountViewSheetState extends State<_AccountViewSheet> {
   final _db = DatabaseHelper.instance;
   late _AccountCardData _account = widget.account;
-  late _HistoryRange _range = _HistoryRange.of(_Period.month, DateTime.now());
+  late _HistoryRange _range =
+      widget.range ?? _HistoryRange.of(_Period.month, DateTime.now());
   List<HistoryEntry> _entries = const [];
   final Set<String> _collapsed = {}; // day headers that are folded
   bool _loaded = false;
   String? _error;
 
+  // NEW
+  late bool _analytics = widget.analytics; // false = history, true = analytics
+  String? _typeFilter; // history: income/expense filter, analytics: which graph
+
   @override
   void initState() {
     super.initState();
+    if (_analytics) _typeFilter = 'expense'; // NEW: graphs need a kind
     _load();
     // Any edit (transaction or account) refreshes the card and the list.
     _db.changes.addListener(_load);
   }
+
+  // NEW: income / expense text pressed.
+  void _tapStat(String filter) => setState(() {
+        if (_analytics) {
+          _typeFilter = filter; // switch the graphs
+        } else {
+          _typeFilter = _typeFilter == filter ? null : filter; // toggle filter
+        }
+      });
+
+  // NEW: account name pressed: back to the full history.
+  void _showHistory() => setState(() {
+        _analytics = false;
+        _typeFilter = null;
+      });
+
+  // NEW: the small button on the "History" row.
+  void _toggleMode() => setState(() {
+        _analytics = !_analytics;
+        _typeFilter = _analytics ? 'expense' : null;
+      });
 
   @override
   void dispose() {
@@ -2492,29 +2532,41 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
 
   // ---------- Pieces ----------
 
-  Widget _miniStat(IconData icon, Color color, double value) {
-    final style = TextStyle(
-      fontSize: 12,
-      fontWeight: FontWeight.w600,
-      color: color,
-    );
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 12, color: color),
-        const SizedBox(width: 2),
-        widget.hidden
-            ? TotalBalanceCard._maskedText(context, style)
-            : Text(
-                Utils.formatCurrency(
-                  value,
-                  symbol: AppConstants.currencyPrefix,
+Widget _miniStat(IconData icon, Color color, double value, String filter) {
+  final style = TextStyle(
+    fontSize: 12,
+    fontWeight: FontWeight.w600,
+    color: color,
+  );
+  final selected = _typeFilter == filter;
+  return InkWell(
+    borderRadius: BorderRadius.circular(8),
+    onTap: () => _tapStat(filter),
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      decoration: BoxDecoration(
+        color: selected ? color.withValues(alpha: 0.18) : null,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 2),
+          widget.hidden
+              ? TotalBalanceCard._maskedText(context, style)
+              : Text(
+                  Utils.formatCurrency(
+                    value,
+                    symbol: AppConstants.currencyPrefix,
+                  ),
+                  style: style,
                 ),
-                style: style,
-              ),
-      ],
-    );
-  }
+        ],
+      ),
+    ),
+  );
+}
 
   Widget _header(Color fg) {
     final theme = Theme.of(context);
@@ -2565,6 +2617,7 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
           Expanded(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
+              onTap: _showHistory,
               onLongPress: _editAccount,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2644,21 +2697,15 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      _miniStat(Icons.arrow_upward, s.incomeColor, _income),
+                      _miniStat(Icons.arrow_upward, s.incomeColor, _income, 'income'),
                       const SizedBox(width: AppConstants.spaceSm),
                       Container(
                         width: 1,
                         height: 12,
-                        color: fg.withValues(
-                          alpha: AppConstants.separatorAlpha,
-                        ),
+                        color: fg.withValues(alpha: AppConstants.separatorAlpha),
                       ),
                       const SizedBox(width: AppConstants.spaceSm),
-                      _miniStat(
-                        Icons.arrow_downward,
-                        s.expenseColor,
-                        _expense,
-                      ),
+                      _miniStat(Icons.arrow_downward, s.expenseColor, _expense, 'expense'),
                     ],
                   ),
                 ),
@@ -2672,43 +2719,53 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
 
   /// "Transactions" (left) and the selected date (right).
   /// Tap the row to open the history date picker.
-  Widget _titleRow(Color fg) {
-    final theme = Theme.of(context);
-    final muted = fg.withValues(alpha: AppConstants.mutedAlpha);
-    return InkWell(
-      onTap: _pickRange,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          AppConstants.spaceMd,
-          AppConstants.spaceSm,
-          AppConstants.spaceMd,
-          AppConstants.spaceMd, // space below, before the separator
-        ),
-        child: Row(
-          children: [
-            Text(
-              'Transactions',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-                color: fg,
-              ),
-            ),
-            const SizedBox(width: AppConstants.spaceMd),
-            Expanded(
-              child: Text(
-                _range.label,
-                textAlign: TextAlign.end,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 13, color: muted),
-              ),
-            ),
-          ],
-        ),
+Widget _titleRow(Color fg) {
+  final theme = Theme.of(context);
+  final muted = fg.withValues(alpha: AppConstants.mutedAlpha);
+  return InkWell(
+    onTap: _pickRange,
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppConstants.spaceMd,
+        AppConstants.spaceSm,
+        AppConstants.spaceMd,
+        AppConstants.spaceMd,
       ),
-    );
-  }
-
+      child: Row(
+        children: [
+          Text(
+            _analytics ? 'Analytics' : 'History',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w800,
+              color: fg,
+            ),
+          ),
+          const SizedBox(width: AppConstants.spaceMd),
+          Expanded(
+            child: Text(
+              _range.label,
+              textAlign: TextAlign.end,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 13, color: muted),
+            ),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            tooltip: _analytics ? 'Show history' : 'Show analytics',
+            icon: Icon(
+              _analytics
+                  ? Icons.receipt_long_outlined
+                  : Icons.insights_outlined,
+              color: fg,
+            ),
+            onPressed: _toggleMode,
+          ),
+        ],
+      ),
+    ),
+  );
+}
     /// Bigger month header, shown when the picked dates cover several months.
   Widget _monthHeader(int year, int month, Color fg) {
     return Padding(
@@ -2916,7 +2973,10 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
         ),
       ];
     }
-    if (_entries.isEmpty) {
+    final visible = _typeFilter == null
+        ? _entries
+        : [for (final e in _entries) if (e.type == _typeFilter) e];
+    if (visible.isEmpty) {
       return [
         Padding(
           padding: const EdgeInsets.all(AppConstants.spaceXl),
@@ -2934,8 +2994,8 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
     final out = <Widget>[];
     int? lastMonth;
     String? lastDay;
-    for (final e in _entries) {
-      final d = e.date;
+for (final e in visible) {
+  final d = e.date;
       if (_range.groupByMonth) {
         final mk = d.year * 100 + d.month;
         if (mk != lastMonth) {
@@ -3077,7 +3137,15 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
                             padding: EdgeInsets.only(
                               bottom: bottomInset + AppConstants.spaceMd,
                             ),
-                            children: _listChildren(fg),
+                            children: _analytics
+                            ? [
+                                _KindCharts(
+                                  entries: _entries,
+                                  kind: _typeFilter ?? 'expense',
+                                  fg: fg,
+                                ),
+                              ]
+                            : _listChildren(fg),
                           ),
                         ),
                       ),
@@ -4220,12 +4288,14 @@ class _AnalyticsPanelState extends State<_AnalyticsPanel> {
   final _db = DatabaseHelper.instance;
   late _HistoryRange _range;
   List<HistoryEntry> _entries = const [];
+  List<_AccountCardData> _accounts = const [];
+  String? _kind; // null = What's left (accounts overview)
 
   @override
   void initState() {
     super.initState();
-    _range =
-        _analyticsRange.value ?? _HistoryRange.of(_Period.month, DateTime.now());
+    _range = _analyticsRange.value ??
+        _HistoryRange.of(_Period.month, DateTime.now());
     _load();
     _db.changes.addListener(_load);
   }
@@ -4234,19 +4304,6 @@ class _AnalyticsPanelState extends State<_AnalyticsPanel> {
   void dispose() {
     _db.changes.removeListener(_load);
     super.dispose();
-  }
-
-  Future<void> _load() async {
-    try {
-      final entries = await _db.getHistory(
-        from: _range.from,
-        until: _range.until,
-      );
-      if (!mounted) return;
-      setState(() => _entries = entries);
-    } catch (_) {
-      // Nothing to show yet: the stats stay at what they were.
-    }
   }
 
   double get _income => _entries
@@ -4274,24 +4331,52 @@ class _AnalyticsPanelState extends State<_AnalyticsPanel> {
     _load();
   }
 
-  Widget _stat(IconData icon, Color color, double value) {
+  Future<void> _load() async {
+    try {
+      final entries = await _db.getHistory(from: _range.from, until: _range.until);
+      final options = await _db.getAccountOptions();
+      final accounts = <_AccountCardData>[];
+      for (final o in options) {
+        final a = await _queryAccount(o.id);
+        if (a != null) accounts.add(a);
+      }
+      if (!mounted) return;
+      setState(() {
+        _entries = entries;
+        _accounts = accounts;
+      });
+    } catch (_) {}
+  }
+
+  // _stat now takes a filter and highlights when selected
+  Widget _stat(IconData icon, Color color, double value, String? filter) {
+    final selected = _kind == filter;
     return Expanded(
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 16, color: color),
-            const SizedBox(width: 4),
-            Text(
-              Utils.formatCurrency(value, symbol: AppConstants.currencySymbol),
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: color,
-              ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+        onTap: () => setState(() => _kind = filter),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          decoration: BoxDecoration(
+            color: selected ? color.withValues(alpha: 0.18) : null,
+            borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+          ),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 16, color: color),
+                const SizedBox(width: 4),
+                Text(
+                  Utils.formatCurrency(value,
+                      symbol: AppConstants.currencySymbol),
+                  style: TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w600, color: color),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -4397,13 +4482,10 @@ class _AnalyticsPanelState extends State<_AnalyticsPanel> {
             ),
             child: Row(
               children: [
-                _stat(Icons.arrow_upward, s.incomeColor, _income),
-                _stat(Icons.arrow_downward, s.expenseColor, _expense),
-                _stat(
-                  Icons.account_balance_wallet_outlined,
-                  left >= 0 ? s.incomeColor : s.expenseColor,
-                  left,
-                ),
+                _stat(Icons.arrow_upward, s.incomeColor, _income, 'income'),
+                _stat(Icons.arrow_downward, s.expenseColor, _expense, 'expense'),
+                _stat(Icons.account_balance_wallet_outlined,
+                    left >= 0 ? s.incomeColor : s.expenseColor, left, null),
               ],
             ),
           ),
@@ -4413,7 +4495,25 @@ class _AnalyticsPanelState extends State<_AnalyticsPanel> {
           Expanded(
             child: ColoredBox(
               color: _lighter(accent.background),
-              child: const SizedBox.expand(),
+              child: ListView(
+                padding: const EdgeInsets.only(bottom: AppConstants.spaceMd),
+                children: [
+                  if (_kind == null)
+                    _AccountsOverview(
+                      stats: _accountStats(_accounts, _entries),
+                      fg: fg,
+                      onOpen: (a) => _showAccountView(
+                        context,
+                        a,
+                        hidden: false,
+                        analytics: true,
+                        range: _range,
+                      ),
+                    )
+                  else
+                    _KindCharts(entries: _entries, kind: _kind!, fg: fg),
+                ],
+              ),
             ),
           ),
           // Handle: tap or swipe up to close
@@ -6893,6 +6993,550 @@ class _DateTimeDialogState extends State<_DateTimeDialog> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ------------------------------------------------------------------
+// Analytics charts (no packages: plain CustomPainters)
+// ------------------------------------------------------------------
+
+Color _sliceColor(int i) {
+  const hues = <double>[210, 15, 140, 45, 280, 180, 330, 75, 240, 100];
+  return HSLColor.fromAHSL(1, hues[i % hues.length], 0.65, 0.58).toColor();
+}
+
+String _short(double v) {
+  final a = v.abs();
+  final s = a >= 1e6
+      ? '${(a / 1e6).toStringAsFixed(1)}M'
+      : a >= 1e3
+          ? '${(a / 1e3).toStringAsFixed(1)}k'
+          : a.toStringAsFixed(0);
+  return v < 0 ? '-$s' : s;
+}
+
+void _paintCentered(Canvas c, String s, double cx, double y, TextStyle st,
+    {double maxWidth = 60}) {
+  final tp = TextPainter(
+    text: TextSpan(text: s, style: st),
+    textDirection: TextDirection.ltr,
+    maxLines: 1,
+    ellipsis: '…',
+  )..layout(maxWidth: maxWidth);
+  tp.paint(c, Offset(cx - tp.width / 2, y));
+}
+
+/// Income / expense of one account in the chosen range.
+class _AccountStat {
+  final _AccountCardData account;
+  final double income;
+  final double expense;
+  const _AccountStat(this.account, this.income, this.expense);
+  double get net => income - expense;
+}
+
+List<_AccountStat> _accountStats(
+  List<_AccountCardData> accounts,
+  List<HistoryEntry> entries,
+) {
+  return [
+    for (final a in accounts)
+      _AccountStat(
+        a,
+        entries
+            .where((e) => e.type == 'income' && e.accountId == a.id)
+            .fold(0.0, (s, e) => s + e.amount),
+        entries
+            .where((e) => e.type == 'expense' && e.accountId == a.id)
+            .fold(0.0, (s, e) => s + e.amount),
+      ),
+  ];
+}
+
+// ---------- Bars: income + expense per account ----------
+
+class _AccountBarsPainter extends CustomPainter {
+  final List<_AccountStat> data;
+  final Color income, expense, fg;
+  static const double slot = 64;
+  const _AccountBarsPainter(this.data, this.income, this.expense, this.fg);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const top = 8.0, bottom = 22.0;
+    final h = size.height - top - bottom;
+    final base = top + h;
+    var maxV = 1.0;
+    for (final d in data) {
+      maxV = math.max(maxV, math.max(d.income, d.expense));
+    }
+    canvas.drawLine(
+      Offset(0, base),
+      Offset(size.width, base),
+      Paint()
+        ..color = fg.withValues(alpha: 0.3)
+        ..strokeWidth = 1,
+    );
+    const bw = 14.0;
+    final label = TextStyle(fontSize: 11, color: fg.withValues(alpha: 0.7));
+    for (var i = 0; i < data.length; i++) {
+      final cx = slot * i + slot / 2;
+      void bar(double x, double v, Color c) {
+        final bh = v / maxV * h;
+        canvas.drawRRect(
+          RRect.fromRectAndCorners(
+            Rect.fromLTWH(x, base - bh, bw, bh),
+            topLeft: const Radius.circular(4),
+            topRight: const Radius.circular(4),
+          ),
+          Paint()..color = c,
+        );
+        if (v > 0) {
+          _paintCentered(
+            canvas,
+            _short(v),
+            x + bw / 2,
+            base - bh - 13,
+            TextStyle(fontSize: 9, color: fg.withValues(alpha: 0.8)),
+            maxWidth: 30,
+          );
+        }
+      }
+
+      bar(cx - bw - 1, data[i].income, income);
+      bar(cx + 1, data[i].expense, expense);
+      _paintCentered(canvas, data[i].account.name, cx, base + 4, label,
+          maxWidth: slot - 4);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_AccountBarsPainter o) => true;
+}
+
+class _AccountBars extends StatelessWidget {
+  final List<_AccountStat> data;
+  final Color fg;
+  const _AccountBars({required this.data, required this.fg});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppSettings.instance;
+    return LayoutBuilder(
+      builder: (context, c) {
+        final w = math.max(c.maxWidth, data.length * _AccountBarsPainter.slot);
+        return SizedBox(
+          height: 170,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: CustomPaint(
+              size: Size(w, 170),
+              painter:
+                  _AccountBarsPainter(data, s.incomeColor, s.expenseColor, fg),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ---------- Default analytics: bars + account list ----------
+
+class _AccountsOverview extends StatelessWidget {
+  final List<_AccountStat> stats;
+  final Color fg;
+  final ValueChanged<_AccountCardData> onOpen;
+  const _AccountsOverview({
+    required this.stats,
+    required this.fg,
+    required this.onOpen,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppSettings.instance;
+    final theme = Theme.of(context);
+    final muted = fg.withValues(alpha: AppConstants.mutedAlpha);
+    String money(double v) =>
+        Utils.formatCurrency(v, symbol: AppConstants.currencySymbol);
+
+    if (stats.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(AppConstants.spaceXl),
+        child: Center(child: Text('No accounts', style: TextStyle(color: muted))),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+              AppConstants.spaceMd, AppConstants.spaceMd, AppConstants.spaceMd, 0),
+          child: _AccountBars(data: stats, fg: fg),
+        ),
+        const SizedBox(height: AppConstants.spaceSm),
+        for (final st in stats)
+          Padding(
+            padding: const EdgeInsets.symmetric(
+                horizontal: AppConstants.spaceMd, vertical: 3),
+            child: Material(
+              color: _lighter(AppTheme.accentOf(context).background, 0.08),
+              borderRadius: BorderRadius.circular(16),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: () => onOpen(st.account),
+                child: Padding(
+                  padding: const EdgeInsets.all(AppConstants.spaceSmMd),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: fg.withValues(alpha: AppConstants.tintAlpha),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Icon(_iconForCategory(st.account.categoryIcon),
+                            size: 22, color: fg),
+                      ),
+                      const SizedBox(width: AppConstants.spaceSmMd),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(st.account.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: fg)),
+                            const SizedBox(height: 2),
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Row(children: [
+                                Icon(Icons.arrow_upward,
+                                    size: 11, color: s.incomeColor),
+                                Text(money(st.income),
+                                    style: TextStyle(
+                                        fontSize: 12, color: s.incomeColor)),
+                                const SizedBox(width: 10),
+                                Icon(Icons.arrow_downward,
+                                    size: 11, color: s.expenseColor),
+                                Text(money(st.expense),
+                                    style: TextStyle(
+                                        fontSize: 12, color: s.expenseColor)),
+                              ]),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: AppConstants.spaceSm),
+                      // Net + arrow that opens the account pop-up (analytics).
+                      Text(
+                        money(st.net),
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: st.net >= 0 ? s.incomeColor : s.expenseColor,
+                        ),
+                      ),
+                      Icon(Icons.chevron_right, color: muted),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+// ---------- Line graph (tappable vertices) ----------
+
+List<Offset> _linePositions(List<HistoryEntry> e, Size size) {
+  const pad = 14.0;
+  final w = size.width - pad * 2, h = size.height - pad * 2;
+  final t0 = e.first.date.millisecondsSinceEpoch;
+  final span = e.last.date.millisecondsSinceEpoch - t0;
+  final maxV = e.fold<double>(1, (m, x) => math.max(m, x.amount));
+  return [
+    for (final x in e)
+      Offset(
+        pad +
+            (span == 0 ? w / 2 : (x.date.millisecondsSinceEpoch - t0) / span * w),
+        pad + h - x.amount / maxV * h,
+      ),
+  ];
+}
+
+class _LinePainter extends CustomPainter {
+  final List<HistoryEntry> entries; // oldest first
+  final Color color, fg;
+  final int? selected;
+  const _LinePainter(this.entries, this.color, this.fg, this.selected);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final grid = Paint()
+      ..color = fg.withValues(alpha: 0.12)
+      ..strokeWidth = 1;
+    for (var i = 0; i < 4; i++) {
+      final y = 14 + (size.height - 28) * i / 3;
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
+    }
+    final pts = _linePositions(entries, size);
+    final path = Path()..moveTo(pts.first.dx, pts.first.dy);
+    for (final p in pts.skip(1)) {
+      path.lineTo(p.dx, p.dy);
+    }
+    if (pts.length > 1) {
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.5
+          ..strokeJoin = StrokeJoin.round,
+      );
+    }
+    for (var i = 0; i < pts.length; i++) {
+      final sel = i == selected;
+      if (sel) {
+        canvas.drawCircle(pts[i], 11, Paint()..color = color.withValues(alpha: 0.25));
+      }
+      canvas.drawCircle(pts[i], sel ? 6 : 4, Paint()..color = color);
+      canvas.drawCircle(
+          pts[i], sel ? 3 : 1.8, Paint()..color = fg.withValues(alpha: 0.9));
+    }
+  }
+
+  @override
+  bool shouldRepaint(_LinePainter o) => true;
+}
+
+class _TxLineChart extends StatefulWidget {
+  final List<HistoryEntry> entries; // oldest first, not empty
+  final Color color, fg;
+  const _TxLineChart(
+      {required this.entries, required this.color, required this.fg});
+
+  @override
+  State<_TxLineChart> createState() => _TxLineChartState();
+}
+
+class _TxLineChartState extends State<_TxLineChart> {
+  int? _selected;
+
+  @override
+  void didUpdateWidget(_TxLineChart old) {
+    super.didUpdateWidget(old);
+    if (_selected != null && _selected! >= widget.entries.length) _selected = null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = widget.fg;
+    final sel = _selected == null ? null : widget.entries[_selected!];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        LayoutBuilder(
+          builder: (context, c) {
+            final size = Size(c.maxWidth, 180);
+            return GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: (d) {
+                final pts = _linePositions(widget.entries, size);
+                int? best;
+                var bestD = 28.0;
+                for (var i = 0; i < pts.length; i++) {
+                  final dist = (pts[i] - d.localPosition).distance;
+                  if (dist < bestD) {
+                    bestD = dist;
+                    best = i;
+                  }
+                }
+                setState(() => _selected = best);
+              },
+              child: CustomPaint(
+                size: size,
+                painter:
+                    _LinePainter(widget.entries, widget.color, fg, _selected),
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: AppConstants.spaceSm),
+        Text(
+          sel == null
+              ? 'Tap a point to see its amount'
+              : '${sel.title}  •  ${Utils.formatCurrency(sel.amount, symbol: AppConstants.currencySymbol)}'
+                  '  •  ${_fmtLong(sel.date)}',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: sel == null ? FontWeight.w400 : FontWeight.w700,
+            color: sel == null ? fg.withValues(alpha: AppConstants.mutedAlpha) : widget.color,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ---------- Pie by category ----------
+
+class _PiePainter extends CustomPainter {
+  final List<double> values;
+  final Color fg;
+  const _PiePainter(this.values, this.fg);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final total = values.fold(0.0, (a, b) => a + b);
+    if (total <= 0) return;
+    final rect = Offset.zero & size;
+    final stroke = size.width * 0.22;
+    final arcRect = rect.deflate(stroke / 2);
+    var start = -math.pi / 2;
+    for (var i = 0; i < values.length; i++) {
+      final sweep = values[i] / total * 2 * math.pi;
+      canvas.drawArc(
+        arcRect,
+        start,
+        math.max(sweep - 0.02, 0.001),
+        false,
+        Paint()
+          ..color = _sliceColor(i)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = stroke,
+      );
+      start += sweep;
+    }
+  }
+
+  @override
+  bool shouldRepaint(_PiePainter o) => true;
+}
+
+class _CategoryPie extends StatelessWidget {
+  final List<HistoryEntry> entries;
+  final Color fg;
+  const _CategoryPie({required this.entries, required this.fg});
+
+  @override
+  Widget build(BuildContext context) {
+    final sums = <String, double>{};
+    final icons = <String, String?>{};
+    for (final e in entries) {
+      final k = e.categoryName ?? 'Other';
+      sums[k] = (sums[k] ?? 0) + e.amount;
+      icons[k] = e.categoryIcon;
+    }
+    final keys = sums.keys.toList()..sort((a, b) => sums[b]!.compareTo(sums[a]!));
+    final total = sums.values.fold(0.0, (a, b) => a + b);
+    return Column(
+      children: [
+        SizedBox(
+          width: 170,
+          height: 170,
+          child: CustomPaint(
+            painter: _PiePainter([for (final k in keys) sums[k]!], fg),
+            child: Center(
+              child: FittedBox(
+                child: Padding(
+                  padding: const EdgeInsets.all(40),
+                  child: Text(
+                    Utils.formatCurrency(total,
+                        symbol: AppConstants.currencySymbol),
+                    style: TextStyle(fontWeight: FontWeight.w800, color: fg),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: AppConstants.spaceMd),
+        for (var i = 0; i < keys.length; i++)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              children: [
+                Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: _sliceColor(i).withValues(alpha: 0.25),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(_iconForCategory(icons[keys[i]]),
+                      size: 16, color: _sliceColor(i)),
+                ),
+                const SizedBox(width: AppConstants.spaceSmMd),
+                Expanded(
+                  child: Text(
+                    '${keys[i]}  ${(sums[keys[i]]! / total * 100).toStringAsFixed(0)}%',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w600, color: fg),
+                  ),
+                ),
+                Text(
+                  Utils.formatCurrency(sums[keys[i]]!,
+                      symbol: AppConstants.currencySymbol),
+                  style: TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w800, color: fg),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Line graph + pie graph for one kind ('income' | 'expense').
+/// [entries] can be in any order and any type; they are filtered here.
+class _KindCharts extends StatelessWidget {
+  final List<HistoryEntry> entries;
+  final String kind;
+  final Color fg;
+  const _KindCharts(
+      {required this.entries, required this.kind, required this.fg});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppSettings.instance;
+    final color = kind == 'income' ? s.incomeColor : s.expenseColor;
+    final list = [for (final e in entries) if (e.type == kind) e]
+      ..sort((a, b) => a.date.compareTo(b.date));
+    if (list.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(AppConstants.spaceXl),
+        child: Center(
+          child: Text('No data',
+              style: TextStyle(
+                  color: fg.withValues(alpha: AppConstants.mutedAlpha))),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.all(AppConstants.spaceMd),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _TxLineChart(entries: list, color: color, fg: fg),
+          const SizedBox(height: AppConstants.spaceMd),
+          Divider(height: 1, thickness: 1, color: fg.withValues(alpha: 0.2)),
+          const SizedBox(height: AppConstants.spaceMd),
+          _CategoryPie(entries: list, fg: fg),
+        ],
       ),
     );
   }
