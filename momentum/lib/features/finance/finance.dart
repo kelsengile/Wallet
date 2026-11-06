@@ -3550,25 +3550,22 @@ class _HistoryPanelState extends State<_HistoryPanel> {
           // Tapping the same one again shows everything again.
           _typeFilter = (_typeFilter == filter) ? null : filter;
         }),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: AppConstants.spaceSm),
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 16, color: color),
-                const SizedBox(width: 4),
-                Text(
-                  Utils.formatCurrency(value, symbol: AppConstants.currencySymbol),
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: color,
-                  ),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: 4),
+              Text(
+                Utils.formatCurrency(value, symbol: AppConstants.currencySymbol),
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: color,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
