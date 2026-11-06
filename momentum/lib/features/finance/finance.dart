@@ -164,13 +164,16 @@ class _FinanceScreenState extends State<FinanceScreen> {
     super.initState();
     _load();
     _loadOrder();
-    // Reload whenever the database reports a change.
+    // Reload whenever the database reports a change, or the date range
+    // kept in Analytics changes.
     DatabaseHelper.instance.changes.addListener(_load);
+    _analyticsRange.addListener(_load);
   }
 
   @override
   void dispose() {
     DatabaseHelper.instance.changes.removeListener(_load);
+    _analyticsRange.removeListener(_load);
     super.dispose();
   }
 
@@ -250,6 +253,27 @@ class _FinanceScreenState extends State<FinanceScreen> {
         touch(e.toAccountId, e.date);
       }
 
+      // Income / expense of the date range kept in Analytics (this month
+      // until a range was picked, same as the Analytics pop-up).
+      final range = _analyticsRange.value ??
+          _HistoryRange.of(_Period.month, DateTime.now());
+      final from = range.from;
+      final until = range.until;
+      var income = 0.0;
+      var expense = 0.0;
+      for (final e in history) {
+        if (from != null && e.date.isBefore(from)) continue;
+        if (until != null && !e.date.isBefore(until)) continue;
+        if (e.type == 'income') income += e.amount;
+        if (e.type == 'expense') expense += e.amount;
+      }
+      final rangedSummary = AccountsSummary(
+        totalBalance: summary.totalBalance,
+        accountCount: summary.accountCount,
+        income: income,
+        expense: expense,
+      );
+
       // Most recent transaction first. Accounts with no transactions go
       // to the end of their type, in their normal (id) order.
       final sorted = [...accounts]..sort((a, b) {
@@ -268,7 +292,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
 
       if (!mounted) return;
       setState(() {
-        _summary = summary;
+        _summary = rangedSummary;
         _accounts = sorted;
         _error = null;
       });
@@ -2169,35 +2193,39 @@ class TotalBalanceCard extends StatelessWidget {
               const SizedBox(width: AppConstants.spaceSm),
               // Analytics: income | expense (right side), colors come from
               // Settings > Theme > Specific Color.
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.arrow_upward,
-                    size: 11,
-                    color: incomeColor,
-                  ),
-                  const SizedBox(width: 2),
-                  hidden
-                      ? _maskedText(context, incomeStyle)
-                      : Text(_plain(summary.income), style: incomeStyle),
-                  const SizedBox(width: AppConstants.spaceSm),
-                  Container(
-                    width: 1,
-                    height: 12,
-                    color: fg.withValues(alpha: AppConstants.separatorAlpha),
-                  ),
-                  const SizedBox(width: AppConstants.spaceSm),
-                  Icon(
-                    Icons.arrow_downward,
-                    size: 11,
-                    color: expenseColor,
-                  ),
-                  const SizedBox(width: 2),
-                  hidden
-                      ? _maskedText(context, expenseStyle)
-                      : Text(_plain(summary.expense), style: expenseStyle),
-                ],
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => showAnalytics(context),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.arrow_upward,
+                      size: 11,
+                      color: incomeColor,
+                    ),
+                    const SizedBox(width: 2),
+                    hidden
+                        ? _maskedText(context, incomeStyle)
+                        : Text(_plain(summary.income), style: incomeStyle),
+                    const SizedBox(width: AppConstants.spaceSm),
+                    Container(
+                      width: 1,
+                      height: 12,
+                      color: fg.withValues(alpha: AppConstants.separatorAlpha),
+                    ),
+                    const SizedBox(width: AppConstants.spaceSm),
+                    Icon(
+                      Icons.arrow_downward,
+                      size: 11,
+                      color: expenseColor,
+                    ),
+                    const SizedBox(width: 2),
+                    hidden
+                        ? _maskedText(context, expenseStyle)
+                        : Text(_plain(summary.expense), style: expenseStyle),
+                  ],
+                ),
               ),
             ],
           ),
@@ -4026,7 +4054,7 @@ class _HistoryPanelState extends State<_HistoryPanel> {
                 const SizedBox(width: AppConstants.spaceMd),
                 Expanded(
                   child: Text(
-                    'Transaction History',
+                    'History',
                     style: theme.textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.w700,
                       color: fg,
@@ -4116,6 +4144,276 @@ class _HistoryPanelState extends State<_HistoryPanel> {
                 padding: const EdgeInsets.only(bottom: AppConstants.spaceMd),
                 children: _listChildren(fg),
               ),
+            ),
+          ),
+          // Handle: tap or swipe up to close
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => Navigator.of(context).pop(),
+            onVerticalDragEnd: (d) {
+              if ((d.primaryVelocity ?? 0) < 0) Navigator.of(context).pop();
+            },
+            child: ColoredBox(
+              color: _lighter(accent.background),
+              child: SizedBox(
+                height: 28,
+                width: double.infinity,
+                child: Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: fg.withValues(alpha: AppConstants.borderAlpha),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ------------------------------------------------------------------
+// Analytics pop-up
+// ------------------------------------------------------------------
+
+/// The last date filter used in Analytics. Kept while the app is open.
+/// The Total Balance card listens to it, so its income / expense follow it.
+final ValueNotifier<_HistoryRange?> _analyticsRange =
+    ValueNotifier<_HistoryRange?>(null);
+
+/// Opens Analytics. Same drop-down from the top as the history.
+Future<void> showAnalytics(BuildContext context) {
+  final bottom = MediaQuery.viewPaddingOf(context).bottom + _navBarHeight;
+  return showGeneralDialog<void>(
+    context: context,
+    barrierDismissible: true,
+    barrierLabel: 'Close analytics',
+    barrierColor: AppConstants.popupBarrier,
+    transitionDuration: const Duration(milliseconds: 400),
+    pageBuilder: (_, _, _) => Padding(
+      padding: EdgeInsets.only(bottom: bottom),
+      child: const _AnalyticsPanel(),
+    ),
+    transitionBuilder: (context, animation, _, child) => SlideTransition(
+      position: Tween<Offset>(
+        begin: const Offset(0, -1),
+        end: Offset.zero,
+      ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+      child: child,
+    ),
+  );
+}
+
+class _AnalyticsPanel extends StatefulWidget {
+  const _AnalyticsPanel();
+
+  @override
+  State<_AnalyticsPanel> createState() => _AnalyticsPanelState();
+}
+
+class _AnalyticsPanelState extends State<_AnalyticsPanel> {
+  final _db = DatabaseHelper.instance;
+  late _HistoryRange _range;
+  List<HistoryEntry> _entries = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _range =
+        _analyticsRange.value ?? _HistoryRange.of(_Period.month, DateTime.now());
+    _load();
+    _db.changes.addListener(_load);
+  }
+
+  @override
+  void dispose() {
+    _db.changes.removeListener(_load);
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final entries = await _db.getHistory(
+        from: _range.from,
+        until: _range.until,
+      );
+      if (!mounted) return;
+      setState(() => _entries = entries);
+    } catch (_) {
+      // Nothing to show yet: the stats stay at what they were.
+    }
+  }
+
+  double get _income => _entries
+      .where((e) => e.type == 'income')
+      .fold(0.0, (sum, e) => sum + e.amount);
+  double get _expense => _entries
+      .where((e) => e.type == 'expense')
+      .fold(0.0, (sum, e) => sum + e.amount);
+
+  void _shift(int by) {
+    setState(() => _range = _range.shifted(by));
+    _analyticsRange.value = _range;
+    _load();
+  }
+
+  Future<void> _pickRange() async {
+    final picked = await showDialog<_HistoryRange>(
+      context: context,
+      barrierColor: AppConstants.popupBarrier,
+      builder: (_) => _RangeDialog(initial: _range),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _range = picked);
+    _analyticsRange.value = _range;
+    _load();
+  }
+
+  Widget _stat(IconData icon, Color color, double value) {
+    return Expanded(
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: 4),
+            Text(
+              Utils.formatCurrency(value, symbol: AppConstants.currencySymbol),
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accent = AppTheme.accentOf(context);
+    final fg = accent.foreground;
+    final s = AppSettings.instance;
+    final left = _income - _expense;
+    final scale = _fontScale(context).clamp(0.9, 1.3).toDouble();
+
+    return Material(
+      color: accent.background,
+      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(28)),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          SizedBox(height: MediaQuery.viewPaddingOf(context).top),
+          // Title + date filter button
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppConstants.spaceMd + AppConstants.spaceXs,
+              AppConstants.spaceMd,
+              AppConstants.spaceSm,
+              0,
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 40 * scale,
+                  height: 40 * scale,
+                  decoration: BoxDecoration(
+                    color: fg.withValues(alpha: AppConstants.tintAlpha),
+                    borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+                  ),
+                  child: Icon(Icons.insights_outlined, color: fg),
+                ),
+                const SizedBox(width: AppConstants.spaceMd),
+                Expanded(
+                  child: Text(
+                    'Analytics',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: fg,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.filter_list, color: fg),
+                  tooltip: 'Filter by date',
+                  onPressed: _pickRange,
+                ),
+              ],
+            ),
+          ),
+          // < date >
+          Row(
+            children: [
+              SizedBox(
+                width: 48,
+                height: 48,
+                child: _range.canStep
+                    ? IconButton(
+                        icon: Icon(Icons.chevron_left, color: fg),
+                        onPressed: () => _shift(-1),
+                      )
+                    : null,
+              ),
+              Expanded(
+                child: Center(
+                  child: Text(
+                    _range.label,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: fg,
+                    ),
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: 48,
+                height: 48,
+                child: _range.canStep
+                    ? IconButton(
+                        icon: Icon(Icons.chevron_right, color: fg),
+                        onPressed: () => _shift(1),
+                      )
+                    : null,
+              ),
+            ],
+          ),
+          // Income | Expense | What's left
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppConstants.spaceMd,
+              AppConstants.spaceSm,
+              AppConstants.spaceMd,
+              AppConstants.spaceMd,
+            ),
+            child: Row(
+              children: [
+                _stat(Icons.arrow_upward, s.incomeColor, _income),
+                _stat(Icons.arrow_downward, s.expenseColor, _expense),
+                _stat(
+                  Icons.account_balance_wallet_outlined,
+                  left >= 0 ? s.incomeColor : s.expenseColor,
+                  left,
+                ),
+              ],
+            ),
+          ),
+          // Line under the header
+          Divider(height: 1, thickness: 2, color: fg.withValues(alpha: 0.3)),
+          // Blank page for now
+          Expanded(
+            child: ColoredBox(
+              color: _lighter(accent.background),
+              child: const SizedBox.expand(),
             ),
           ),
           // Handle: tap or swipe up to close
