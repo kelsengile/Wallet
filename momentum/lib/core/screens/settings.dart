@@ -178,6 +178,7 @@ class AppSettings extends ChangeNotifier {
   }
 
   /// Category order used to live in SharedPreferences (one string list per
+  // ignore: unintended_html_in_doc_comment
   /// list, key "category_order_<group>"). Moves it into the settings table
   /// once, so it is included in backups.
   Future<void> _migrateCategoryOrderFromPrefs() async {
@@ -1239,6 +1240,178 @@ class _TransactionColorDialogState extends State<_TransactionColorDialog> {
             widget.settings.setTransactionColor(widget.type, color);
             Navigator.of(context).pop();
           },
+          child: const Text('Apply'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Reusable color picker pop-up. Same hex box and Hue / Saturation /
+/// Brightness sliders as the General Color picker, but for one color.
+/// Pops the chosen [Color] when Apply is pressed (null when cancelled).
+class ColorPickerDialog extends StatefulWidget {
+  final String title;
+  final IconData icon;
+  final Color initial;
+  const ColorPickerDialog({
+    super.key,
+    required this.title,
+    required this.icon,
+    required this.initial,
+  });
+
+  @override
+  State<ColorPickerDialog> createState() => _ColorPickerDialogState();
+}
+
+class _ColorPickerDialogState extends State<ColorPickerDialog> {
+  late HSVColor _hsv;
+  late final TextEditingController _hexController;
+
+  @override
+  void initState() {
+    super.initState();
+    _hsv = HSVColor.fromColor(widget.initial);
+    _hexController = TextEditingController(text: _hex(widget.initial));
+  }
+
+  @override
+  void dispose() {
+    _hexController.dispose();
+    super.dispose();
+  }
+
+  String _hex(Color c) =>
+      '#${c.toARGB32().toRadixString(16).substring(2).toUpperCase()}';
+
+  Color? _parseHex(String input) {
+    var text = input.trim();
+    if (text.startsWith('#')) text = text.substring(1);
+    if (text.length != 6) return null;
+    final value = int.tryParse(text, radix: 16);
+    if (value == null) return null;
+    return Color(0xFF000000 | value);
+  }
+
+  void _setHexText(Color c) {
+    final text = _hex(c);
+    _hexController.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+  }
+
+  void _onHexChanged(String text) {
+    final parsed = _parseHex(text);
+    if (parsed == null) return;
+    setState(() => _hsv = HSVColor.fromColor(parsed));
+  }
+
+  void _setFromSlider(HSVColor hsv) {
+    setState(() => _hsv = hsv);
+    _setHexText(hsv.toColor());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _hsv.toColor();
+    final hexTextColor = AppTheme.onColor(color);
+    final fg = AppTheme.accentOf(context).foreground;
+
+    return _accentDialog(
+      context,
+      title: widget.title,
+      icon: widget.icon,
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              height: AppConstants.colorBoxHeight,
+              width: double.infinity,
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppConstants.spaceMd,
+              ),
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+                border: Border.all(
+                  color: fg.withValues(alpha: AppConstants.borderAlpha),
+                ),
+              ),
+              child: TextField(
+                controller: _hexController,
+                onChanged: _onHexChanged,
+                textAlign: TextAlign.center,
+                textCapitalization: TextCapitalization.characters,
+                autocorrect: false,
+                enableSuggestions: false,
+                cursorColor: hexTextColor,
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[#0-9a-fA-F]')),
+                  LengthLimitingTextInputFormatter(AppConstants.hexInputLength),
+                  TextInputFormatter.withFunction(
+                    (oldValue, newValue) =>
+                        newValue.copyWith(text: newValue.text.toUpperCase()),
+                  ),
+                ],
+                style: TextStyle(
+                  color: hexTextColor,
+                  fontWeight: FontWeight.w600,
+                  fontSize: AppConstants.hexFontSize,
+                ),
+                decoration: const InputDecoration(
+                  isDense: true,
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  disabledBorder: InputBorder.none,
+                  errorBorder: InputBorder.none,
+                  focusedErrorBorder: InputBorder.none,
+                ),
+              ),
+            ),
+            const SizedBox(height: AppConstants.spaceMd),
+            _GradientSlider(
+              label: 'Hue',
+              value: _hsv.hue,
+              max: 360,
+              colors: [
+                for (var h = 0.0; h <= 360; h += AppConstants.hueGradientStep)
+                  HSVColor.fromAHSV(1, h, 1, 1).toColor(),
+              ],
+              onChanged: (v) => _setFromSlider(_hsv.withHue(v)),
+            ),
+            _GradientSlider(
+              label: 'Saturation',
+              value: _hsv.saturation,
+              max: 1,
+              colors: [
+                _hsv.withSaturation(0).toColor(),
+                _hsv.withSaturation(1).toColor(),
+              ],
+              onChanged: (v) => _setFromSlider(_hsv.withSaturation(v)),
+            ),
+            _GradientSlider(
+              label: 'Brightness',
+              value: _hsv.value,
+              max: 1,
+              colors: [Colors.black, _hsv.withValue(1).toColor()],
+              onChanged: (v) => _setFromSlider(_hsv.withValue(v)),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(color),
           child: const Text('Apply'),
         ),
       ],

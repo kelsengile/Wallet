@@ -87,10 +87,13 @@ class CategoryItem {
   final int id;
   final String name;
   final String? icon;
-  const CategoryItem(this.id, this.name, [this.icon]);
+
+  /// Saved color (ARGB int). null = automatic. Only income / expense
+  /// categories use it.
+  final int? color;
+  const CategoryItem(this.id, this.name, [this.icon, this.color]);
 }
 
-/// An active account in a picker (Transfer From/To, Account fields).
 /// An active account in a picker (Transfer From/To, Account fields).
 class AccountOption {
   final int id;
@@ -156,6 +159,7 @@ class HistoryEntry {
   final String? toAccountName;
   final String? categoryName;
   final String? categoryIcon;
+  final int? categoryColor;
   final String? note;
   final String? imagePath;
 
@@ -172,6 +176,7 @@ class HistoryEntry {
     required this.toAccountName,
     required this.categoryName,
     required this.categoryIcon,
+    required this.categoryColor,
     required this.note,
     required this.imagePath,
   });
@@ -298,6 +303,7 @@ class DatabaseHelper {
   /// inserted.
   Future<void> _ensureReady(Database db) async {
     await _addMissingIconColumns(db);
+    await _addMissingColorColumn(db);
     await _addMissingNoteColumns(db);
     await _addMissingTransactionColumns(db);
     await _addMissingTables(db);
@@ -316,6 +322,16 @@ class DatabaseHelper {
       final columns = await _columnsOf(db, table);
       if (columns.isNotEmpty && !columns.contains('icon')) {
         await db.execute('ALTER TABLE $table ADD COLUMN icon TEXT');
+      }
+    }
+  }
+
+  /// Older databases get the `color` column without losing data.
+  Future<void> _addMissingColorColumn(Database db) async {
+    for (final table in _iconTables) {
+      final columns = await _columnsOf(db, table);
+      if (columns.isNotEmpty && !columns.contains('color')) {
+        await db.execute('ALTER TABLE $table ADD COLUMN color INTEGER');
       }
     }
   }
@@ -578,7 +594,7 @@ class DatabaseHelper {
     });
   }
 
-    /// Saves changes to an existing account (the balance is not changed here).
+  /// Saves changes to an existing account (the balance is not changed here).
   Future<void> updateAccount({
     required int id,
     required String name,
@@ -673,7 +689,7 @@ class DatabaseHelper {
       final kind = _kindOf(group);
       final rows = await db.query(
         _tableOf(group),
-        columns: ['id', 'name', 'icon'],
+        columns: ['id', 'name', 'icon', 'color'],
         where: kind == null ? null : 'kind = ?',
         whereArgs: kind == null ? null : [kind],
         orderBy: 'id',
@@ -684,6 +700,7 @@ class DatabaseHelper {
             (row['id'] as num).toInt(),
             row['name'] as String,
             row['icon'] as String?,
+            (row['color'] as num?)?.toInt(),
           ),
       ];
       return _applyOrder(items, await _readIdList(db, _categoryOrderKey(group)));
@@ -694,6 +711,7 @@ class DatabaseHelper {
     CategoryGroup group,
     String name, {
     String? icon,
+    int? color,
   }) {
     return _guard(() async {
       _checkEditable(group);
@@ -702,6 +720,7 @@ class DatabaseHelper {
       await db.insert(_tableOf(group), {
         'name': _cleanName(name),
         'icon': icon,
+        'color': color,
         // ignore: use_null_aware_elements
         if (kind != null) 'kind': kind,
       });
@@ -714,13 +733,18 @@ class DatabaseHelper {
     int id,
     String name, {
     String? icon,
+    int? color,
   }) {
     return _guard(() async {
       _checkEditable(group);
       final db = await database;
       await db.update(
         _tableOf(group),
-        {'name': _cleanName(name), 'icon': icon},
+        {
+          'name': _cleanName(name),
+          'icon': icon,
+          if (_tableOf(group) == 'categories') 'color': color,
+        },
         where: 'id = ?',
         whereArgs: [id],
       );
@@ -977,6 +1001,7 @@ class DatabaseHelper {
       }
       final rows = await db.rawQuery('''
         SELECT t.*, c.name AS category_name, c.icon AS category_icon,
+               c.color AS category_color,
                a.name AS account_name, b.name AS to_account_name
         FROM transactions t
         JOIN accounts a ON a.id = t.account_id
@@ -1003,6 +1028,7 @@ class DatabaseHelper {
             toAccountName: row['to_account_name'] as String?,
             categoryName: row['category_name'] as String?,
             categoryIcon: row['category_icon'] as String?,
+            categoryColor: (row['category_color'] as num?)?.toInt(),
             note: row['note'] as String?,
             imagePath: row['image_path'] as String?,
           ),
@@ -1466,7 +1492,7 @@ class DatabaseHelper {
             .map((r) => r['image_path']),
       ];
       await _rebuild(db);
-            await db.delete(
+      await db.delete(
         'settings',
         where: 'name LIKE ? OR name = ?',
         whereArgs: ['${AppConstants.prefCategoryOrder}%', AppConstants.prefTypeOrder],
@@ -1481,8 +1507,8 @@ class DatabaseHelper {
   /// Columns saved to / read from a backup file, in the order the tables
   /// must be filled (parents first).
   static const _exportColumns = <String, List<String>>{
-    'account_types': ['id', 'name', 'icon'],
-    'account_categories': ['id', 'name', 'sort_order', 'icon'],
+    'account_types': ['id', 'name', 'icon', 'color'],
+    'account_categories': ['id', 'name', 'sort_order', 'icon', 'color'],
     'accounts': [
       'id',
       'name',
@@ -1494,7 +1520,7 @@ class DatabaseHelper {
       'created_at',
       'deleted_at',
     ],
-    'categories': ['id', 'name', 'kind', 'icon'],
+    'categories': ['id', 'name', 'kind', 'icon', 'color'],
     'transactions': [
       'id',
       'type',
@@ -1658,7 +1684,7 @@ class DatabaseHelper {
     });
   }
 
-    /// Copy of [row] with the picture bytes added (base64), if the file exists.
+  /// Copy of [row] with the picture bytes added (base64), if the file exists.
   Future<Map<String, Object?>> _withImage(Map<String, Object?> row) async {
     final copy = Map<String, Object?>.from(row);
     final path = row['image_path'];
