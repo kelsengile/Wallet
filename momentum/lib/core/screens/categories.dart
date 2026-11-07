@@ -4,6 +4,7 @@ import '../../database/helper.dart';
 import '../constants.dart';
 import '../failures.dart';
 import '../themes.dart';
+import 'settings.dart'; // ColorPickerDialog
 
 /// The icons a category can use, and the default icon of each seed item.
 /// The key is what gets saved in the database.
@@ -354,9 +355,9 @@ Future<bool> _confirmDeleteDialog(
 /// Only Finance is built for now. It has two headers:
 ///  - Accounts: Types and Categories
 ///  - Transactions: Income, Expense and Transfer
-/// Tap the pen (or the bar) to rename it or change its icon. Swipe a bar
-/// left to delete it. Drag the 3-line handle to change the order.
-/// Use + to add one.
+/// Tap the pen (or the bar) to rename it or change its icon and color.
+/// Swipe a bar left to delete it. Drag the 3-line handle to change the
+/// order. Use + to add one.
 class CategoriesScreen extends StatefulWidget {
   const CategoriesScreen({super.key});
 
@@ -483,6 +484,12 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     final startIcon = item == null
         ? _CategoryIcons.defaultKey(group, '')
         : _CategoryIcons.keyOf(group, item);
+    const showColor = true; // every editable list can have a color now
+    final startColor = item?.color;
+    final kindTitle = _singular(group)
+        .split(' ')
+        .map((w) => w[0].toUpperCase() + w.substring(1))
+        .join(' ');
     final result = await showDialog<_NameResult>(
       context: context,
       barrierColor: AppConstants.popupBarrier,
@@ -492,6 +499,9 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
             : 'Edit ${_singular(group)}',
         initial: item?.name ?? '',
         initialIcon: startIcon,
+        showColor: showColor,
+        initialColor: startColor,
+        colorTitle: '$kindTitle Color', // <- header text of the color picker
       ),
     );
     if (result == null || !mounted) return;
@@ -499,13 +509,21 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     final db = DatabaseHelper.instance;
     try {
       if (item == null) {
-        await db.addCategoryItem(group, result.name, icon: result.icon);
-      } else if (result.name != item.name || result.icon != startIcon) {
+        await db.addCategoryItem(
+          group,
+          result.name,
+          icon: result.icon,
+          color: result.color,
+        );
+      } else if (result.name != item.name ||
+          result.icon != startIcon ||
+          result.color != startColor) {
         await db.renameCategoryItem(
           group,
           item.id,
           result.name,
           icon: result.icon,
+          color: result.color,
         );
       }
     } on Failure catch (f) {
@@ -664,6 +682,7 @@ class _CategoryGroupCard extends StatelessWidget {
     Color barColor,
   ) {
     final theme = Theme.of(context);
+    final tint = item.color == null ? null : Color(item.color!);
 
     final bar = Material(
       color: barColor,
@@ -680,14 +699,20 @@ class _CategoryGroupCard extends StatelessWidget {
           ),
           child: Row(
             children: [
+              // The circle is filled with the chosen color.
               Container(
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: fg.withValues(alpha: AppConstants.categoryAvatarAlpha),
+                  color: tint ??
+                      fg.withValues(alpha: AppConstants.categoryAvatarAlpha),
                 ),
-                child: Icon(iconFor(item), size: 22, color: fg),
+                child: Icon(
+                  iconFor(item),
+                  size: 22,
+                  color: tint == null ? fg : AppTheme.onColor(tint),
+                ),
               ),
               const SizedBox(width: AppConstants.spaceMd),
               Expanded(
@@ -702,7 +727,7 @@ class _CategoryGroupCard extends StatelessWidget {
                 ),
               ),
               if (editable) ...[
-                // Pen: edit name and icon.
+                // Pen: edit name, icon and color.
                 IconButton(
                   icon: Icon(
                     Icons.edit_outlined,
@@ -892,21 +917,29 @@ class _CategoryGroupCard extends StatelessWidget {
 class _NameResult {
   final String name;
   final String icon;
-  const _NameResult(this.name, this.icon);
+  final int? color; // null = automatic
+  const _NameResult(this.name, this.icon, this.color);
 }
 
-/// Pop-up to add or edit one item: a Name field and an icon grid.
+/// Pop-up to add or edit one item: a Name field, an icon grid and a color
+/// bar that opens the same color picker as Settings > General Color.
 /// Drawn on the accent color, with Glyph-colored text and buttons.
 /// (Deleting is done by swiping the bar, not here.)
 class _NameDialog extends StatefulWidget {
   final String title;
   final String initial;
   final String initialIcon;
+  final bool showColor;
+  final int? initialColor;
+  final String colorTitle;
 
   const _NameDialog({
     required this.title,
     required this.initial,
     required this.initialIcon,
+    this.showColor = false,
+    this.initialColor,
+    this.colorTitle = 'Color',
   });
 
   @override
@@ -916,6 +949,7 @@ class _NameDialog extends StatefulWidget {
 class _NameDialogState extends State<_NameDialog> {
   late final TextEditingController _controller;
   late String _icon;
+  int? _color;
   String? _errorText;
 
   @override
@@ -923,6 +957,7 @@ class _NameDialogState extends State<_NameDialog> {
     super.initState();
     _controller = TextEditingController(text: widget.initial);
     _icon = widget.initialIcon;
+    _color = widget.initialColor;
   }
 
   @override
@@ -937,7 +972,7 @@ class _NameDialogState extends State<_NameDialog> {
       setState(() => _errorText = 'Enter a name');
       return;
     }
-    Navigator.of(context).pop(_NameResult(name, _icon));
+    Navigator.of(context).pop(_NameResult(name, _icon, _color));
   }
 
   Widget _iconTile(String key, IconData icon, Color fg) {
@@ -988,6 +1023,87 @@ class _NameDialogState extends State<_NameDialog> {
       rows.add(Row(children: cells));
     }
     return Column(children: rows);
+  }
+
+  /// Opens the same color picker as Settings > General Color.
+  Future<void> _pickColor() async {
+    final start = _color != null
+        ? Color(_color!)
+        : AppTheme.accentOf(context).foreground;
+    final picked = await showDialog<Color>(
+      context: context,
+      barrierColor: AppConstants.popupBarrier,
+      builder: (_) => ColorPickerDialog(
+        title: widget.colorTitle,
+        icon: Icons.palette_outlined,
+        initial: start,
+      ),
+    );
+    if (picked != null) setState(() => _color = picked.toARGB32());
+  }
+
+  /// A bar that opens the color picker, plus a reset-to-automatic button.
+  Widget _colorField(Color fg) {
+    final c = _color == null ? null : Color(_color!);
+    final label = c == null
+        ? 'Automatic'
+        : '#${c.toARGB32().toRadixString(16).substring(2).toUpperCase()}';
+    return Row(
+      children: [
+        Expanded(
+          child: Material(
+            color: fg.withValues(alpha: AppConstants.tintAlpha),
+            borderRadius: BorderRadius.circular(AppConstants.radiusSm),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: _pickColor,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppConstants.spaceSmMd,
+                  vertical: 10,
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: c ??
+                            fg.withValues(alpha: AppConstants.iconTileAlpha),
+                        border: Border.all(
+                          color: fg.withValues(alpha: AppConstants.borderAlpha),
+                        ),
+                      ),
+                      child: c == null
+                          ? Icon(Icons.auto_awesome, size: 16, color: fg)
+                          : null,
+                    ),
+                    const SizedBox(width: AppConstants.spaceSmMd),
+                    Expanded(
+                      child: Text(
+                        label,
+                        style: TextStyle(
+                          color: fg,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    Icon(Icons.chevron_right, color: fg),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        if (c != null)
+          IconButton(
+            tooltip: 'Automatic',
+            icon: Icon(Icons.restart_alt, color: fg),
+            onPressed: () => setState(() => _color = null),
+          ),
+      ],
+    );
   }
 
   @override
@@ -1043,6 +1159,18 @@ class _NameDialogState extends State<_NameDialog> {
             ),
             const SizedBox(height: AppConstants.spaceSm),
             _iconGrid(fg),
+            if (widget.showColor) ...[
+              const SizedBox(height: AppConstants.spaceMd),
+              Text(
+                'Color',
+                style: popupTheme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: fg,
+                ),
+              ),
+              const SizedBox(height: AppConstants.spaceSm),
+              _colorField(fg),
+            ],
             const SizedBox(height: AppConstants.spaceSm),
           ],
         ),
