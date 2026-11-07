@@ -7243,21 +7243,21 @@ class _ChartTitles {
   _ChartTitles._();
 
   /// Bar graph (default analytics + Net view)
-  static const accounts = 'Income vs expense per account';
+  static const accounts = 'Account Analytics';
 
   /// Two-line graph (default views)
-  static const overTime = 'Income vs expense over time';
+  static const overTime = 'Balance Over Time';
 
   /// Two-column pie (default views)
-  static const byCategory = 'Income & expense by category';
+  static const byCategory = 'Category Analytics';
 
   /// Column headings inside the two-column pie / line legend
   static const incomeColumn = 'Income';
   static const expenseColumn = 'Expense';
 
   /// Income-only / expense-only views ([label] = 'Income' or 'Expense')
-  static String kindOverTime(String label) => '$label over time';
-  static String kindByCategory(String label) => '$label by category';
+  static String kindOverTime(String label) => '$label Over Time';
+  static String kindByCategory(String label) => '$label by Category';
 
   /// Category pop-up line graph: "AccTitle | Category" when it was opened
   /// from an account, just the category name otherwise.
@@ -7649,7 +7649,6 @@ class _AccountsOverview extends StatelessWidget {
                         color: st.net >= 0 ? s.incomeColor : s.expenseColor,
                       ),
                     ),
-                    Icon(Icons.chevron_right, color: muted),
                   ],
                 ),
               ),
@@ -7665,31 +7664,42 @@ class _AccountsOverview extends StatelessWidget {
           AppConstants.spaceMd + 4,
           AppConstants.spaceMd,
           AppConstants.spaceMd + 4,
-          AppConstants.spaceXs,
+          AppConstants.spaceSm,
         ),
-        child: Row(
+        child: Column(
           children: [
-            Icon(_iconForType(first.typeName, first.typeIcon),
-                size: 16, color: muted),
-            const SizedBox(width: AppConstants.spaceSm),
-            Expanded(
-              child: Text(
-                first.typeName.toUpperCase(),
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1,
-                  color: muted,
+            Row(
+              children: [
+                Icon(_iconForType(first.typeName, first.typeIcon),
+                    size: 16, color: muted),
+                const SizedBox(width: AppConstants.spaceSm),
+                Expanded(
+                  child: Text(
+                    first.typeName.toUpperCase(),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1,
+                      color: muted,
+                    ),
+                  ),
                 ),
-              ),
+                Text(
+                  money(net),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: net >= 0 ? s.incomeColor : s.expenseColor,
+                  ),
+                ),
+              ],
             ),
-            Text(
-              money(net),
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                color: net >= 0 ? s.incomeColor : s.expenseColor,
-              ),
+            const SizedBox(height: AppConstants.spaceXs),
+            // Line that separates the type from its accounts.
+            Divider(
+              height: 1,
+              thickness: 1,
+              color: fg.withValues(alpha: AppConstants.dividerAlpha),
             ),
           ],
         ),
@@ -7723,7 +7733,7 @@ class _AccountsOverview extends StatelessWidget {
 
 // ---------- Line graph (axes + tappable vertices, 1 or 2 lines) ----------
 
-const double _lcLeft = 46, _lcRight = 14, _lcTop = 52, _lcBottom = 28;
+const double _lcLeft = 46, _lcRight = 14, _lcTop = 20, _lcBottom = 28;
 
 /// One line of the graph.
 class _Series {
@@ -7734,11 +7744,13 @@ class _Series {
 }
 
 /// Shared scale of all lines on one graph.
+/// Shared scale of all lines on one graph.
+/// [zs] / [ze] = the visible part of the time axis (0.0 - 1.0).
 class _LineGeo {
-  final double t0, span, maxV;
-  const _LineGeo(this.t0, this.span, this.maxV);
+  final double t0, span, maxV, zs, ze;
+  const _LineGeo(this.t0, this.span, this.maxV, this.zs, this.ze);
 
-  factory _LineGeo.of(List<_Series> series) {
+  factory _LineGeo.of(List<_Series> series, [double zs = 0, double ze = 1]) {
     var lo = double.infinity;
     var hi = -double.infinity;
     var top = 0.0;
@@ -7750,17 +7762,26 @@ class _LineGeo {
         top = math.max(top, e.amount);
       }
     }
-    return _LineGeo(lo, hi - lo, _niceMax(top));
+    final span = hi - lo;
+    // When zoomed in, the amount axis fits the points that are visible.
+    var visTop = 0.0;
+    if (span > 0 && (ze - zs) < 1) {
+      for (final s in series) {
+        for (final e in s.entries) {
+          final f = (e.date.millisecondsSinceEpoch - lo) / span;
+          if (f >= zs && f <= ze) visTop = math.max(visTop, e.amount);
+        }
+      }
+    }
+    return _LineGeo(lo, span, _niceMax(visTop > 0 ? visTop : top), zs, ze);
   }
 
   Offset at(HistoryEntry e, Size size) {
     final w = size.width - _lcLeft - _lcRight;
     final h = size.height - _lcTop - _lcBottom;
     final t = e.date.millisecondsSinceEpoch.toDouble();
-    return Offset(
-      _lcLeft + (span == 0 ? w / 2 : (t - t0) / span * w),
-      _lcTop + h - e.amount / maxV * h,
-    );
+    final x = span == 0 ? w / 2 : ((t - t0) / span - zs) / (ze - zs) * w;
+    return Offset(_lcLeft + x, _lcTop + h - e.amount / maxV * h);
   }
 }
 
@@ -7768,11 +7789,12 @@ class _LinePainter extends CustomPainter {
   final List<_Series> series;
   final Color fg;
   final (int, int)? selected; // (line, point)
-  const _LinePainter(this.series, this.fg, this.selected);
+  final double zs, ze; // visible part of the time axis
+  const _LinePainter(this.series, this.fg, this.selected, this.zs, this.ze);
 
   @override
   void paint(Canvas canvas, Size size) {
-    final geo = _LineGeo.of(series);
+    final geo = _LineGeo.of(series, zs, ze);
     final w = size.width - _lcLeft - _lcRight;
     final h = size.height - _lcTop - _lcBottom;
     final axis = TextStyle(fontSize: 10, color: fg.withValues(alpha: 0.65));
@@ -7791,12 +7813,15 @@ class _LinePainter extends CustomPainter {
       _paintRight(canvas, _short(geo.maxV * (4 - i) / 4), _lcLeft - 6, y, axis);
     }
 
-    // Bottom axis: dates.
+    // Bottom axis: dates of the visible part only.
+    final visT0 = geo.t0 + geo.span * zs;
+    final visSpan = geo.span * (ze - zs);
+    final showTime = visSpan > 0 && visSpan < 3 * 24 * 3600 * 1000;
     final ticks = geo.span == 0 ? 1 : 4;
     for (var k = 0; k < ticks; k++) {
       final x = geo.span == 0 ? _lcLeft + w / 2 : _lcLeft + w * k / (ticks - 1);
       final d = DateTime.fromMillisecondsSinceEpoch(
-        (geo.t0 + (geo.span == 0 ? 0 : geo.span * k / (ticks - 1))).round(),
+        (visT0 + (geo.span == 0 ? 0 : visSpan * k / (ticks - 1))).round(),
       );
       canvas.drawLine(
         Offset(x, _lcTop + h),
@@ -7805,15 +7830,25 @@ class _LinePainter extends CustomPainter {
           ..color = fg.withValues(alpha: 0.4)
           ..strokeWidth = 1,
       );
+      final label = showTime
+          ? '${_monthNames[d.month - 1].substring(0, 3)} ${d.day} '
+              '${_two(d.hour)}:${_two(d.minute)}'
+          : '${_monthNames[d.month - 1].substring(0, 3)} ${d.day}';
       _paintCentered(
         canvas,
-        '${_monthNames[d.month - 1].substring(0, 3)} ${d.day}',
-        x.clamp(24.0, size.width - 24).toDouble(),
+        label,
+        x.clamp(32.0, size.width - 32).toDouble(),
         _lcTop + h + 8,
         axis,
-        maxWidth: 48,
+        maxWidth: 64,
       );
     }
+
+    // Lines and vertices are clipped to the graph area (needed for zoom).
+    canvas.save();
+    canvas.clipRect(
+      Rect.fromLTRB(_lcLeft - 8, _lcTop - 6, size.width - _lcRight + 8, size.height),
+    );
 
     final baseY = _lcTop + h;
     for (final s in series) {
@@ -7867,14 +7902,16 @@ class _LinePainter extends CustomPainter {
         canvas.drawCircle(p, sel ? 3 : 1.8, Paint()..color = fg.withValues(alpha: 0.9));
       }
     }
+    canvas.restore();
 
-    // Bubble of the selected vertex: amount, with its DATE under it.
+    // Bubble of the selected vertex (only while that point is visible).
     final sel = selected;
     if (sel != null && sel.$1 < series.length) {
       final s = series[sel.$1];
       if (sel.$2 < s.entries.length) {
         final e = s.entries[sel.$2];
         final p = geo.at(e, size);
+        if (p.dx < _lcLeft - 1 || p.dx > size.width - _lcRight + 1) return;
         final on = AppTheme.onColor(s.color);
         final amountTp = TextPainter(
           text: TextSpan(
@@ -7885,7 +7922,7 @@ class _LinePainter extends CustomPainter {
         )..layout();
         final dateTp = TextPainter(
           text: TextSpan(
-            text: _fmtLong(e.date), // <- the date shown under the amount
+            text: _fmtLong(e.date),
             style: TextStyle(
               fontSize: 9.5,
               fontWeight: FontWeight.w600,
@@ -7940,7 +7977,19 @@ class _TxLineChart extends StatefulWidget {
 }
 
 class _TxLineChartState extends State<_TxLineChart> {
+  static const double _minWindow = 0.02; // closest zoom (2% of the dates)
+
   (int, int)? _selected;
+
+  // Visible part of the time axis (0.0 - 1.0). 0 -> 1 = not zoomed.
+  double _zs = 0;
+  double _ze = 1;
+
+  // Values saved when a pinch / drag starts.
+  double _startWindow = 1;
+  double _startFocalData = 0;
+
+  bool get _zoomed => _ze - _zs < 0.999;
 
   @override
   void initState() {
@@ -7973,6 +8022,59 @@ class _TxLineChartState extends State<_TxLineChart> {
         sel.$2 >= widget.series[sel.$1].entries.length) {
       _selected = _latest();
     }
+  }
+
+  // ---------- Zoom ----------
+
+  double _plotFraction(double dx, double width) {
+    final w = width - _lcLeft - _lcRight;
+    return ((dx - _lcLeft) / w).clamp(0.0, 1.0).toDouble();
+  }
+
+  void _onScaleStart(ScaleStartDetails d, double width) {
+    _startWindow = _ze - _zs;
+    _startFocalData =
+        _zs + _plotFraction(d.localFocalPoint.dx, width) * _startWindow;
+  }
+
+  void _onScaleUpdate(ScaleUpdateDetails d, double width) {
+    final newW = (_startWindow / d.scale).clamp(_minWindow, 1.0).toDouble();
+    final frac = _plotFraction(d.localFocalPoint.dx, width);
+    final newS = (_startFocalData - frac * newW).clamp(0.0, 1.0 - newW).toDouble();
+    setState(() {
+      _zs = newS;
+      _ze = newS + newW;
+    });
+  }
+
+  /// Zoom around the middle of the visible part (buttons).
+  void _zoomBy(double factor) {
+    final w = _ze - _zs;
+    final newW = (w / factor).clamp(_minWindow, 1.0).toDouble();
+    final mid = (_zs + _ze) / 2;
+    final newS = (mid - newW / 2).clamp(0.0, 1.0 - newW).toDouble();
+    setState(() {
+      _zs = newS;
+      _ze = newS + newW;
+    });
+  }
+
+  void _resetZoom() => setState(() {
+        _zs = 0;
+        _ze = 1;
+      });
+
+  Widget _zoomButton(IconData icon, VoidCallback? onTap) {
+    final c = widget.fg.withValues(alpha: onTap == null ? 0.25 : 0.85);
+    return InkResponse(
+      onTap: onTap,
+      radius: 18,
+      child: SizedBox(
+        width: 30,
+        height: 28,
+        child: Icon(icon, size: 18, color: c),
+      ),
+    );
   }
 
   Widget _legend(_Series s) {
@@ -8020,21 +8122,39 @@ class _TxLineChartState extends State<_TxLineChart> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (widget.series.length > 1 || widget.onOpenKind != null)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: Wrap(
-              spacing: 8,
-              children: [for (final s in widget.series) _legend(s)],
-            ),
+        // Legend (left) + zoom buttons (right)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 0),
+          child: Row(
+            children: [
+              Expanded(
+                child: (widget.series.length > 1 || widget.onOpenKind != null)
+                    ? Wrap(
+                        spacing: 8,
+                        children: [for (final s in widget.series) _legend(s)],
+                      )
+                    : const SizedBox.shrink(),
+              ),
+              _zoomButton(Icons.remove, _zoomed ? () => _zoomBy(0.5) : null),
+              _zoomButton(Icons.add, () => _zoomBy(2)),
+              _zoomButton(
+                Icons.zoom_out_map,
+                _zoomed ? _resetZoom : null,
+              ),
+            ],
           ),
+        ),
         LayoutBuilder(
           builder: (context, c) {
             final size = Size(c.maxWidth, 210);
             return GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTapDown: (d) {
-                final geo = _LineGeo.of(widget.series);
+              // Pinch = zoom, drag = move the zoomed graph.
+              onScaleStart: (d) => _onScaleStart(d, size.width),
+              onScaleUpdate: (d) => _onScaleUpdate(d, size.width),
+              onDoubleTap: _resetZoom,
+              onTapUp: (d) {
+                final geo = _LineGeo.of(widget.series, _zs, _ze);
                 (int, int)? best;
                 var bestD = 28.0;
                 for (var si = 0; si < widget.series.length; si++) {
@@ -8052,7 +8172,7 @@ class _TxLineChartState extends State<_TxLineChart> {
               },
               child: CustomPaint(
                 size: size,
-                painter: _LinePainter(widget.series, fg, _selected),
+                painter: _LinePainter(widget.series, fg, _selected, _zs, _ze),
               ),
             );
           },
@@ -8240,10 +8360,6 @@ class _CategoryPie extends StatelessWidget {
                     style: TextStyle(
                         fontSize: 14, fontWeight: FontWeight.w800, color: fg),
                   ),
-                  if (onOpen != null)
-                    Icon(Icons.chevron_right,
-                        size: 18,
-                        color: fg.withValues(alpha: AppConstants.mutedAlpha)),
                 ],
               ),
             ),
