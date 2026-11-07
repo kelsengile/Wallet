@@ -687,10 +687,9 @@ class DatabaseHelper {
     return _guard(() async {
       final db = await database;
       final kind = _kindOf(group);
-      const hasColor = true; 
       final rows = await db.query(
         _tableOf(group),
-        columns: ['id', 'name', 'icon', if (hasColor) 'color'],
+        columns: ['id', 'name', 'icon', 'color'],
         where: kind == null ? null : 'kind = ?',
         whereArgs: kind == null ? null : [kind],
         orderBy: 'id',
@@ -701,7 +700,7 @@ class DatabaseHelper {
             (row['id'] as num).toInt(),
             row['name'] as String,
             row['icon'] as String?,
-            hasColor ? (row['color'] as num?)?.toInt() : null,
+            (row['color'] as num?)?.toInt(),
           ),
       ];
       return _applyOrder(items, await _readIdList(db, _categoryOrderKey(group)));
