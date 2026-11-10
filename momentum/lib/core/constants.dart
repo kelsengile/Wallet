@@ -142,6 +142,7 @@ class AppConstants {
   // Order of each category list on the Categories screen.
   // The full key is this prefix + the group name (e.g. "category.order.income").
   static const String prefCategoryOrder = 'category.order.';
+  static const prefAnimEnabled = 'settings.animEnabled';
 
   static const List<String> textSizeLabels = [
     'Smallest',

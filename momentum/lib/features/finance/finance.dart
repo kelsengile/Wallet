@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -6,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:flutter/gestures.dart';
 
 import '../../core/constants.dart';
 import '../../core/failures.dart';
@@ -13,6 +15,253 @@ import '../../core/screens/settings.dart';
 import '../../core/themes.dart';
 import '../../core/utils.dart';
 import '../../database/helper.dart';
+
+/// Look of one account: its color, plus either a pattern or a picture
+/// for the card. A picture wins over a pattern.
+class AccountTheme {
+  final int? color; // ARGB
+  final String? pattern;
+  final String? imagePath;
+  const AccountTheme({this.color, this.pattern, this.imagePath});
+
+  static const AccountTheme none = AccountTheme();
+
+  bool get isDefault => color == null && pattern == null && imagePath == null;
+
+  String encode() =>
+      jsonEncode({'color': color, 'pattern': pattern, 'image': imagePath});
+
+  factory AccountTheme.decode(String? raw) {
+    if (raw == null) return none;
+    try {
+      final m = jsonDecode(raw) as Map;
+      return AccountTheme(
+        color: (m['color'] as num?)?.toInt(),
+        pattern: m['pattern'] as String?,
+        imagePath: m['image'] as String?,
+      );
+    } catch (_) {
+      return none;
+    }
+  }
+}
+
+/// Every account's theme. Saved in the `settings` table (so it is in
+/// backups) and reloaded whenever the database changes (for example after
+/// an import).
+class _AccountThemes extends ChangeNotifier {
+  _AccountThemes() {
+    DatabaseHelper.instance.changes.addListener(reload);
+    reload();
+  }
+
+  static const String _prefix = 'accountTheme.';
+  Map<int, AccountTheme> _themes = {};
+  int _version = 0; // lets a save win over a reload that started earlier
+
+  AccountTheme of(int accountId) => _themes[accountId] ?? AccountTheme.none;
+
+  Future<void> reload() async {
+    final started = _version;
+    try {
+      final all = await DatabaseHelper.instance.getAllSettings();
+      if (started != _version) return;
+      final next = <int, AccountTheme>{};
+      for (final e in all.entries) {
+        if (!e.key.startsWith(_prefix)) continue;
+        final id = int.tryParse(e.key.substring(_prefix.length));
+        if (id != null) next[id] = AccountTheme.decode(e.value);
+      }
+      _themes = next;
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  Future<void> set(int accountId, AccountTheme theme) async {
+    _version++;
+    if (theme.isDefault) {
+      _themes.remove(accountId);
+    } else {
+      _themes[accountId] = theme;
+    }
+    notifyListeners();
+    try {
+      final db = DatabaseHelper.instance;
+      if (theme.isDefault) {
+        await db.removeSetting('$_prefix$accountId');
+      } else {
+        await db.setSetting('$_prefix$accountId', theme.encode());
+      }
+    } catch (_) {
+    } finally {
+      _version++;
+    }
+  }
+}
+
+final _accountThemes = _AccountThemes();
+
+/// Background of the list area under an account's header: a bit darker
+/// when the panel color is light, a bit lighter when it is dark.
+Color _contentTone(Color panel) {
+  final light = panel.computeLuminance() > 0.5;
+  return Color.alphaBlend(
+    (light ? Colors.black : Colors.white).withValues(alpha: light ? 0.10 : 0.12),
+    panel,
+  );
+}
+
+const List<String> _patternNames = [
+  'Dots', 'Stripes', 'Grid', 'Waves', 'Diamonds', 'Circles',
+];
+
+/// Colors + backdrop of a card, worked out from the account's theme.
+class _CardLook {
+  final Color bg;
+  final Color fg;
+  final String? image;
+  final String? pattern;
+  const _CardLook._(this.bg, this.fg, this.image, this.pattern);
+
+  factory _CardLook.of(BuildContext context, AccountTheme t) {
+    final accent = AppTheme.accentOf(context);
+    final img = t.imagePath;
+    if (img != null && File(img).existsSync()) {
+      // Picture: dark scrim, so the text is white.
+      return const _CardLook._(Colors.black, Colors.white, null, null)
+          ._withImage(img);
+    }
+    final c = t.color != null ? Color(t.color!) : null;
+    return _CardLook._(
+      c ?? accent.background,
+      c != null ? AppTheme.onColor(c) : accent.foreground,
+      null,
+      t.pattern,
+    );
+  }
+
+  _CardLook _withImage(String path) => _CardLook._(bg, fg, path, null);
+}
+
+/// Picture / pattern layers that sit behind the card's content.
+List<Widget> _cardBackdrop(_CardLook look) => [
+      if (look.image != null) ...[
+        Positioned.fill(
+          child: Image.file(
+            File(look.image!),
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+          ),
+        ),
+        Positioned.fill(
+          child: ColoredBox(color: Colors.black.withValues(alpha: 0.35)),
+        ),
+      ] else if (look.pattern != null)
+        Positioned.fill(
+          child: CustomPaint(
+            painter: _PatternPainter(
+              look.pattern!,
+              look.fg.withValues(alpha: 0.14),
+            ),
+          ),
+        ),
+    ];
+
+class _PatternPainter extends CustomPainter {
+  final String pattern;
+  final Color color;
+  const _PatternPainter(this.pattern, this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final k = size.width / 306; // pattern scales with the card
+    final line = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5 * k;
+    final fill = Paint()..color = color;
+    final w = size.width, h = size.height;
+
+    switch (pattern) {
+      case 'Dots':
+        final s = 22 * k;
+        for (var y = s / 2; y < h; y += s) {
+          for (var x = s / 2; x < w; x += s) {
+            canvas.drawCircle(Offset(x, y), 2.5 * k, fill);
+          }
+        }
+      case 'Stripes':
+        final s = 20 * k;
+        for (var x = -h; x < w; x += s) {
+          canvas.drawLine(Offset(x, h), Offset(x + h, 0), line);
+        }
+      case 'Grid':
+        final s = 24 * k;
+        for (var x = 0.0; x < w; x += s) {
+          canvas.drawLine(Offset(x, 0), Offset(x, h), line);
+        }
+        for (var y = 0.0; y < h; y += s) {
+          canvas.drawLine(Offset(0, y), Offset(w, y), line);
+        }
+      case 'Waves':
+        final s = 22 * k;
+        for (var y = s / 2; y < h + s; y += s) {
+          final path = Path()..moveTo(0, y);
+          for (var x = 0.0; x <= w; x += 4) {
+            path.lineTo(x, y + math.sin(x / (18 * k) * math.pi) * 6 * k);
+          }
+          canvas.drawPath(path, line);
+        }
+      case 'Diamonds':
+        final s = 32 * k;
+        for (var y = 0.0; y < h + s; y += s) {
+          for (var x = 0.0; x < w + s; x += s) {
+            final c = Offset(x, y);
+            canvas.drawPath(
+              Path()
+                ..moveTo(c.dx, c.dy - s / 2)
+                ..lineTo(c.dx + s / 2, c.dy)
+                ..lineTo(c.dx, c.dy + s / 2)
+                ..lineTo(c.dx - s / 2, c.dy)
+                ..close(),
+              line,
+            );
+          }
+        }
+      case 'Circles':
+        final s = 24 * k;
+        final corner = Offset(w, h);
+        final maxR = math.sqrt(w * w + h * h);
+        for (var r = s; r < maxR; r += s) {
+          canvas.drawCircle(corner, r, line);
+        }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_PatternPainter o) =>
+      o.pattern != pattern || o.color != color;
+}
+
+/// Copies a picked picture into the app's own folder.
+Future<String> _storeThemeImage(String source) async {
+  final dir = await getApplicationDocumentsDirectory();
+  final folder = Directory(p.join(dir.path, 'account_themes'));
+  if (!await folder.exists()) await folder.create(recursive: true);
+  final target = p.join(
+    folder.path,
+    '${DateTime.now().microsecondsSinceEpoch}${p.extension(source)}',
+  );
+  await File(source).copy(target);
+  return target;
+}
+
+void _deleteThemeImage(String? path) {
+  if (path == null) return;
+  try {
+    File(path).delete();
+  } catch (_) {}
+}
 
 /// One account as shown on a card.
 class _AccountCardData {
@@ -648,10 +897,49 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
   List<CategoryItem> _categories = const [];
   CategoryItem? _type;
   CategoryItem? _category;
+  AccountTheme _theme = AccountTheme.none;
+  String? _savedImage; // picture the saved theme already has
   bool _saving = false;
+  bool _didSave = false;
   String? _error;
 
   bool get _editing => widget.account != null;
+
+  /// Background / glyph color of this sheet (follows the chosen account color).
+  (Color, Color) _colors() {
+    final accent = AppTheme.accentOf(context);
+    final custom = _theme.color != null;
+    final bg = custom ? Color(_theme.color!) : accent.background;
+    return (bg, custom ? AppTheme.onColor(bg) : accent.foreground);
+  }
+
+  Future<void> _pickType() async {
+    final (bg, fg) = _colors();
+    final picked = await _pickItem(
+      context,
+      title: 'Type',
+      items: _types,
+      selected: _type,
+      iconFor: (item) => _iconForType(item.name, item.icon),
+      background: bg,
+      foreground: fg,
+    );
+    if (picked != null) setState(() => _type = picked);
+  }
+
+  Future<void> _pickCategory() async {
+    final (bg, fg) = _colors();
+    final picked = await _pickItem(
+      context,
+      title: 'Category',
+      items: _categories,
+      selected: _category,
+      iconFor: (item) => _iconForCategory(item.icon),
+      background: bg,
+      foreground: fg,
+    );
+    if (picked != null) setState(() => _category = picked);
+  }
 
   @override
   void initState() {
@@ -661,6 +949,8 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
       _name.text = a.name;
       _noteTitle.text = a.noteTitle ?? '';
       _noteBody.text = a.noteBody ?? '';
+      _theme = _accountThemes.of(a.id);
+      _savedImage = _theme.imagePath;
     }
     for (final c in [_name, _balance, _noteTitle, _noteBody]) {
       c.addListener(_refresh);
@@ -670,6 +960,10 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
 
   @override
   void dispose() {
+    // A picture picked but never saved is not kept.
+    if (!_didSave && _theme.imagePath != _savedImage) {
+      _deleteThemeImage(_theme.imagePath);
+    }
     for (final c in [_name, _balance, _noteTitle, _noteBody]) {
       c.removeListener(_refresh);
       c.dispose();
@@ -720,6 +1014,7 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
     });
     try {
       final a = widget.account;
+      final int id;
       if (a != null) {
         await DatabaseHelper.instance.updateAccount(
           id: a.id,
@@ -729,8 +1024,9 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
           noteTitle: _noteTitle.text,
           noteBody: _noteBody.text,
         );
+        id = a.id;
       } else {
-        await DatabaseHelper.instance.addAccount(
+        id = await DatabaseHelper.instance.addAccount(
           name: _name.text,
           typeId: _type!.id,
           categoryId: _category!.id,
@@ -739,6 +1035,12 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
           noteBody: _noteBody.text,
         );
       }
+      // The theme is saved together with the account.
+      await _accountThemes.set(id, _theme);
+      if (_savedImage != null && _savedImage != _theme.imagePath) {
+        _deleteThemeImage(_savedImage); // the replaced picture
+      }
+      _didSave = true;
       if (mounted) Navigator.of(context).pop();
     } on Failure catch (f) {
       if (mounted) setState(() => _error = f.message);
@@ -763,7 +1065,14 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
       _error = null;
     });
     try {
-      await DatabaseHelper.instance.softDeleteAccount(widget.account!.id);
+      final id = widget.account!.id;
+      final image = _accountThemes.of(id).imagePath;
+
+      await DatabaseHelper.instance.softDeleteAccount(id);
+
+      _accountThemes.set(id, AccountTheme.none);
+      _deleteThemeImage(image);
+
       if (mounted) Navigator.of(context).pop();
     } on Failure catch (f) {
       if (mounted) setState(() => _error = f.message);
@@ -774,26 +1083,60 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
     }
   }
 
-  Future<void> _pickType() async {
-    final picked = await _pickItem(
-      context,
-      title: 'Type',
-      items: _types,
-      selected: _type,
-      iconFor: (item) => _iconForType(item.name, item.icon),
-    );
-    if (picked != null) setState(() => _type = picked);
+Future<void> _pickTheme() {
+  return _showAccountThemeSheet(
+    context,
+    initial: _theme,
+    onChanged: (next) {
+      // Delete the replaced picture now, unless it is the one the account
+      // already has saved (that one is removed in _save()).
+      final old = _theme.imagePath;
+      if (old != null && old != next.imagePath && old != _savedImage) {
+        _deleteThemeImage(old);
+      }
+      if (mounted) setState(() => _theme = next);
+    },
+  );
+}
+
+  /// null = nothing chosen yet.
+  String? get _themeText {
+    if (_theme.imagePath != null) return 'Image';
+    if (_theme.pattern != null) return _theme.pattern!;
+    if (_theme.color != null) return 'Custom color';
+    return null;
   }
 
-  Future<void> _pickCategory() async {
-    final picked = await _pickItem(
-      context,
-      title: 'Category',
-      items: _categories,
-      selected: _category,
-      iconFor: (item) => _iconForCategory(item.icon),
+  Widget _themeField(Color fg) {
+    final text = _themeText;
+    return InkWell(
+      onTap: _pickTheme,
+      borderRadius: BorderRadius.circular(_fieldRadius),
+      child: InputDecorator(
+        isEmpty: false,
+        decoration: _decoration(
+          fg,
+          // No label above until something is chosen.
+          label: text == null ? null : 'Account Theme',
+          floating: FloatingLabelBehavior.always,
+          icon: Icon(Icons.style_outlined, color: fg),
+        ),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            text ?? 'Account Theme',
+            maxLines: 1,
+            style: TextStyle(
+              color: text == null
+                  ? fg.withValues(alpha: AppConstants.mutedAlpha)
+                  : fg,
+              fontSize: 16,
+            ),
+          ),
+        ),
+      ),
     );
-    if (picked != null) setState(() => _category = picked);
   }
 
   /// The biggest font size (down to the minimum) at which the typed
@@ -821,7 +1164,7 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
   /// Outlined box look shared by every field (glyph-colored outline).
   InputDecoration _decoration(
     Color fg, {
-    required String label,
+    required String? label,
     required Widget icon,
     Widget? suffix,
     FloatingLabelBehavior? floating,
@@ -889,10 +1232,22 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final base = Theme.of(context);
     final accent = AppTheme.accentOf(context);
-    final fg = accent.foreground;
-    final bg = accent.background;
+    final custom = _theme.color != null;
+    final bg = custom ? Color(_theme.color!) : accent.background;
+    final fg = custom ? AppTheme.onColor(bg) : accent.foreground;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: _form(context, fg, bg),
+    );
+  }
+
+  Widget _form(BuildContext context, Color fg, Color bg) {
+    final base = Theme.of(context);
     final muted = fg.withValues(alpha: AppConstants.mutedAlpha);
 
     return Theme(
@@ -962,48 +1317,70 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
               ),
               const SizedBox(height: AppConstants.spaceMd),
 
-              // Account name
-              TextField(
-                controller: _name,
-                style: TextStyle(color: fg, fontSize: 16),
-                cursorColor: fg,
-                textCapitalization: TextCapitalization.words,
-                textInputAction: TextInputAction.next,
-                decoration: _decoration(
-                  fg,
-                  label: 'Account Name',
-                  icon: Icon(Icons.label_outline, color: fg),
-                ),
+              // Account name (theme sits beside it when editing)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 5,
+                    child: TextField(
+                      controller: _name,
+                      style: TextStyle(color: fg, fontSize: 16),
+                      cursorColor: fg,
+                      textCapitalization: TextCapitalization.words,
+                      textInputAction: TextInputAction.next,
+                      decoration: _decoration(
+                        fg,
+                        label: 'Account Name',
+                        icon: Icon(Icons.label_outline, color: fg),
+                      ),
+                    ),
+                  ),
+                  if (_editing) ...[
+                    const SizedBox(width: _gap),
+                    Expanded(flex: 4, child: _themeField(fg)),
+                  ],
+                ],
               ),
               const SizedBox(height: _gap),
 
-              // Initial balance (new accounts only): no length limit,
-              // the text shrinks to fit.
+              // Initial balance + theme beside it (new accounts only)
               if (!_editing) ...[
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final size = _balanceFontSize(constraints.maxWidth);
-                    return TextField(
-                      controller: _balance,
-                      style: TextStyle(color: fg, fontSize: size),
-                      cursorColor: fg,
-                      maxLines: 1,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 5,
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final size = _balanceFontSize(constraints.maxWidth);
+                          return TextField(
+                            controller: _balance,
+                            style: TextStyle(color: fg, fontSize: size),
+                            cursorColor: fg,
+                            maxLines: 1,
+                            keyboardType:
+                                const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            inputFormatters: [
+                              FilteringTextInputFormatter.allow(
+                                RegExp(r'^\d*\.?\d{0,2}'),
+                              ),
+                            ],
+                            decoration: _decoration(
+                              fg,
+                              label:
+                                  'Initial Balance (${AppConstants.currencySymbol})',
+                              icon: Icon(Icons.payments_outlined, color: fg),
+                            ),
+                          );
+                        },
                       ),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(
-                          RegExp(r'^\d*\.?\d{0,2}'),
-                        ),
-                      ],
-                      decoration: _decoration(
-                        fg,
-                        label:
-                            'Initial Balance (${AppConstants.currencySymbol})',
-                        icon: Icon(Icons.payments_outlined, color: fg),
-                      ),
-                    );
-                  },
+                    ),
+                    const SizedBox(width: _gap),
+                    Expanded(flex: 4, child: _themeField(fg)),
+                  ],
                 ),
                 const SizedBox(height: _gap),
               ],
@@ -1031,45 +1408,6 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
                     ),
                   ),
                 ],
-              ),
-              const SizedBox(height: _gap),
-
-              // Card theme (empty for now)
-              InkWell(
-                onTap: () {}, // TODO: card theme picker
-                borderRadius: BorderRadius.circular(_fieldRadius),
-                child: InputDecorator(
-                  decoration: _decoration(
-                    fg,
-                    label: 'Card Theme',
-                    vPad: _selectorVPad,
-                    floating: FloatingLabelBehavior.always,
-                    icon: Icon(Icons.style_outlined, color: fg),
-                    suffix: Icon(Icons.chevron_right, color: fg),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 46,
-                        height: 24,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(8),
-                          gradient: LinearGradient(
-                            colors: [
-                              fg.withValues(alpha: 0.35),
-                              fg.withValues(alpha: 0.15),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: AppConstants.spaceSmMd),
-                      Text(
-                        'Classic',
-                        style: TextStyle(color: fg, fontSize: 16),
-                      ),
-                    ],
-                  ),
-                ),
               ),
               const SizedBox(height: _gap),
 
@@ -1349,6 +1687,306 @@ Future<bool> _confirmDeleteAccount(
   return ok ?? false;
 }
 
+/// Account Theme pop-up: Account Color + Card Theme (pattern / camera /
+/// gallery). Pops the chosen [AccountTheme] on Apply.
+Future<void> _showAccountThemeSheet(
+  BuildContext context, {
+  required AccountTheme initial,
+  required ValueChanged<AccountTheme> onChanged,
+}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    backgroundColor: Colors.transparent, // the sheet paints its own color
+    barrierColor: AppConstants.popupBarrier,
+    builder: (_) => _AccountThemeSheet(initial: initial, onChanged: onChanged),
+  );
+}
+
+/// Account Theme bottom sheet: Account Color + Card Theme (pattern / camera /
+/// gallery). Every change is sent to [onChanged] right away; the account
+/// popup's Save button is what keeps it.
+class _AccountThemeSheet extends StatefulWidget {
+  final AccountTheme initial;
+  final ValueChanged<AccountTheme> onChanged;
+  const _AccountThemeSheet({required this.initial, required this.onChanged});
+
+  @override
+  State<_AccountThemeSheet> createState() => _AccountThemeSheetState();
+}
+
+class _AccountThemeSheetState extends State<_AccountThemeSheet> {
+  late int? _color = widget.initial.color;
+  late String? _pattern = widget.initial.pattern;
+  late String? _image = widget.initial.imagePath;
+  String? _error;
+
+  void _emit() => widget.onChanged(
+        AccountTheme(color: _color, pattern: _pattern, imagePath: _image),
+      );
+
+  /// Same colors as the account popup behind this sheet.
+  (Color, Color) _colors() {
+    final accent = AppTheme.accentOf(context);
+    final custom = _color != null;
+    final bg = custom ? Color(_color!) : accent.background;
+    return (bg, custom ? AppTheme.onColor(bg) : accent.foreground);
+  }
+
+  Future<void> _pickColor() async {
+    final accent = AppTheme.accentOf(context);
+    final picked = await showDialog<Color>(
+      context: context,
+      barrierColor: AppConstants.popupBarrier,
+      builder: (_) => ColorPickerDialog(
+        title: 'Account Color',
+        icon: Icons.palette_outlined,
+        initial: _color != null ? Color(_color!) : accent.background,
+      ),
+    );
+    if (picked != null && mounted) {
+      setState(() => _color = picked.toARGB32());
+      _emit();
+    }
+  }
+
+  Future<void> _pickCardTheme() async {
+    final (bg, fg) = _colors();
+    final choice = await _pickItem(
+      context,
+      title: 'Card Theme',
+      background: bg,
+      foreground: fg,
+      items: const [
+        CategoryItem(0, 'Pattern'),
+        CategoryItem(1, 'Camera'),
+        CategoryItem(2, 'Gallery'),
+        CategoryItem(3, 'None'),
+      ],
+      iconFor: (item) => switch (item.id) {
+        0 => Icons.grid_on,
+        1 => Icons.photo_camera_outlined,
+        2 => Icons.photo_library_outlined,
+        _ => Icons.block,
+      },
+    );
+    if (choice == null || !mounted) return;
+
+    switch (choice.id) {
+      case 0:
+        final picked = await _pickItem(
+          context,
+          title: 'Pattern',
+          background: bg,
+          foreground: fg,
+          items: [
+            for (var i = 0; i < _patternNames.length; i++)
+              CategoryItem(i, _patternNames[i]),
+          ],
+          iconFor: (_) => Icons.grid_on,
+        );
+        if (picked == null || !mounted) return;
+        setState(() {
+          _pattern = _patternNames[picked.id];
+          _image = null;
+          _error = null;
+        });
+        _emit();
+      case 3:
+        setState(() {
+          _pattern = null;
+          _image = null;
+        });
+        _emit();
+      default:
+        try {
+          final file = await ImagePicker().pickImage(
+            source: choice.id == 1 ? ImageSource.camera : ImageSource.gallery,
+            imageQuality: 80,
+            maxWidth: 1600,
+          );
+          if (file == null) return;
+          final saved = await _storeThemeImage(file.path);
+          if (!mounted) {
+            _deleteThemeImage(saved); // sheet closed while picking
+            return;
+          }
+          setState(() {
+            _image = saved;
+            _pattern = null;
+            _error = null;
+          });
+          _emit();
+        } catch (_) {
+          if (mounted) setState(() => _error = 'Couldn\'t get that image.');
+        }
+    }
+  }
+
+  String get _cardThemeText {
+    if (_image != null) return 'Image';
+    if (_pattern != null) return 'Pattern  ·  $_pattern';
+    return 'None';
+  }
+
+  Widget _row({
+    required Color fg,
+    required IconData icon,
+    required String label,
+    required String value,
+    required Widget trailing,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: fg.withValues(alpha: AppConstants.tintAlpha),
+      borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppConstants.spaceMd,
+            vertical: AppConstants.spaceSmMd,
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: fg, size: 22),
+              const SizedBox(width: AppConstants.spaceSmMd),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: fg,
+                      ),
+                    ),
+                    Text(
+                      value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: fg.withValues(alpha: AppConstants.mutedAlpha),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              trailing,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final (bg, fg) = _colors();
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(
+          AppConstants.spaceLg,
+          AppConstants.spaceSmMd,
+          AppConstants.spaceLg,
+          AppConstants.spaceLg,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Drag handle
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: fg.withValues(alpha: AppConstants.borderAlpha),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+              const SizedBox(height: AppConstants.spaceLg),
+              Text(
+                'Account Theme',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: fg,
+                    ),
+              ),
+              const SizedBox(height: AppConstants.spaceMd),
+            // Account color
+            _row(
+              fg: fg,
+              icon: Icons.palette_outlined,
+              label: 'Account Color',
+              value: _color == null ? 'Default' : 'Custom',
+              onTap: _pickColor,
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_color != null)
+                    InkResponse(
+                      onTap: () {
+                        setState(() => _color = null);
+                        _emit();
+                      },
+                      radius: 18,
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: Icon(Icons.close, size: 18, color: fg),
+                      ),
+                    ),
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: _color != null ? Color(_color!) : bg,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: fg.withValues(alpha: AppConstants.borderAlpha),
+                        width: 1.5,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppConstants.spaceSm),
+
+            // Card theme: pattern / camera / gallery
+            _row(
+              fg: fg,
+              icon: Icons.credit_card,
+              label: 'Card Theme',
+              value: _cardThemeText,
+              onTap: _pickCardTheme,
+              trailing: Icon(Icons.chevron_right, color: fg),
+            ),
+
+            if (_error != null) ...[
+              const SizedBox(height: AppConstants.spaceSm),
+              Text(_error!, style: TextStyle(fontSize: 13, color: fg)),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
 /// Second bottom sheet: a wrap of chips (icon + name) to pick one item.
 Future<CategoryItem?> _pickItem(
   BuildContext context, {
@@ -1356,14 +1994,17 @@ Future<CategoryItem?> _pickItem(
   required List<CategoryItem> items,
   required IconData Function(CategoryItem) iconFor,
   CategoryItem? selected,
+  Color? background, // new
+  Color? foreground, // new
 }) {
   final base = Theme.of(context);
   final accent = AppTheme.accentOf(context);
-  final fg = accent.foreground;
+  final fg = foreground ?? accent.foreground;
 
   return showModalBottomSheet<CategoryItem>(
     context: context,
-    backgroundColor: accent.background,
+    backgroundColor: background ?? accent.background,
+    // ...everything else stays the same
     barrierColor: AppConstants.popupBarrier,
     isScrollControlled: true,
     useSafeArea: true,
@@ -1725,62 +2366,67 @@ class _FlipAccountCardState extends State<_FlipAccountCard>
 
   @override
   Widget build(BuildContext context) {
-    final accent = AppTheme.accentOf(context);
-
-    // The text size is worked out here (a small adjustment around the
-    // "Big" size), so the full font size scaling is switched off inside
-    // the card to avoid scaling the text twice.
     final textFactor = _textFactorFor(context);
 
-    return MediaQuery(
-      data: MediaQuery.of(context).copyWith(textScaler: TextScaler.noScaling),
-      child: GestureDetector(
-        onTap: _flip,
-        onLongPress: widget.allowLongPress
-            ? () {
-                HapticFeedback.mediumImpact();
-                _showAccountView(
-                  context,
-                  widget.account,
-                  hidden: widget.hidden,
-                );
-              }
-            : null,
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, _) {
-            final curved = Curves.easeInOut.transform(_controller.value);
-            final angle = curved * math.pi;
-            final isFront = angle < math.pi / 2;
-
-            return Transform(
-              alignment: Alignment.center,
-              transform: Matrix4.identity()
-                ..setEntry(3, 2, 0.001)
-                ..rotateY(angle),
-              child: isFront
-                  ? _CardFront(
-                      account: widget.account,
+    return ListenableBuilder(
+      listenable: Listenable.merge([AppSettings.instance, _accountThemes]),
+      builder: (context, _) {
+        final look = _CardLook.of(
+          context,
+          _accountThemes.of(widget.account.id),
+        );
+        return MediaQuery(
+          data: MediaQuery.of(context)
+              .copyWith(textScaler: TextScaler.noScaling),
+          child: GestureDetector(
+            onTap: _flip,
+            onLongPress: widget.allowLongPress
+                ? () {
+                    HapticFeedback.mediumImpact();
+                    _showAccountView(
+                      context,
+                      widget.account,
                       hidden: widget.hidden,
-                      accent: accent,
-                      width: widget.width,
-                      textFactor: textFactor,
-                    )
-                  // The back is turned around so its text isn't mirrored.
-                  : Transform(
-                      alignment: Alignment.center,
-                      transform: Matrix4.identity()..rotateY(math.pi),
-                      child: _CardBack(
-                        account: widget.account,
-                        accent: accent,
-                        width: widget.width,
-                        textFactor: textFactor,
-                      ),
-                    ),
-            );
-          },
-        ),
-      ),
+                    );
+                  }
+                : null,
+            child: AnimatedBuilder(
+              animation: _controller,
+              builder: (context, _) {
+                final curved = Curves.easeInOut.transform(_controller.value);
+                final angle = curved * math.pi;
+                final isFront = angle < math.pi / 2;
+
+                return Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.identity()
+                    ..setEntry(3, 2, 0.001)
+                    ..rotateY(angle),
+                  child: isFront
+                      ? _CardFront(
+                          account: widget.account,
+                          hidden: widget.hidden,
+                          look: look,
+                          width: widget.width,
+                          textFactor: textFactor,
+                        )
+                      // The back is turned around so its text isn't mirrored.
+                      : Transform(
+                          alignment: Alignment.center,
+                          transform: Matrix4.identity()..rotateY(math.pi),
+                          child: _CardBack(
+                            account: widget.account,
+                            look: look,
+                            width: widget.width,
+                            textFactor: textFactor,
+                          ),
+                        ),
+                );
+              },
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -1793,14 +2439,14 @@ class _FlipAccountCardState extends State<_FlipAccountCard>
 class _CardFront extends StatelessWidget {
   final _AccountCardData account;
   final bool hidden;
-  final AppAccent accent;
+  final _CardLook look;
   final double width;
   final double textFactor;
 
   const _CardFront({
     required this.account,
     required this.hidden,
-    required this.accent,
+    required this.look,
     required this.width,
     required this.textFactor,
   });
@@ -1808,7 +2454,7 @@ class _CardFront extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final fg = accent.foreground;
+    final fg = look.fg;
     final u = width / AppConstants.cardSampleWidth;
     final k = u * textFactor; // text size unit
 
@@ -1824,11 +2470,12 @@ class _CardFront extends StatelessWidget {
       height: _cardHeightFor(width),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: accent.background,
+        color: look.bg,
         borderRadius: BorderRadius.circular(40 * u),
       ),
       child: Stack(
         children: [
+          ..._cardBackdrop(look),
           // Icon, top right (the account's category icon)
           Positioned(
             top: 29 * u,
@@ -1933,13 +2580,13 @@ class _CardFront extends StatelessWidget {
 /// slightly with the font size like the front.
 class _CardBack extends StatelessWidget {
   final _AccountCardData account;
-  final AppAccent accent;
+  final _CardLook look;
   final double width;
   final double textFactor;
 
   const _CardBack({
     required this.account,
-    required this.accent,
+    required this.look,
     required this.width,
     required this.textFactor,
   });
@@ -1947,7 +2594,7 @@ class _CardBack extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final fg = accent.foreground;
+    final fg = look.fg;
     final u = width / AppConstants.cardSampleWidth;
     final k = u * textFactor; // text size unit
 
@@ -1959,11 +2606,12 @@ class _CardBack extends StatelessWidget {
       height: _cardHeightFor(width),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: accent.background,
+        color: look.bg,
         borderRadius: BorderRadius.circular(40 * u),
       ),
       child: Stack(
         children: [
+          ..._cardBackdrop(look),
           // The black band, the same on every card.
           Positioned(
             top: 58 * u,
@@ -2395,9 +3043,13 @@ class _AccountViewSheet extends StatefulWidget {
 class _AccountViewSheetState extends State<_AccountViewSheet> {
   final _db = DatabaseHelper.instance;
   late _AccountCardData? _account = widget.account;
-  late _HistoryRange _range =
-      widget.range ?? _HistoryRange.of(_Period.month, DateTime.now());
+  // A range handed in (from Analytics) wins. Otherwise the last filter
+  // used on this pop-up, otherwise this month.
+  late _HistoryRange _range = widget.range ??
+      _lastAccountRange ??
+      _HistoryRange.of(_Period.month, DateTime.now());
   List<HistoryEntry> _entries = const [];
+  List<ReminderItem> _reminders = const [];
   final Set<String> _collapsed = {}; // day headers that are folded
   bool _loaded = false;
   String? _error;
@@ -2407,6 +3059,13 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
   String _view = 'all'; // analytics only: all | income | expense
 
   bool get _catMode => widget.category != null;
+
+  /// Panel color: the account's own color, or the app accent.
+  Color _bgColor(BuildContext context) {
+    final a = _account;
+    final t = a == null ? null : _accountThemes.of(a.id).color;
+    return t != null ? Color(t) : AppTheme.accentOf(context).background;
+  }
 
   @override
   void initState() {
@@ -2470,9 +3129,11 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
         }
       }
       final all = await _db.getHistory(from: _range.from, until: _range.until);
+      final reminders = await _db.getReminders();
       if (!mounted) return;
       setState(() {
         _account = fresh;
+        _reminders = reminders;
         _entries = [
           for (final e in all)
             if (_matches(e, fresh)) e,
@@ -2524,13 +3185,23 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
 
   /// Opens the date picker used by the transaction history.
   Future<void> _pickRange() async {
+    final accent = AppTheme.accentOf(context);
+    final bg = _bgColor(context);
+    final custom = bg != accent.background;
+    final fg = custom ? AppTheme.onColor(bg) : accent.foreground;
+
     final picked = await showDialog<_HistoryRange>(
       context: context,
       barrierColor: AppConstants.popupBarrier,
-      builder: (_) => _RangeDialog(initial: _range),
+      builder: (_) => _RangeDialog(
+        initial: _range,
+        background: bg,
+        foreground: fg,
+      ),
     );
     if (picked == null || !mounted) return;
     setState(() => _range = picked);
+    if (!_catMode) _lastAccountRange = picked; // remember it
     _load();
   }
 
@@ -2764,25 +3435,29 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
                           ),
                   ),
                 ),
-                const SizedBox(height: 2),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerRight,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _miniStat(Icons.arrow_upward, s.incomeColor, _income, 'income'),
-                      const SizedBox(width: AppConstants.spaceSm),
-                      Container(
-                        width: 1,
-                        height: 12,
-                        color: fg.withValues(alpha: AppConstants.separatorAlpha),
-                      ),
-                      const SizedBox(width: AppConstants.spaceSm),
-                      _miniStat(Icons.arrow_downward, s.expenseColor, _expense, 'expense'),
-                    ],
+                // The category pop-up only shows the total, no
+                // income / expense stats under it.
+                if (!_catMode) ...[
+                  const SizedBox(height: 2),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _miniStat(Icons.arrow_upward, s.incomeColor, _income, 'income'),
+                        const SizedBox(width: AppConstants.spaceSm),
+                        Container(
+                          width: 1,
+                          height: 12,
+                          color: fg.withValues(alpha: AppConstants.separatorAlpha),
+                        ),
+                        const SizedBox(width: AppConstants.spaceSm),
+                        _miniStat(Icons.arrow_downward, s.expenseColor, _expense, 'expense'),
+                      ],
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
@@ -2912,7 +3587,6 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
   Widget _entryRow(HistoryEntry e, Color fg) {
     final s = AppSettings.instance;
     final theme = Theme.of(context);
-    final accent = AppTheme.accentOf(context);
     final k = _fontScale(context).clamp(0.8, 1.3).toDouble();
     final isTransfer = e.type == 'transfer';
     final color = isTransfer
@@ -2924,7 +3598,7 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
         : e.accountName;
 
     final card = Material(
-      color: _lighter(accent.background),
+      color: _contentTone(_bgColor(context)),
       borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -3082,7 +3756,7 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
   Widget build(BuildContext context) {
     // Rebuilds when a Specific Color changes.
     return ListenableBuilder(
-      listenable: AppSettings.instance,
+      listenable: Listenable.merge([AppSettings.instance, _accountThemes]),
       builder: (context, _) => _buildSheet(context),
     );
   }
@@ -3108,17 +3782,30 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
       ];
     }
     if (_view == 'all') {
-      // Default: income/expense line graph, then the 2-column pie.
+      final id = _account?.id;
       return [
-        Padding(
-          padding: const EdgeInsets.all(AppConstants.spaceMd),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _dualLineCard(_entries, fg, _openKind),
-              const SizedBox(height: AppConstants.spaceMd),
-              _dualPieCard(_entries, fg, _openKind),
-            ],
+        _DayLinked(
+          builder: (link) => Padding(
+            padding: const EdgeInsets.all(AppConstants.spaceMd),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _txCountCard(
+                  entries: _entries,
+                  reminders: [
+                    for (final r in _reminders)
+                      if (r.accountId == id) r,
+                  ],
+                  range: _range,
+                  fg: fg,
+                  link: link,
+                ),
+                const SizedBox(height: AppConstants.spaceMd),
+                _dualLineCard(_entries, fg, _openKind, link: link),
+                const SizedBox(height: AppConstants.spaceMd),
+                _dualPieCard(_entries, fg, _openKind),
+              ],
+            ),
           ),
         ),
       ];
@@ -3127,6 +3814,7 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
       _KindCharts(
         entries: _entries,
         kind: _view,
+        range: _range,
         fg: fg,
         onOpenCategory: _openCategory,
       ),
@@ -3162,7 +3850,9 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
 
   Widget _buildSheet(BuildContext context) {
     final accent = AppTheme.accentOf(context);
-    final fg = accent.foreground;
+    final bg = _bgColor(context);
+    final custom = bg != accent.background;
+    final fg = custom ? AppTheme.onColor(bg) : accent.foreground;
     final screenW = MediaQuery.sizeOf(context).width;
     final cardW = math.min(_cardWidthFor(context) * 1.25, screenW - 32);
     final cardH = _cardHeightFor(cardW);
@@ -3223,7 +3913,7 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
                   height: panelH,
                   clipBehavior: Clip.antiAlias,
                   decoration: BoxDecoration(
-                    color: accent.background,
+                    color: bg,
                     borderRadius: const BorderRadius.vertical(
                       top: Radius.circular(28),
                     ),
@@ -3278,7 +3968,7 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
                       ),
                       Expanded(
                         child: ColoredBox(
-                          color: _lighter(accent.background),
+                          color: _contentTone(bg),
                           child: ListView(
                             padding: EdgeInsets.only(
                               bottom: bottomInset + AppConstants.spaceMd,
@@ -3332,6 +4022,9 @@ TransactionColorType _typeOf(String type) {
 
 /// The last date filter the user used. Kept while the app is open.
 _HistoryRange? _lastHistoryRange;
+
+/// The last date filter used in the account pop-up. Kept while the app is open.
+_HistoryRange? _lastAccountRange;
 
 /// Rich, bright version of a color (stays saturated, not pale).
 /// Grays are left as grays, so they never turn red.
@@ -4426,6 +5119,7 @@ class _AnalyticsPanelState extends State<_AnalyticsPanel> {
   final _db = DatabaseHelper.instance;
   late _HistoryRange _range;
   List<HistoryEntry> _entries = const [];
+  List<ReminderItem> _reminders = const [];
   List<_AccountCardData> _accounts = const [];
   List<int> _typeOrder = const [];
   String _view = 'all'; // all (default graphs) | income | expense | net
@@ -4474,6 +5168,7 @@ class _AnalyticsPanelState extends State<_AnalyticsPanel> {
     try {
       final entries =
           await _db.getHistory(from: _range.from, until: _range.until);
+      final reminders = await _db.getReminders();
       final options = await _db.getAccountOptions();
       final order = await _db.getTypeOrder(); // same order as Finance
       final accounts = <_AccountCardData>[];
@@ -4484,6 +5179,7 @@ class _AnalyticsPanelState extends State<_AnalyticsPanel> {
       if (!mounted) return;
       setState(() {
         _entries = entries;
+        _reminders = reminders;
         _accounts = accounts;
         _typeOrder = order;
       });
@@ -4658,6 +5354,8 @@ class _AnalyticsPanelState extends State<_AnalyticsPanel> {
                       stats: _accountStats(_accounts, _entries),
                       typeOrder: _typeOrder,
                       entries: _entries,
+                      reminders: _reminders,
+                      range: _range,
                       fg: fg,
                       onOpen: (v) => setState(() => _view = v),
                     )
@@ -4678,6 +5376,7 @@ class _AnalyticsPanelState extends State<_AnalyticsPanel> {
                     _KindCharts(
                       entries: _entries,
                       kind: _view,
+                      range: _range,
                       fg: fg,
                       onOpenCategory: _openCategory,
                     ),
@@ -5176,7 +5875,13 @@ class _ScallopPainter extends CustomPainter {
 
 class _RangeDialog extends StatefulWidget {
   final _HistoryRange initial;
-  const _RangeDialog({required this.initial});
+  final Color? background; // new
+  final Color? foreground; // new
+  const _RangeDialog({
+    required this.initial,
+    this.background,
+    this.foreground,
+  });
 
   @override
   State<_RangeDialog> createState() => _RangeDialogState();
@@ -5362,6 +6067,8 @@ class _RangeDialogState extends State<_RangeDialog> {
   Widget _dayCell(int day, int days, Color fg) {
     if (day < 1 || day > days) return const SizedBox(height: 38);
     final date = DateTime(_view.year, _view.month, day);
+    final today = _dateOnly(DateTime.now());
+    final isToday = date == today;
     var inRange = false;
     var strong = false;
     switch (_period) {
@@ -5381,6 +6088,12 @@ class _RangeDialogState extends State<_RangeDialog> {
       default:
         break;
     }
+    // Week tab: every day of the current week gets a soft outline.
+    var inThisWeek = false;
+    if (_period == _Period.week) {
+      final tw = _HistoryRange.of(_Period.week, today);
+      inThisWeek = !date.isBefore(tw.start) && !date.isAfter(tw.end);
+    }
     final highlighted = inRange || strong;
     return Padding(
       padding: const EdgeInsets.all(2),
@@ -5390,17 +6103,24 @@ class _RangeDialogState extends State<_RangeDialog> {
         child: Container(
           height: 34,
           alignment: Alignment.center,
-          decoration: BoxDecoration(
+                    decoration: BoxDecoration(
             color: strong
                 ? fg.withValues(alpha: 0.38)
                 : (inRange ? fg.withValues(alpha: 0.16) : null),
             borderRadius: BorderRadius.circular(12),
+            border: isToday
+                ? Border.all(color: fg, width: 2)
+                : (inThisWeek
+                    ? Border.all(color: fg.withValues(alpha: 0.5), width: 1.5)
+                    : null),
           ),
           child: Text(
             '$day',
             style: TextStyle(
               fontSize: 16,
-              fontWeight: highlighted ? FontWeight.w700 : FontWeight.w400,
+              fontWeight: (highlighted || isToday)
+                  ? FontWeight.w700
+                  : FontWeight.w400,
               color: fg,
             ),
           ),
@@ -5445,7 +6165,13 @@ class _RangeDialogState extends State<_RangeDialog> {
     );
   }
 
-  Widget _gridCell(String text, bool selected, Color fg, VoidCallback onTap) {
+  Widget _gridCell(
+    String text,
+    bool selected,
+    Color fg,
+    VoidCallback onTap, {
+    bool current = false,
+  }) {
     return Padding(
       padding: const EdgeInsets.all(4),
       child: InkWell(
@@ -5453,15 +6179,18 @@ class _RangeDialogState extends State<_RangeDialog> {
         onTap: onTap,
         child: Container(
           alignment: Alignment.center,
-          decoration: BoxDecoration(
+                    decoration: BoxDecoration(
             color: selected ? fg.withValues(alpha: 0.3) : null,
             borderRadius: BorderRadius.circular(14),
+            border: current ? Border.all(color: fg, width: 2) : null,
           ),
           child: Text(
             text,
             style: TextStyle(
               fontSize: 17,
-              fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
+              fontWeight: (selected || current)
+                  ? FontWeight.w800
+                  : FontWeight.w500,
               color: fg,
             ),
           ),
@@ -5488,6 +6217,7 @@ class _RangeDialogState extends State<_RangeDialog> {
   Widget _body(Color fg) {
     switch (_period) {
       case _Period.month:
+        final now = DateTime.now();
         return _grid(
           12,
           (i) => _gridCell(
@@ -5495,9 +6225,11 @@ class _RangeDialogState extends State<_RangeDialog> {
             _picked.year == _view.year && _picked.month == i + 1,
             fg,
             () => setState(() => _picked = DateTime(_view.year, i + 1)),
+            current: now.year == _view.year && now.month == i + 1,
           ),
         );
       case _Period.year:
+        final now = DateTime.now();
         return _grid(
           10,
           (i) => _gridCell(
@@ -5505,6 +6237,7 @@ class _RangeDialogState extends State<_RangeDialog> {
             _picked.year == _decadeStart + i,
             fg,
             () => setState(() => _picked = DateTime(_decadeStart + i)),
+            current: now.year == _decadeStart + i,
           ),
         );
       case _Period.all:
@@ -5536,8 +6269,8 @@ class _RangeDialogState extends State<_RangeDialog> {
   @override
   Widget build(BuildContext context) {
     final accent = AppTheme.accentOf(context);
-    final fg = accent.foreground;
-    final bg = accent.background;
+    final fg = widget.foreground ?? accent.foreground;
+    final bg = widget.background ?? accent.background;
 
     return Dialog(
       backgroundColor: bg,
@@ -7248,6 +7981,9 @@ class _ChartTitles {
   /// Two-line graph (default views)
   static const overTime = 'Balance Over Time';
 
+  /// GitHub-style day boxes
+  static const transactionCount = 'Transaction Count';
+
   /// Two-column pie (default views)
   static const byCategory = 'Category Analytics';
 
@@ -7744,13 +8480,19 @@ class _Series {
 }
 
 /// Shared scale of all lines on one graph.
-/// Shared scale of all lines on one graph.
-/// [zs] / [ze] = the visible part of the time axis (0.0 - 1.0).
+/// [zs] / [ze] = visible part of the time axis (0.0 - 1.0).
+/// [vMin] / [vMax] = visible part of the amount axis (real values).
 class _LineGeo {
-  final double t0, span, maxV, zs, ze;
-  const _LineGeo(this.t0, this.span, this.maxV, this.zs, this.ze);
+  final double t0, span, vMin, vMax, zs, ze;
+  const _LineGeo(this.t0, this.span, this.vMin, this.vMax, this.zs, this.ze);
 
-  factory _LineGeo.of(List<_Series> series, [double zs = 0, double ze = 1]) {
+  factory _LineGeo.of(
+    List<_Series> series, [
+    double zs = 0,
+    double ze = 1,
+    double ys = 0,
+    double ye = 1,
+  ]) {
     var lo = double.infinity;
     var hi = -double.infinity;
     var top = 0.0;
@@ -7763,7 +8505,8 @@ class _LineGeo {
       }
     }
     final span = hi - lo;
-    // When zoomed in, the amount axis fits the points that are visible.
+    // When zoomed sideways (and not zoomed vertically), the amount axis
+    // fits the points that are visible.
     var visTop = 0.0;
     if (span > 0 && (ze - zs) < 1) {
       for (final s in series) {
@@ -7773,7 +8516,11 @@ class _LineGeo {
         }
       }
     }
-    return _LineGeo(lo, span, _niceMax(visTop > 0 ? visTop : top), zs, ze);
+    final yZoomed = ye - ys < 0.999;
+    // When zoomed vertically the full scale stays fixed so the user's
+    // up / down position doesn't jump around while panning sideways.
+    final base = _niceMax(!yZoomed && visTop > 0 ? visTop : top);
+    return _LineGeo(lo, span, base * ys, base * ye, zs, ze);
   }
 
   Offset at(HistoryEntry e, Size size) {
@@ -7781,20 +8528,39 @@ class _LineGeo {
     final h = size.height - _lcTop - _lcBottom;
     final t = e.date.millisecondsSinceEpoch.toDouble();
     final x = span == 0 ? w / 2 : ((t - t0) / span - zs) / (ze - zs) * w;
-    return Offset(_lcLeft + x, _lcTop + h - e.amount / maxV * h);
+    final y = (e.amount - vMin) / (vMax - vMin) * h;
+    return Offset(_lcLeft + x, _lcTop + h - y);
   }
+}
+
+/// Axis number: more decimals when the zoomed range gets very small.
+String _axisLabel(double v, double range) {
+  if (range < 10) return v.toStringAsFixed(2);
+  if (range < 100) return v.toStringAsFixed(1);
+  return _short(v);
 }
 
 class _LinePainter extends CustomPainter {
   final List<_Series> series;
   final Color fg;
+  final Color border; // outline of the node bubble
   final (int, int)? selected; // (line, point)
   final double zs, ze; // visible part of the time axis
-  const _LinePainter(this.series, this.fg, this.selected, this.zs, this.ze);
+  final double ys, ye; // visible part of the amount axis
+  const _LinePainter(
+    this.series,
+    this.fg,
+    this.border,
+    this.selected,
+    this.zs,
+    this.ze,
+    this.ys,
+    this.ye,
+  );
 
   @override
   void paint(Canvas canvas, Size size) {
-    final geo = _LineGeo.of(series, zs, ze);
+    final geo = _LineGeo.of(series, zs, ze, ys, ye);
     final w = size.width - _lcLeft - _lcRight;
     final h = size.height - _lcTop - _lcBottom;
     final axis = TextStyle(fontSize: 10, color: fg.withValues(alpha: 0.65));
@@ -7802,7 +8568,8 @@ class _LinePainter extends CustomPainter {
       ..color = fg.withValues(alpha: 0.12)
       ..strokeWidth = 1;
 
-    // Side axis: amounts.
+    // Side axis: amounts (of the visible part).
+    final vRange = geo.vMax - geo.vMin;
     for (var i = 0; i <= 4; i++) {
       final y = _lcTop + h * i / 4;
       canvas.drawLine(
@@ -7810,7 +8577,13 @@ class _LinePainter extends CustomPainter {
         Offset(size.width - _lcRight, y),
         grid,
       );
-      _paintRight(canvas, _short(geo.maxV * (4 - i) / 4), _lcLeft - 6, y, axis);
+      _paintRight(
+        canvas,
+        _axisLabel(geo.vMin + vRange * (4 - i) / 4, vRange),
+        _lcLeft - 6,
+        y,
+        axis,
+      );
     }
 
     // Bottom axis: dates of the visible part only.
@@ -7844,10 +8617,15 @@ class _LinePainter extends CustomPainter {
       );
     }
 
-    // Lines and vertices are clipped to the graph area (needed for zoom).
+    // Lines and vertices are clipped to the plot area (needed for zoom).
     canvas.save();
     canvas.clipRect(
-      Rect.fromLTRB(_lcLeft - 8, _lcTop - 6, size.width - _lcRight + 8, size.height),
+      Rect.fromLTRB(
+        _lcLeft - 8,
+        _lcTop - 6,
+        size.width - _lcRight + 8,
+        _lcTop + h + 2,
+      ),
     );
 
     final baseY = _lcTop + h;
@@ -7912,6 +8690,7 @@ class _LinePainter extends CustomPainter {
         final e = s.entries[sel.$2];
         final p = geo.at(e, size);
         if (p.dx < _lcLeft - 1 || p.dx > size.width - _lcRight + 1) return;
+        if (p.dy < _lcTop - 1 || p.dy > _lcTop + h + 1) return;
         final on = AppTheme.onColor(s.color);
         final amountTp = TextPainter(
           text: TextSpan(
@@ -7931,26 +8710,38 @@ class _LinePainter extends CustomPainter {
           ),
           textDirection: TextDirection.ltr,
         )..layout();
-        const padX = 8.0, padY = 4.0, gap = 12.0;
+                const padX = 8.0, padY = 4.0, gap = 12.0;
         final bw = math.max(amountTp.width, dateTp.width) + padX * 2;
         final bh = amountTp.height + dateTp.height + padY * 2 + 1;
         final left = (p.dx - bw / 2).clamp(0.0, size.width - bw).toDouble();
         final bTop = math.max(0.0, p.dy - gap - bh);
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(
-            Rect.fromLTWH(left, bTop, bw, bh),
-            const Radius.circular(8),
-          ),
-          Paint()..color = s.color,
-        );
-        canvas.drawPath(
+
+        // Bubble + arrow as one shape, filled, then outlined.
+        final bubble = Path.combine(
+          PathOperation.union,
+          Path()
+            ..addRRect(
+              RRect.fromRectAndRadius(
+                Rect.fromLTWH(left, bTop, bw, bh),
+                const Radius.circular(8),
+              ),
+            ),
           Path()
             ..moveTo(p.dx - 5, bTop + bh)
             ..lineTo(p.dx + 5, bTop + bh)
             ..lineTo(p.dx, bTop + bh + 6)
             ..close(),
-          Paint()..color = s.color,
         );
+        canvas.drawPath(bubble, Paint()..color = s.color);
+        canvas.drawPath(
+          bubble,
+          Paint()
+            ..color = border
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2
+            ..strokeJoin = StrokeJoin.round,
+        );
+
         amountTp.paint(canvas, Offset(left + (bw - amountTp.width) / 2, bTop + padY));
         dateTp.paint(
           canvas,
@@ -7964,13 +8755,39 @@ class _LinePainter extends CustomPainter {
   bool shouldRepaint(_LinePainter o) => true;
 }
 
+/// A scale recognizer that takes over a ONE-finger drag as soon as the
+/// graph is zoomed. That way dragging up / down moves the zoomed graph
+/// instead of scrolling the page behind it. While the graph is not zoomed
+/// a one-finger drag still scrolls the page, and two fingers always zoom.
+class _ChartScaleRecognizer extends ScaleGestureRecognizer {
+  _ChartScaleRecognizer({required this.canPan});
+  final bool Function() canPan;
+
+  @override
+  void handleEvent(PointerEvent event) {
+    super.handleEvent(event);
+    if (event is PointerMoveEvent && canPan()) {
+      resolvePointer(event.pointer, GestureDisposition.accepted);
+    }
+  }
+}
+
 class _TxLineChart extends StatefulWidget {
   final List<_Series> series; // not empty
   final Color fg;
 
   /// When given, the Income / Expense legend chips open that kind.
   final ValueChanged<String>? onOpenKind;
-  const _TxLineChart({required this.series, required this.fg, this.onOpenKind});
+
+  /// Links the line graph with the Transaction Count boxes:
+  /// a pressed box picks a node, a pressed node picks the box.
+  final _DayLink? link;
+  const _TxLineChart({
+    required this.series,
+    required this.fg,
+    this.onOpenKind,
+    this.link,
+  });
 
   @override
   State<_TxLineChart> createState() => _TxLineChartState();
@@ -7978,6 +8795,7 @@ class _TxLineChart extends StatefulWidget {
 
 class _TxLineChartState extends State<_TxLineChart> {
   static const double _minWindow = 0.02; // closest zoom (2% of the dates)
+  static const double _minWindowY = 0.02; // closest zoom (2% of the amounts)
 
   (int, int)? _selected;
 
@@ -7985,41 +8803,117 @@ class _TxLineChartState extends State<_TxLineChart> {
   double _zs = 0;
   double _ze = 1;
 
+  // Visible part of the amount axis (0.0 = bottom, 1.0 = top).
+  double _ys = 0;
+  double _ye = 1;
+
   // Values saved when a pinch / drag starts.
   double _startWindow = 1;
   double _startFocalData = 0;
+  double _startWindowY = 1;
+  double _startFocalDataY = 0;
 
-  bool get _zoomed => _ze - _zs < 0.999;
+  bool get _zoomedX => _ze - _zs < 0.999;
+  bool get _zoomedY => _ye - _ys < 0.999;
+  bool get _zoomed => _zoomedX || _zoomedY;
 
   @override
   void initState() {
     super.initState();
-    _selected = _latest();
+    final day = widget.link?.day;
+    _selected = day == null ? _latest() : _pickForDay(day);
+    widget.link?.addListener(_onLink);
   }
 
-  /// The most recent point of all lines.
+  @override
+  void dispose() {
+    widget.link?.removeListener(_onLink);
+    super.dispose();
+  }
+
   (int, int)? _latest() {
+    (int, int)? latest;
+    DateTime? latestDate;
+    for (var si = 0; si < widget.series.length; si++) {
+      final entries = widget.series[si].entries;
+      for (var pi = 0; pi < entries.length; pi++) {
+        final date = entries[pi].date;
+        if (latestDate == null || date.isAfter(latestDate)) {
+          latestDate = date;
+          latest = (si, pi);
+        }
+      }
+    }
+    return latest;
+  }
+
+  /// The highest-amount point of that day (income or expense, whichever is
+  /// higher), or null when the day has no point on this graph.
+  (int, int)? _pickForDay(DateTime day) {
     (int, int)? best;
-    var bestT = -1;
-    for (var s = 0; s < widget.series.length; s++) {
-      final e = widget.series[s].entries;
-      if (e.isEmpty) continue;
-      final t = e.last.date.millisecondsSinceEpoch;
-      if (t > bestT) {
-        bestT = t;
-        best = (s, e.length - 1);
+    var bestAmount = -1.0;
+    for (var si = 0; si < widget.series.length; si++) {
+      final list = widget.series[si].entries;
+      for (var pi = 0; pi < list.length; pi++) {
+        final e = list[pi];
+        if (_dateOnly(e.date) == day && e.amount > bestAmount) {
+          bestAmount = e.amount;
+          best = (si, pi);
+        }
       }
     }
     return best;
   }
 
+  /// Keeps the current node if it is already on [day], else the day's
+  /// highest point.
+  (int, int)? _resolveDay(DateTime day) {
+    final cur = _selected;
+    if (cur != null &&
+        cur.$1 < widget.series.length &&
+        cur.$2 < widget.series[cur.$1].entries.length &&
+        _dateOnly(widget.series[cur.$1].entries[cur.$2].date) == day) {
+      return cur;
+    }
+    return _pickForDay(day);
+  }
+
+  /// The link changed (a count box was pressed or unpressed).
+  void _onLink() {
+    if (!mounted) return;
+    final day = widget.link?.day;
+    if (day == null) {
+      if (_selected != null) setState(() => _selected = null);
+      return;
+    }
+    final next = _resolveDay(day);
+    if (next != _selected) setState(() => _selected = next);
+  }
+
+  /// Deselects the node and the matching count box.
+  void _deselect() {
+    setState(() => _selected = null);
+    widget.link?.set(null);
+  }
+
   @override
   void didUpdateWidget(_TxLineChart old) {
     super.didUpdateWidget(old);
+    if (old.link != widget.link) {
+      old.link?.removeListener(_onLink);
+      widget.link?.addListener(_onLink);
+    }
+    final day = widget.link?.day;
+    if (day != null) {
+      _selected = _resolveDay(day);
+      return;
+    }
+    // Only fix a selection that no longer exists. A deselected graph
+    // stays deselected.
     final sel = _selected;
-    if (sel == null ||
-        sel.$1 >= widget.series.length ||
-        sel.$2 >= widget.series[sel.$1].entries.length) {
+    if (sel != null &&
+        (sel.$1 >= widget.series.length ||
+            sel.$2 >= widget.series[sel.$1].entries.length)) {
       _selected = _latest();
     }
   }
@@ -8031,23 +8925,45 @@ class _TxLineChartState extends State<_TxLineChart> {
     return ((dx - _lcLeft) / w).clamp(0.0, 1.0).toDouble();
   }
 
-  void _onScaleStart(ScaleStartDetails d, double width) {
-    _startWindow = _ze - _zs;
-    _startFocalData =
-        _zs + _plotFraction(d.localFocalPoint.dx, width) * _startWindow;
+  /// 0.0 = bottom of the plot, 1.0 = top of the plot.
+  double _plotFractionY(double dy, double height) {
+    final h = height - _lcTop - _lcBottom;
+    return (1 - (dy - _lcTop) / h).clamp(0.0, 1.0).toDouble();
   }
 
-  void _onScaleUpdate(ScaleUpdateDetails d, double width) {
-    final newW = (_startWindow / d.scale).clamp(_minWindow, 1.0).toDouble();
-    final frac = _plotFraction(d.localFocalPoint.dx, width);
-    final newS = (_startFocalData - frac * newW).clamp(0.0, 1.0 - newW).toDouble();
+  void _onScaleStart(ScaleStartDetails d, Size size) {
+    _startWindow = _ze - _zs;
+    _startFocalData =
+        _zs + _plotFraction(d.localFocalPoint.dx, size.width) * _startWindow;
+    _startWindowY = _ye - _ys;
+    _startFocalDataY =
+        _ys + _plotFractionY(d.localFocalPoint.dy, size.height) * _startWindowY;
+  }
+
+  void _onScaleUpdate(ScaleUpdateDetails d, Size size) {
+    // Sideways: horizontalScale. Up / down: verticalScale.
+    // (A normal pinch moves both, a vertical pinch only the second.)
+    final newW =
+        (_startWindow / d.horizontalScale).clamp(_minWindow, 1.0).toDouble();
+    final fx = _plotFraction(d.localFocalPoint.dx, size.width);
+    final newS =
+        (_startFocalData - fx * newW).clamp(0.0, 1.0 - newW).toDouble();
+
+    final newWY =
+        (_startWindowY / d.verticalScale).clamp(_minWindowY, 1.0).toDouble();
+    final fy = _plotFractionY(d.localFocalPoint.dy, size.height);
+    final newSY =
+        (_startFocalDataY - fy * newWY).clamp(0.0, 1.0 - newWY).toDouble();
+
     setState(() {
       _zs = newS;
       _ze = newS + newW;
+      _ys = newSY;
+      _ye = newSY + newWY;
     });
   }
 
-  /// Zoom around the middle of the visible part (buttons).
+  /// Zoom around the middle of the visible part (buttons, sideways).
   void _zoomBy(double factor) {
     final w = _ze - _zs;
     final newW = (w / factor).clamp(_minWindow, 1.0).toDouble();
@@ -8062,7 +8978,34 @@ class _TxLineChartState extends State<_TxLineChart> {
   void _resetZoom() => setState(() {
         _zs = 0;
         _ze = 1;
+        _ys = 0;
+        _ye = 1;
       });
+
+  /// Tap on the plot: select the nearest node (and pop up its box on the
+  /// Transaction Count), or deselect when no node is near.
+  void _onTapAt(Offset pos, Size size) {
+    final geo = _LineGeo.of(widget.series, _zs, _ze, _ys, _ye);
+    (int, int)? best;
+    var bestD = 28.0;
+    for (var si = 0; si < widget.series.length; si++) {
+      final list = widget.series[si].entries;
+      for (var pi = 0; pi < list.length; pi++) {
+        final dist = (geo.at(list[pi], size) - pos).distance;
+        if (dist < bestD) {
+          bestD = dist;
+          best = (si, pi);
+        }
+      }
+    }
+    if (best != null) {
+      setState(() => _selected = best);
+      final e = widget.series[best.$1].entries[best.$2];
+      widget.link?.set(_dateOnly(e.date));
+    } else {
+      _deselect();
+    }
+  }
 
   Widget _zoomButton(IconData icon, VoidCallback? onTap) {
     final c = widget.fg.withValues(alpha: onTap == null ? 0.25 : 0.85);
@@ -8116,16 +9059,24 @@ class _TxLineChartState extends State<_TxLineChart> {
   @override
   Widget build(BuildContext context) {
     final fg = widget.fg;
+    final border = Color.alphaBlend(
+      fg.withValues(alpha: 0.06),
+      _lighter(AppTheme.accentOf(context).background),
+    );
     final selIdx = _selected;
     final sel =
         selIdx == null ? null : widget.series[selIdx.$1].entries[selIdx.$2];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Legend (left) + zoom buttons (right)
-        Padding(
-          padding: const EdgeInsets.only(bottom: 0),
-          child: Row(
+
+    // Tapping anywhere on this chart that is not a node, a legend chip or
+    // a zoom button deselects the node (and the count box).
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _deselect,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Legend (left) + zoom buttons (right)
+          Row(
             children: [
               Expanded(
                 child: (widget.series.length > 1 || widget.onOpenKind != null)
@@ -8135,64 +9086,81 @@ class _TxLineChartState extends State<_TxLineChart> {
                       )
                     : const SizedBox.shrink(),
               ),
-              _zoomButton(Icons.remove, _zoomed ? () => _zoomBy(0.5) : null),
+              _zoomButton(Icons.remove, _zoomedX ? () => _zoomBy(0.5) : null),
               _zoomButton(Icons.add, () => _zoomBy(2)),
-              _zoomButton(
-                Icons.zoom_out_map,
-                _zoomed ? _resetZoom : null,
-              ),
+              // Resets both the sideways and the up / down zoom.
+              _zoomButton(Icons.zoom_out_map, _zoomed ? _resetZoom : null),
             ],
           ),
-        ),
-        LayoutBuilder(
-          builder: (context, c) {
-            final size = Size(c.maxWidth, 210);
-            return GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              // Pinch = zoom, drag = move the zoomed graph.
-              onScaleStart: (d) => _onScaleStart(d, size.width),
-              onScaleUpdate: (d) => _onScaleUpdate(d, size.width),
-              onDoubleTap: _resetZoom,
-              onTapUp: (d) {
-                final geo = _LineGeo.of(widget.series, _zs, _ze);
-                (int, int)? best;
-                var bestD = 28.0;
-                for (var si = 0; si < widget.series.length; si++) {
-                  final list = widget.series[si].entries;
-                  for (var pi = 0; pi < list.length; pi++) {
-                    final dist =
-                        (geo.at(list[pi], size) - d.localPosition).distance;
-                    if (dist < bestD) {
-                      bestD = dist;
-                      best = (si, pi);
-                    }
-                  }
-                }
-                if (best != null) setState(() => _selected = best);
-              },
-              child: CustomPaint(
-                size: size,
-                painter: _LinePainter(widget.series, fg, _selected, _zs, _ze),
-              ),
-            );
-          },
-        ),
-        const SizedBox(height: AppConstants.spaceSm),
-        Text(
-          sel == null
-              ? 'Tap a point to see its amount'
-              : (sel.categoryName == null
-                  ? sel.title
-                  : '${sel.title}  •  ${sel.categoryName}'),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: fg.withValues(alpha: AppConstants.mutedAlpha),
+          LayoutBuilder(
+            builder: (context, c) {
+              final size = Size(c.maxWidth, 210);
+              return RawGestureDetector(
+                behavior: HitTestBehavior.opaque,
+                gestures: <Type, GestureRecognizerFactory>{
+                  // Pinch = zoom (sideways, up / down or both).
+                  // Drag = move the zoomed graph in any direction.
+                  _ChartScaleRecognizer:
+                      GestureRecognizerFactoryWithHandlers<
+                          _ChartScaleRecognizer>(
+                    () => _ChartScaleRecognizer(canPan: () => _zoomed),
+                    (_ChartScaleRecognizer r) {
+                      r.onStart =
+                          (ScaleStartDetails d) => _onScaleStart(d, size);
+                      r.onUpdate =
+                          (ScaleUpdateDetails d) => _onScaleUpdate(d, size);
+                    },
+                  ),
+                  TapGestureRecognizer:
+                      GestureRecognizerFactoryWithHandlers<
+                          TapGestureRecognizer>(
+                    () => TapGestureRecognizer(),
+                    (r) {
+                      r.onTapUp = (d) => _onTapAt(d.localPosition, size);
+                    },
+                  ),
+                  DoubleTapGestureRecognizer:
+                      GestureRecognizerFactoryWithHandlers<
+                          DoubleTapGestureRecognizer>(
+                    () => DoubleTapGestureRecognizer(),
+                    (r) {
+                      r.onDoubleTap = _resetZoom;
+                    },
+                  ),
+                },
+                child: CustomPaint(
+                  size: size,
+                  painter: _LinePainter(
+                    widget.series,
+                    fg,
+                    border,
+                    _selected,
+                    _zs,
+                    _ze,
+                    _ys,
+                    _ye,
+                  ),
+                ),
+              );
+            },
           ),
-        ),
-      ],
+          const SizedBox(height: AppConstants.spaceSm),
+          Text(
+            sel == null
+                ? 'Tap a point to see its amount'
+                : (sel.categoryName == null
+                    ? sel.title
+                    : '${sel.title}  •  ${sel.categoryName}'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: fg.withValues(alpha: AppConstants.mutedAlpha),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -8369,14 +9337,729 @@ class _CategoryPie extends StatelessWidget {
   }
 }
 
+// ---------- Transaction Count (GitHub-style day boxes) ----------
+
+/// Transactions of one day, split by kind.
+class _DayCount {
+  int income = 0, expense = 0, transfer = 0, reminder = 0;
+
+  int get total => income + expense + transfer + reminder;
+
+  int of(String kind) {
+    switch (kind) {
+      case 'income':
+        return income;
+      case 'expense':
+        return expense;
+      case 'transfer':
+        return transfer;
+      default:
+        return reminder;
+    }
+  }
+
+  /// The kind with the most transactions that day.
+  /// Ties: income, expense, transfer, reminder (in that order).
+  String get dominant {
+    var best = 'income';
+    var most = income;
+    if (expense > most) {
+      best = 'expense';
+      most = expense;
+    }
+    if (transfer > most) {
+      best = 'transfer';
+      most = transfer;
+    }
+    if (reminder > most) {
+      best = 'reminder';
+    }
+    return best;
+  }
+}
+
+const List<String> _countKinds = ['income', 'expense', 'transfer', 'reminder'];
+const Map<String, String> _countKindLabels = {
+  'income': 'Income',
+  'expense': 'Expense',
+  'transfer': 'Transfer',
+  'reminder': 'Reminder',
+};
+
+Color _countKindColor(String kind) {
+  final s = AppSettings.instance;
+  switch (kind) {
+    case 'income':
+      return s.incomeColor;
+    case 'expense':
+      return s.expenseColor;
+    case 'transfer':
+      return s.transferColor;
+    default:
+      return s.reminderColor;
+  }
+}
+
+DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+
+/// Links the Transaction Count boxes to the line graph: the day that was
+/// pressed (null = none).
+class _DayLink extends ChangeNotifier {
+  DateTime? _day;
+  DateTime? get day => _day;
+  void set(DateTime? d) {
+    if (_day == d) return;
+    _day = d;
+    notifyListeners();
+  }
+}
+
+/// Owns one [_DayLink] for the graphs built inside it.
+class _DayLinked extends StatefulWidget {
+  final Widget Function(_DayLink link) builder;
+  const _DayLinked({required this.builder});
+
+  @override
+  State<_DayLinked> createState() => _DayLinkedState();
+}
+
+class _DayLinkedState extends State<_DayLinked> {
+  final _link = _DayLink();
+
+  @override
+  void dispose() {
+    _link.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(_link);
+}
+
+/// The Transaction Count card.
+/// [kind] null = every kind (colored by the busiest kind of each day),
+/// 'income' / 'expense' = only that kind. [reminders] are only counted
+/// when [kind] is null. [link] picks the matching point on a line graph.
+Widget _txCountCard({
+  required List<HistoryEntry> entries,
+  required _HistoryRange range,
+  required Color fg,
+  List<ReminderItem> reminders = const [],
+  String? kind,
+  _DayLink? link,
+}) {
+  return GestureDetector(
+    behavior: HitTestBehavior.opaque,
+    // Tap anywhere on the card that isn't a day box: deselect.
+    onTap: link == null ? null : () => link.set(null),
+    child: _chartCard(
+      fg,
+      _TxCountGraph(
+        entries: entries,
+        reminders: reminders,
+        range: range,
+        kind: kind,
+        fg: fg,
+        link: link,
+      ),
+      title: _ChartTitles.transactionCount,
+      dot: kind == null ? null : _countKindColor(kind),
+    ),
+  );
+}
+
+class _TxCountPainter extends CustomPainter {
+  static const double gap = 3; // space between boxes
+  static const double pad = 3; // room for the glow
+  static const double headH = 16; // month names / weekday letters row
+
+  final Map<int, _DayCount> days;
+  final DateTime gridStart; // UTC, the Monday of the first week
+  final int weeks, firstIdx, lastIdx, maxTotal;
+  final double cellW, cellH;
+  final bool horizontal; // true = calendar (days go left to right)
+  final String? kind;
+  final Color fg;
+  final Color border; 
+  final int? selected;
+
+  const _TxCountPainter({
+    required this.days,
+    required this.gridStart,
+    required this.weeks,
+    required this.firstIdx,
+    required this.lastIdx,
+    required this.maxTotal,
+    required this.cellW,
+    required this.cellH,
+    required this.horizontal,
+    required this.kind,
+    required this.fg,
+    required this.border,
+    required this.selected,
+  });
+
+  /// Top left corner of the box of day [idx].
+  static Offset origin(int idx, double cellW, double cellH, bool horizontal) {
+    final week = idx ~/ 7;
+    final wd = idx % 7;
+    final col = horizontal ? wd : week;
+    final row = horizontal ? week : wd;
+    return Offset(pad + col * (cellW + gap), headH + row * (cellH + gap));
+  }
+
+  /// The day under a tap (null = no day there).
+  static int? indexAt(
+    Offset p,
+    double cellW,
+    double cellH,
+    bool horizontal,
+    int weeks,
+    int firstIdx,
+    int lastIdx,
+  ) {
+    final x = p.dx - pad;
+    final y = p.dy - headH;
+    if (x < 0 || y < 0) return null;
+    final col = (x / (cellW + gap)).floor();
+    final row = (y / (cellH + gap)).floor();
+    final week = horizontal ? row : col;
+    final wd = horizontal ? col : row;
+    if (wd >= 7 || week >= weeks) return null;
+    final idx = week * 7 + wd;
+    if (idx < firstIdx || idx > lastIdx) return null;
+    return idx;
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final radius = Radius.circular(math.min(cellW, cellH) * 0.22);
+    final labelStyle = TextStyle(fontSize: 10, color: fg.withValues(alpha: 0.65));
+
+    // Header: weekday letters (calendar) or month names (week columns).
+    if (horizontal) {
+      const letters = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+      for (var i = 0; i < 7; i++) {
+        _paintCentered(
+          canvas,
+          letters[i],
+          pad + i * (cellW + gap) + cellW / 2,
+          2,
+          labelStyle,
+          maxWidth: cellW,
+        );
+      }
+    } else {
+      var lastLabelCol = -10;
+      int? lastMonth;
+      for (var col = 0; col < weeks; col++) {
+        final idx = math.max(col * 7, firstIdx);
+        if (idx > lastIdx) break;
+        final d = gridStart.add(Duration(days: idx));
+        if (d.month != lastMonth) {
+          lastMonth = d.month;
+          if (col - lastLabelCol >= 3) {
+            lastLabelCol = col;
+            final tp = TextPainter(
+              text: TextSpan(
+                text: _monthNames[d.month - 1].substring(0, 3),
+                style: labelStyle,
+              ),
+              textDirection: TextDirection.ltr,
+              maxLines: 1,
+            )..layout();
+            tp.paint(
+              canvas,
+              Offset(pad + col * (cellW + gap), (headH - tp.height) / 2),
+            );
+          }
+        }
+      }
+    }
+
+    const alphas = [0.0, 0.35, 0.55, 0.78, 1.0];
+    for (var idx = firstIdx; idx <= lastIdx; idx++) {
+      final o = origin(idx, cellW, cellH, horizontal);
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(o.dx, o.dy, cellW, cellH),
+        radius,
+      );
+      final c = days[idx];
+      if (c == null || c.total == 0) {
+        canvas.drawRRect(rect, Paint()..color = fg.withValues(alpha: 0.08));
+      } else {
+        final color = _countKindColor(kind ?? c.dominant);
+        final level = (c.total / maxTotal * 4).ceil().clamp(1, 4).toInt();
+        final a = alphas[level];
+        // Glow, then the box.
+        canvas.drawRRect(
+          rect,
+          Paint()
+            ..color = color.withValues(alpha: 0.55 * a)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+        );
+        canvas.drawRRect(rect, Paint()..color = color.withValues(alpha: a));
+      }
+      // Day number inside the box (calendar layout only).
+      if (horizontal && cellH >= 16) {
+        final day = gridStart.add(Duration(days: idx)).day;
+        final tp = TextPainter(
+          text: TextSpan(
+            text: '$day',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: fg.withValues(alpha: 0.75),
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        tp.paint(
+          canvas,
+          Offset(o.dx + (cellW - tp.width) / 2, o.dy + (cellH - tp.height) / 2),
+        );
+      }
+      if (idx == selected) {
+        canvas.drawRRect(
+          rect.inflate(1.5),
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2
+            ..color = fg,
+        );
+      }
+    }
+
+    // Bubble of the selected box (same look as the line graph nodes).
+    final sel = selected;
+    if (sel != null) {
+      final c = days[sel];
+      final n = c?.total ?? 0;
+      final color = n == 0 ? fg : _countKindColor(kind ?? c!.dominant);
+      final on = AppTheme.onColor(color);
+      final u = gridStart.add(Duration(days: sel));
+      final date = DateTime(u.year, u.month, u.day);
+      final countTp = TextPainter(
+        text: TextSpan(
+          text: '$n transaction${n == 1 ? '' : 's'}',
+          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: on),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final dateTp = TextPainter(
+        text: TextSpan(
+          text: _fmtLong(date),
+          style: TextStyle(
+            fontSize: 9.5,
+            fontWeight: FontWeight.w600,
+            color: on.withValues(alpha: 0.85),
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      const padX = 8.0, padY = 4.0, arrow = 6.0, gapB = 2.0;
+      final bw = math.max(countTp.width, dateTp.width) + padX * 2;
+      final bh = countTp.height + dateTp.height + padY * 2 + 1;
+      final o = origin(sel, cellW, cellH, horizontal);
+      final cx = o.dx + cellW / 2;
+      final left = (cx - bw / 2).clamp(0.0, math.max(0.0, size.width - bw)).toDouble();
+
+      var bTop = o.dy - gapB - arrow - bh;
+      final above = bTop >= 0; // no room on top: open below the box
+      if (!above) bTop = o.dy + cellH + gapB + arrow;
+
+      final bubble = Path.combine(
+        PathOperation.union,
+        Path()
+          ..addRRect(
+            RRect.fromRectAndRadius(
+              Rect.fromLTWH(left, bTop, bw, bh),
+              const Radius.circular(8),
+            ),
+          ),
+        above
+            ? (Path()
+              ..moveTo(cx - 5, bTop + bh)
+              ..lineTo(cx + 5, bTop + bh)
+              ..lineTo(cx, bTop + bh + arrow)
+              ..close())
+            : (Path()
+              ..moveTo(cx - 5, bTop)
+              ..lineTo(cx + 5, bTop)
+              ..lineTo(cx, bTop - arrow)
+              ..close()),
+      );
+      canvas.drawPath(bubble, Paint()..color = color);
+      canvas.drawPath(
+        bubble,
+        Paint()
+          ..color = border
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2
+          ..strokeJoin = StrokeJoin.round,
+      );
+
+      countTp.paint(canvas, Offset(left + (bw - countTp.width) / 2, bTop + padY));
+      dateTp.paint(
+        canvas,
+        Offset(left + (bw - dateTp.width) / 2, bTop + padY + countTp.height + 1),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_TxCountPainter o) => true;
+}
+
+class _TxCountGraph extends StatefulWidget {
+  final List<HistoryEntry> entries;
+  final List<ReminderItem> reminders;
+  final _HistoryRange range;
+  final String? kind; // null = all kinds
+  final Color fg;
+  final _DayLink? link;
+  const _TxCountGraph({
+    required this.entries,
+    required this.reminders,
+    required this.range,
+    required this.kind,
+    required this.fg,
+    this.link,
+  });
+
+  @override
+  State<_TxCountGraph> createState() => _TxCountGraphState();
+}
+
+class _TxCountGraphState extends State<_TxCountGraph> {
+  static const double _minCell = 12;
+  static const double _maxCell = 26;
+  static const double _labelW = 22;
+
+  DateTime? _selectedDate; // date only
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedDate = widget.link?.day;
+    widget.link?.addListener(_onLink);
+  }
+
+  @override
+  void dispose() {
+    widget.link?.removeListener(_onLink);
+    super.dispose();
+  }
+
+  void _onLink() {
+    if (!mounted) return;
+    final d = widget.link?.day;
+    if (d != _selectedDate) setState(() => _selectedDate = d);
+  }
+
+  void _clearSelection() {
+    setState(() => _selectedDate = null);
+    widget.link?.set(null);
+  }
+
+  @override
+  void didUpdateWidget(_TxCountGraph old) {
+      if (old.link != widget.link) {
+      old.link?.removeListener(_onLink);
+      widget.link?.addListener(_onLink);
+    }
+    super.didUpdateWidget(old);
+    // A new date range: forget the picked box (and the line graph pick).
+    if (!identical(old.range, widget.range) && _selectedDate != null) {
+      _selectedDate = null;
+      final link = widget.link;
+      WidgetsBinding.instance.addPostFrameCallback((_) => link?.set(null));
+    }
+  }
+
+  void _onTap(
+    Offset p,
+    double cellW,
+    double cellH,
+    bool horizontal,
+    int weeks,
+    int firstIdx,
+    int lastIdx,
+    DateTime gridStart,
+  ) {
+    final idx = _TxCountPainter.indexAt(
+      p,
+      cellW,
+      cellH,
+      horizontal,
+      weeks,
+      firstIdx,
+      lastIdx,
+    );
+    if (idx == null) {
+      _clearSelection();
+      return;
+    }
+    final u = gridStart.add(Duration(days: idx));
+    final date = DateTime(u.year, u.month, u.day);
+    final next = _selectedDate == date ? null : date;
+    setState(() => _selectedDate = next);
+    // The line graph picks that day's point (or nothing).
+    widget.link?.set(next);
+  }
+
+  Widget _weekdayLabels(double cell, Color fg) {
+    const names = {0: 'M', 2: 'W', 4: 'F'};
+    final style = TextStyle(fontSize: 10, color: fg.withValues(alpha: 0.65));
+    return SizedBox(
+      width: _labelW,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: _TxCountPainter.headH),
+          for (var r = 0; r < 7; r++) ...[
+            SizedBox(
+              height: cell,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: names.containsKey(r) ? Text(names[r]!, style: style) : null,
+              ),
+            ),
+            if (r < 6) const SizedBox(height: _TxCountPainter.gap),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _dot(Color c) => Container(
+        width: 8,
+        height: 8,
+        decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = widget.fg;
+    final border = Color.alphaBlend(
+      fg.withValues(alpha: 0.06),
+      _lighter(AppTheme.accentOf(context).background),
+    );
+    final muted = fg.withValues(alpha: AppConstants.mutedAlpha);
+    final kind = widget.kind;
+    final today = _dateOnly(DateTime.now());
+
+    // Everything that counts: (day, kind).
+    final items = <(DateTime, String)>[];
+    for (final e in widget.entries) {
+      if (kind == null || e.type == kind) items.add((_dateOnly(e.date), e.type));
+    }
+    if (kind == null) {
+      for (final r in widget.reminders) {
+        items.add((_dateOnly(r.dueDate), 'reminder'));
+      }
+    }
+
+    // First and last day shown.
+    final r = widget.range;
+    DateTime first;
+    DateTime last;
+    if (r.isAll) {
+      first = today;
+      last = today;
+      for (final i in items) {
+        if (i.$1.isBefore(first)) first = i.$1;
+        if (i.$2 != 'reminder' && i.$1.isAfter(last)) last = i.$1;
+      }
+    } else {
+      first = _dateOnly(r.start);
+      last = _dateOnly(r.end);
+      if (last.isBefore(first)) last = first;
+    }
+
+    // Day / Week / Month fill the card as a calendar.
+    final horizontal = r.period == _Period.day ||
+        r.period == _Period.week ||
+        r.period == _Period.month;
+
+    // Weeks (Monday first) are numbered from the Monday of the first day.
+    final gridStart = DateTime.utc(first.year, first.month, first.day)
+        .subtract(Duration(days: first.weekday - 1));
+    final firstIdx = first.weekday - 1;
+    final lastIdx =
+        DateTime.utc(last.year, last.month, last.day).difference(gridStart).inDays;
+    final weeks = lastIdx ~/ 7 + 1;
+
+    final days = <int, _DayCount>{};
+    for (final i in items) {
+      final idx = DateTime.utc(i.$1.year, i.$1.month, i.$1.day)
+          .difference(gridStart)
+          .inDays;
+      if (idx < firstIdx || idx > lastIdx) continue;
+      final c = days.putIfAbsent(idx, _DayCount.new);
+      switch (i.$2) {
+        case 'income':
+          c.income++;
+        case 'expense':
+          c.expense++;
+        case 'transfer':
+          c.transfer++;
+        default:
+          c.reminder++;
+      }
+    }
+    var maxTotal = 1;
+    for (final c in days.values) {
+      maxTotal = math.max(maxTotal, c.total);
+    }
+
+    // Selected day.
+    int? selIdx;
+    final sd = _selectedDate;
+    if (sd != null) {
+      final i = DateTime.utc(sd.year, sd.month, sd.day).difference(gridStart).inDays;
+      if (i >= firstIdx && i <= lastIdx) selIdx = i;
+    }
+
+    // Legend: normal = all kinds. A box selected = only the kinds on that
+    // day, with their counts, most to least.
+    final selCount = selIdx == null ? null : days[selIdx];
+    final legendKinds = <String>[
+      for (final k in _countKinds)
+        if (selIdx == null || (selCount?.of(k) ?? 0) > 0) k,
+    ];
+    if (selCount != null) {
+      legendKinds.sort((a, b) {
+        final c = selCount.of(b).compareTo(selCount.of(a));
+        return c != 0 ? c : _countKinds.indexOf(a).compareTo(_countKinds.indexOf(b));
+      });
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Colors legend (default views only)
+        if (kind == null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 0, 4, AppConstants.spaceSm),
+            child: legendKinds.isEmpty
+                ? Text(
+                    'No transactions',
+                    style: TextStyle(fontSize: 11, color: muted),
+                  )
+                : Wrap(
+                    spacing: 12,
+                    runSpacing: 2,
+                    children: [
+                      for (final k in legendKinds)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _dot(_countKindColor(k)),
+                            const SizedBox(width: 5),
+                            Text(
+                              selCount == null
+                                  ? _countKindLabels[k]!
+                                  : '${_countKindLabels[k]} ${selCount.of(k)}',
+                              style: TextStyle(fontSize: 11, color: muted),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+          ),
+        LayoutBuilder(
+          builder: (context, c) {
+            const gap = _TxCountPainter.gap;
+            const pad = _TxCountPainter.pad;
+            final labelW = horizontal ? 0.0 : _labelW;
+            final avail = c.maxWidth - labelW;
+
+            double cellW, cellH, gridW, gridH;
+            if (horizontal) {
+              // 7 columns that fill the whole card.
+              cellW = (avail - pad * 2 - 6 * gap) / 7;
+              cellH = (cellW * 0.7).clamp(18.0, 34.0).toDouble();
+              gridW = avail;
+              gridH = _TxCountPainter.headH +
+                  weeks * cellH +
+                  (weeks - 1) * gap +
+                  pad +
+                  // Room for the bubble that opens below the first row.
+                  (weeks < 3 ? 46 : 0);
+            } else {
+              final fit = (avail - pad * 2 - (weeks - 1) * gap) / weeks;
+              cellW = cellH = fit.clamp(_minCell, _maxCell).toDouble();
+              gridW = weeks * cellW + (weeks - 1) * gap + pad * 2;
+              gridH = _TxCountPainter.headH + 7 * cellH + 6 * gap + pad;
+            }
+
+            final grid = GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapUp: (d) => _onTap(
+                d.localPosition,
+                cellW,
+                cellH,
+                horizontal,
+                weeks,
+                firstIdx,
+                lastIdx,
+                gridStart,
+              ),
+              child: CustomPaint(
+                size: Size(gridW, gridH),
+                painter: _TxCountPainter(
+                  days: days,
+                  gridStart: gridStart,
+                  weeks: weeks,
+                  firstIdx: firstIdx,
+                  lastIdx: lastIdx,
+                  maxTotal: maxTotal,
+                  cellW: cellW,
+                  cellH: cellH,
+                  horizontal: horizontal,
+                  kind: kind,
+                  fg: fg,
+                  border: border,
+                  selected: selIdx,
+                ),
+              ),
+            );
+
+            if (horizontal) return grid;
+
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _weekdayLabels(cellH, fg),
+                Expanded(
+                  // Long ranges scroll sideways, starting at the newest days.
+                  child: gridW > avail
+                      ? SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          reverse: true,
+                          child: grid,
+                        )
+                      : Align(alignment: Alignment.centerLeft, child: grid),
+                ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
 // ---------- Default (all-graphs) cards ----------
 
 /// Two lines (income + expense). Tap a legend chip to open that kind.
 Widget _dualLineCard(
   List<HistoryEntry> entries,
   Color fg,
-  ValueChanged<String> onOpenKind,
-) {
+  ValueChanged<String> onOpenKind, {
+  _DayLink? link,
+}) {
   final s = AppSettings.instance;
   List<HistoryEntry> of(String k) => [
         for (final e in entries)
@@ -8400,7 +10083,12 @@ Widget _dualLineCard(
                       color: fg.withValues(alpha: AppConstants.mutedAlpha))),
             ),
           )
-        : _TxLineChart(series: series, fg: fg, onOpenKind: onOpenKind),
+        : _TxLineChart(
+            series: series,
+            fg: fg,
+            onOpenKind: onOpenKind,
+            link: link,
+          ),
     title: _ChartTitles.overTime,
   );
 }
@@ -8499,12 +10187,16 @@ class _AnalyticsDefault extends StatelessWidget {
   final List<_AccountStat> stats;
   final List<int> typeOrder;
   final List<HistoryEntry> entries;
+  final List<ReminderItem> reminders;
+  final _HistoryRange range;
   final Color fg;
   final ValueChanged<String> onOpen; // 'net' | 'income' | 'expense'
   const _AnalyticsDefault({
     required this.stats,
     required this.typeOrder,
     required this.entries,
+    required this.reminders,
+    required this.range,
     required this.fg,
     required this.onOpen,
   });
@@ -8512,34 +10204,44 @@ class _AnalyticsDefault extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final muted = fg.withValues(alpha: AppConstants.mutedAlpha);
-    return Padding(
-      padding: const EdgeInsets.all(AppConstants.spaceMd),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => onOpen('net'),
-            child: _chartCard(
-              fg,
-              stats.isEmpty
-                  ? SizedBox(
-                      height: 80,
-                      child: Center(
-                        child: Text('No accounts',
-                            style: TextStyle(color: muted)),
-                      ),
-                    )
-                  : _AccountBars(
-                      groups: _groupStats(stats, typeOrder), fg: fg),
-              title: _ChartTitles.accounts,
+    return _DayLinked(
+      builder: (link) => Padding(
+        padding: const EdgeInsets.all(AppConstants.spaceMd),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => onOpen('net'),
+              child: _chartCard(
+                fg,
+                stats.isEmpty
+                    ? SizedBox(
+                        height: 80,
+                        child: Center(
+                          child: Text('No accounts',
+                              style: TextStyle(color: muted)),
+                        ),
+                      )
+                    : _AccountBars(
+                        groups: _groupStats(stats, typeOrder), fg: fg),
+                title: _ChartTitles.accounts,
+              ),
             ),
-          ),
-          const SizedBox(height: AppConstants.spaceMd),
-          _dualLineCard(entries, fg, onOpen),
-          const SizedBox(height: AppConstants.spaceMd),
-          _dualPieCard(entries, fg, onOpen),
-        ],
+            const SizedBox(height: AppConstants.spaceMd),
+            _txCountCard(
+              entries: entries,
+              reminders: reminders,
+              range: range,
+              fg: fg,
+              link: link,
+            ),
+            const SizedBox(height: AppConstants.spaceMd),
+            _dualLineCard(entries, fg, onOpen, link: link),
+            const SizedBox(height: AppConstants.spaceMd),
+            _dualPieCard(entries, fg, onOpen),
+          ],
+        ),
       ),
     );
   }
@@ -8551,11 +10253,13 @@ class _AnalyticsDefault extends StatelessWidget {
 class _KindCharts extends StatelessWidget {
   final List<HistoryEntry> entries;
   final String kind;
+  final _HistoryRange range;
   final Color fg;
   final ValueChanged<_CatSlice>? onOpenCategory;
   const _KindCharts({
     required this.entries,
     required this.kind,
+    required this.range,
     required this.fg,
     this.onOpenCategory,
   });
@@ -8579,25 +10283,39 @@ class _KindCharts extends StatelessWidget {
       );
     }
     final label = kind == 'income' ? 'Income' : 'Expense';
-    return Padding(
-      padding: const EdgeInsets.all(AppConstants.spaceMd),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _chartCard(
-            fg,
-            _TxLineChart(series: [_Series(kind, list, color)], fg: fg),
-            title: _ChartTitles.kindOverTime(label),
-            dot: color,
-          ),
-          const SizedBox(height: AppConstants.spaceMd),
-          _chartCard(
-            fg,
-            _CategoryPie(entries: list, fg: fg, onOpen: onOpenCategory),
-            title: _ChartTitles.kindByCategory(label),
-            dot: color,
-          ),
-        ],
+    return _DayLinked(
+      builder: (link) => Padding(
+        padding: const EdgeInsets.all(AppConstants.spaceMd),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _txCountCard(
+              entries: list,
+              range: range,
+              kind: kind,
+              fg: fg,
+              link: link,
+            ),
+            const SizedBox(height: AppConstants.spaceMd),
+            _chartCard(
+              fg,
+              _TxLineChart(
+                series: [_Series(kind, list, color)],
+                fg: fg,
+                link: link,
+              ),
+              title: _ChartTitles.kindOverTime(label),
+              dot: color,
+            ),
+            const SizedBox(height: AppConstants.spaceMd),
+            _chartCard(
+              fg,
+              _CategoryPie(entries: list, fg: fg, onOpen: onOpenCategory),
+              title: _ChartTitles.kindByCategory(label),
+              dot: color,
+            ),
+          ],
+        ),
       ),
     );
   }

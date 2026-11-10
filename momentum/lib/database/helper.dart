@@ -568,8 +568,8 @@ class DatabaseHelper {
     return centavos.clamp(-9.0e18, 9.0e18).round();
   }
 
-  /// Adds a new account. [initialBalance] is in pesos.
-  Future<void> addAccount({
+  /// Adds a new account and returns its id. [initialBalance] is in pesos.
+  Future<int> addAccount({
     required String name,
     required int typeId,
     required int categoryId,
@@ -581,16 +581,16 @@ class DatabaseHelper {
       final db = await database;
       final title = noteTitle?.trim();
       final body = noteBody?.trim();
-      await db.insert('accounts', {
+      final id = await db.insert('accounts', {
         'name': _cleanName(name),
         'type_id': typeId,
         'category_id': categoryId,
-        'initial_balance':
-            _toCentavos(initialBalance),
+        'initial_balance': _toCentavos(initialBalance),
         'note_title': (title == null || title.isEmpty) ? null : title,
         'note_body': (body == null || body.isEmpty) ? null : body,
       });
       notifyChanged();
+      return id;
     });
   }
 
@@ -1562,9 +1562,15 @@ class DatabaseHelper {
       final tables = <String, Object?>{};
       for (final table in _exportColumns.keys) {
         final rows = await db.query(table, orderBy: 'rowid');
-        tables[table] = (table == 'transactions' || table == 'reminders')
-            ? [for (final row in rows) await _withImage(row)]
-            : rows;
+        tables[table] = switch (table) {
+          'transactions' || 'reminders' => [
+              for (final row in rows) await _withImage(row),
+            ],
+          'settings' => [
+              for (final row in rows) await _withThemeImage(row),
+            ],
+          _ => rows,
+        };
       }
       return const JsonEncoder.withIndent('  ').convert({
         'app': AppConstants.exportApp,
@@ -1632,6 +1638,9 @@ class DatabaseHelper {
             }
           }
           rows.add(map);
+          if (entry.key == 'settings' && b64 is String && b64.isNotEmpty) {
+            map['value'] = await _restoreThemeImage(map['value'], b64, written);
+          }
         }
         data[entry.key] = rows;
       }
@@ -1648,15 +1657,23 @@ class DatabaseHelper {
       final db = await database;
 
       // Pictures of the data that is about to be replaced.
+      final oldThemes = await db.query(
+        'settings',
+        columns: ['value'],
+        where: 'name LIKE ?',
+        whereArgs: ['$_themePrefix%'],
+      );
       final oldImages = <Object?>[
         ...(await db.rawQuery('SELECT image_path FROM transactions'))
             .map((r) => r['image_path']),
         ...(await db.rawQuery('SELECT image_path FROM reminders'))
             .map((r) => r['image_path']),
+        ...oldThemes.map((r) => _themeImageOf(r['value'])),
       ];
       final keep = <Object?>{
         for (final t in ['transactions', 'reminders'])
           for (final row in data[t]!) row['image_path'],
+        for (final row in data['settings']!) _themeImageOf(row['value']),
       };
 
       final hasSettings = tables['settings'] is List;
@@ -1700,19 +1717,83 @@ class DatabaseHelper {
   }
 
   /// Writes picture bytes into the app's attachments folder.
-  Future<String> _writeImage(List<int> bytes, String? oldPath) async {
+  Future<String> _writeImage(
+    List<int> bytes,
+    String? oldPath, {
+    String folder = 'attachments',
+  }) async {
     final dir = await getApplicationDocumentsDirectory();
-    final folder = Directory(p.join(dir.path, 'attachments'));
-    if (!await folder.exists()) await folder.create(recursive: true);
+    final target = Directory(p.join(dir.path, folder));
+    if (!await target.exists()) await target.create(recursive: true);
     final ext = (oldPath == null || p.extension(oldPath).isEmpty)
         ? '.jpg'
         : p.extension(oldPath);
-    final target = p.join(
-      folder.path,
+    final file = p.join(
+      target.path,
       '${DateTime.now().microsecondsSinceEpoch}_${_imageCounter++}$ext',
     );
-    await File(target).writeAsBytes(bytes);
-    return target;
+    await File(file).writeAsBytes(bytes);
+    return file;
+  }
+
+  static const _themePrefix = 'accountTheme.';
+
+  /// The picture path inside an account theme's JSON value (null = none).
+  String? _themeImageOf(Object? value) {
+    try {
+      final m = jsonDecode('$value');
+      if (m is Map) {
+        final image = m['image'];
+        if (image is String && image.isNotEmpty) return image;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Copy of a settings row. For an account theme with a picture, the
+  /// picture bytes are added (base64), if the file exists.
+  Future<Map<String, Object?>> _withThemeImage(Map<String, Object?> row) async {
+    final copy = Map<String, Object?>.from(row);
+    final name = row['name'];
+    if (name is String && name.startsWith(_themePrefix)) {
+      final path = _themeImageOf(row['value']);
+      if (path != null) {
+        try {
+          final file = File(path);
+          if (await file.exists()) {
+            copy['image_base64'] = base64Encode(await file.readAsBytes());
+          }
+        } catch (_) {}
+      }
+    }
+    return copy;
+  }
+
+  /// Writes the backed-up picture into the app's account_themes folder and
+  /// returns the theme JSON pointing at the new file. If the picture can't
+  /// be written, the theme keeps its color / pattern but loses the picture.
+  Future<Object?> _restoreThemeImage(
+    Object? value,
+    String b64,
+    List<String> written,
+  ) async {
+    try {
+      final m = Map<String, Object?>.from(jsonDecode('$value') as Map);
+      try {
+        final path = await _writeImage(
+          base64Decode(b64),
+          m['image'] as String?,
+          folder: 'account_themes',
+        );
+        written.add(path);
+        m['image'] = path;
+      } catch (_) {
+        m['image'] = null;
+      }
+      return jsonEncode(m);
+    } catch (_) {
+      return value;
+    }
   }
 
 }

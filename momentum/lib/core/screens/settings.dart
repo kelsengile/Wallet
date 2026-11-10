@@ -230,6 +230,8 @@ class AppSettings extends ChangeNotifier {
         ? sizeIndex
         : AppConstants.defaultTextSizeIndex;
 
+    _animEnabled = _store[AppConstants.prefAnimEnabled] != 'false';
+
     final animIndex = int.tryParse(_store[AppConstants.prefAnimSpeed] ?? '');
     _animSpeedIndex = (animIndex != null &&
             animIndex >= 0 &&
@@ -362,13 +364,26 @@ class AppSettings extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ---- Animation speed ----
+  // ---- Animation ----
+  bool _animEnabled = true;
+  bool get animEnabled => _animEnabled;
+
   int _animSpeedIndex = AppConstants.defaultAnimSpeedIndex;
   int get animSpeedIndex => _animSpeedIndex;
   String get animSpeedLabel => AppConstants.animSpeedLabels[_animSpeedIndex];
 
+  /// "Off" = animations finish almost instantly. (timeDilation must stay > 0.)
   void _applyAnimSpeed() {
-    timeDilation = AppConstants.animTimeDilations[_animSpeedIndex];
+    timeDilation =
+        _animEnabled ? AppConstants.animTimeDilations[_animSpeedIndex] : 0.001;
+  }
+
+  void setAnimEnabled(bool value) {
+    if (value == _animEnabled) return;
+    _animEnabled = value;
+    _applyAnimSpeed();
+    _save(AppConstants.prefAnimEnabled, '$value');
+    notifyListeners();
   }
 
   void setAnimSpeedIndex(int index) {
@@ -501,6 +516,7 @@ class SettingsScreen extends StatelessWidget {
       leading: const Icon(Icons.text_fields),
       title: const Text('Font'),
       subtitle: Text(_fontSummary(settings)),
+      trailing: const Icon(Icons.chevron_right),
       onTap: () => _showFontConfig(context, settings),
     );
   }
@@ -514,26 +530,18 @@ class SettingsScreen extends StatelessWidget {
   }
 }
 
-// ---------- Animation speed ----------
+// ---------- Animation ----------
 
-/// One inline row (no pop-up): text on the left, short draggable
-/// slider on the right, 5 steps like the font size.
 Widget _buildAnimationTile(BuildContext context, AppSettings settings) {
-  final maxIndex = AppConstants.animSpeedLabels.length - 1;
   return ListTile(
     leading: const Icon(Icons.speed),
-    title: const Text('Animation speed'),
-    subtitle: Text(settings.animSpeedLabel),
-    trailing: SizedBox(
-      width: AppConstants.fontSliderWidth,
-      child: Slider(
-        value: settings.animSpeedIndex.toDouble(),
-        min: 0,
-        max: maxIndex.toDouble(),
-        divisions: maxIndex,
-        label: settings.animSpeedLabel,
-        onChanged: (v) => settings.setAnimSpeedIndex(v.round()),
-      ),
+    title: const Text('Animation'),
+    subtitle: Text(settings.animEnabled ? settings.animSpeedLabel : 'Off'),
+    trailing: const Icon(Icons.chevron_right),
+    onTap: () => showDialog<void>(
+      context: context,
+      barrierColor: AppConstants.popupBarrier,
+      builder: (_) => _AnimationConfigDialog(settings: settings),
     ),
   );
 }
@@ -828,7 +836,12 @@ class _FontStyleDialogState extends State<_FontStyleDialog> {
           final font = AppFonts.all[i];
           final selected = font.label == _selected.label;
           return ListTile(
-            contentPadding: EdgeInsets.zero,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: AppConstants.spaceMd,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+            ),
             title: Text(
               font.label,
               style: TextStyle(fontFamily: font.family),
@@ -1765,6 +1778,110 @@ class _GradientSlider extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Pop-up for animations:
+///  - Animations (on/off switch)
+///  - Animation speed (slider, greyed out while animations are off)
+/// Changes apply live, so there is only a Close button.
+class _AnimationConfigDialog extends StatelessWidget {
+  final AppSettings settings;
+  const _AnimationConfigDialog({required this.settings});
+
+  @override
+  Widget build(BuildContext context) {
+    final maxIndex = AppConstants.animSpeedLabels.length - 1;
+
+    return _accentDialog(
+      context,
+      title: 'Animation',
+      icon: Icons.speed,
+      content: ListenableBuilder(
+        listenable: settings,
+        builder: (context, _) {
+          final theme = Theme.of(context);
+          final fg = theme.colorScheme.onSurface;
+          final fgSoft = theme.colorScheme.onSurfaceVariant;
+          final enabled = settings.animEnabled;
+
+          return SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ---- Animations on / off ----
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  secondary: const Icon(Icons.animation),
+                  title: const Text('Animations'),
+                  subtitle: Text(enabled ? 'On' : 'Off'),
+                  value: enabled,
+                  onChanged: settings.setAnimEnabled,
+                ),
+                Divider(
+                  height: 1,
+                  color: fg.withValues(alpha: AppConstants.dividerAlpha),
+                ),
+                // ---- Animation speed: text left, short slider right ----
+                Opacity(
+                  opacity: enabled ? 1 : 0.5,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: AppConstants.spaceSm,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.speed, color: fgSoft),
+                        const SizedBox(width: AppConstants.spaceMd),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Animation speed',
+                                style: theme.textTheme.bodyLarge
+                                    ?.copyWith(color: fg),
+                              ),
+                              Text(
+                                settings.animSpeedLabel,
+                                style: theme.textTheme.bodyMedium
+                                    ?.copyWith(color: fgSoft),
+                              ),
+                            ],
+                          ),
+                        ),
+                        SizedBox(
+                          width: AppConstants.fontSliderWidth,
+                          child: Slider(
+                            value: settings.animSpeedIndex.toDouble(),
+                            min: 0,
+                            max: maxIndex.toDouble(),
+                            divisions: maxIndex,
+                            label: settings.animSpeedLabel,
+                            // null = disabled while animations are off
+                            onChanged: enabled
+                                ? (v) => settings.setAnimSpeedIndex(v.round())
+                                : null,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Close'),
         ),
       ],
     );
