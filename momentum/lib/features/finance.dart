@@ -9,12 +9,12 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/gestures.dart';
 
-import '../../core/constants.dart';
-import '../../core/failures.dart';
-import '../../core/screens/settings.dart';
-import '../../core/themes.dart';
-import '../../core/utils.dart';
-import '../../database/helper.dart';
+import '../core/constants.dart';
+import '../core/failures.dart';
+import '../core/screens/settings.dart';
+import '../core/themes.dart';
+import '../core/utils.dart';
+import '../database/helper.dart';
 
 /// Look of one account: its color, plus either a pattern or a picture
 /// for the card. A picture wins over a pattern.
