@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:flutter/gestures.dart';
 
 import '../../core/constants.dart';
 import '../../core/failures.dart';
@@ -2764,25 +2765,29 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
                           ),
                   ),
                 ),
-                const SizedBox(height: 2),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerRight,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _miniStat(Icons.arrow_upward, s.incomeColor, _income, 'income'),
-                      const SizedBox(width: AppConstants.spaceSm),
-                      Container(
-                        width: 1,
-                        height: 12,
-                        color: fg.withValues(alpha: AppConstants.separatorAlpha),
-                      ),
-                      const SizedBox(width: AppConstants.spaceSm),
-                      _miniStat(Icons.arrow_downward, s.expenseColor, _expense, 'expense'),
-                    ],
+                // The category pop-up only shows the total, no
+                // income / expense stats under it.
+                if (!_catMode) ...[
+                  const SizedBox(height: 2),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _miniStat(Icons.arrow_upward, s.incomeColor, _income, 'income'),
+                        const SizedBox(width: AppConstants.spaceSm),
+                        Container(
+                          width: 1,
+                          height: 12,
+                          color: fg.withValues(alpha: AppConstants.separatorAlpha),
+                        ),
+                        const SizedBox(width: AppConstants.spaceSm),
+                        _miniStat(Icons.arrow_downward, s.expenseColor, _expense, 'expense'),
+                      ],
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
@@ -7744,13 +7749,19 @@ class _Series {
 }
 
 /// Shared scale of all lines on one graph.
-/// Shared scale of all lines on one graph.
-/// [zs] / [ze] = the visible part of the time axis (0.0 - 1.0).
+/// [zs] / [ze] = visible part of the time axis (0.0 - 1.0).
+/// [vMin] / [vMax] = visible part of the amount axis (real values).
 class _LineGeo {
-  final double t0, span, maxV, zs, ze;
-  const _LineGeo(this.t0, this.span, this.maxV, this.zs, this.ze);
+  final double t0, span, vMin, vMax, zs, ze;
+  const _LineGeo(this.t0, this.span, this.vMin, this.vMax, this.zs, this.ze);
 
-  factory _LineGeo.of(List<_Series> series, [double zs = 0, double ze = 1]) {
+  factory _LineGeo.of(
+    List<_Series> series, [
+    double zs = 0,
+    double ze = 1,
+    double ys = 0,
+    double ye = 1,
+  ]) {
     var lo = double.infinity;
     var hi = -double.infinity;
     var top = 0.0;
@@ -7763,7 +7774,8 @@ class _LineGeo {
       }
     }
     final span = hi - lo;
-    // When zoomed in, the amount axis fits the points that are visible.
+    // When zoomed sideways (and not zoomed vertically), the amount axis
+    // fits the points that are visible.
     var visTop = 0.0;
     if (span > 0 && (ze - zs) < 1) {
       for (final s in series) {
@@ -7773,7 +7785,11 @@ class _LineGeo {
         }
       }
     }
-    return _LineGeo(lo, span, _niceMax(visTop > 0 ? visTop : top), zs, ze);
+    final yZoomed = ye - ys < 0.999;
+    // When zoomed vertically the full scale stays fixed so the user's
+    // up / down position doesn't jump around while panning sideways.
+    final base = _niceMax(!yZoomed && visTop > 0 ? visTop : top);
+    return _LineGeo(lo, span, base * ys, base * ye, zs, ze);
   }
 
   Offset at(HistoryEntry e, Size size) {
@@ -7781,8 +7797,16 @@ class _LineGeo {
     final h = size.height - _lcTop - _lcBottom;
     final t = e.date.millisecondsSinceEpoch.toDouble();
     final x = span == 0 ? w / 2 : ((t - t0) / span - zs) / (ze - zs) * w;
-    return Offset(_lcLeft + x, _lcTop + h - e.amount / maxV * h);
+    final y = (e.amount - vMin) / (vMax - vMin) * h;
+    return Offset(_lcLeft + x, _lcTop + h - y);
   }
+}
+
+/// Axis number: more decimals when the zoomed range gets very small.
+String _axisLabel(double v, double range) {
+  if (range < 10) return v.toStringAsFixed(2);
+  if (range < 100) return v.toStringAsFixed(1);
+  return _short(v);
 }
 
 class _LinePainter extends CustomPainter {
@@ -7790,11 +7814,20 @@ class _LinePainter extends CustomPainter {
   final Color fg;
   final (int, int)? selected; // (line, point)
   final double zs, ze; // visible part of the time axis
-  const _LinePainter(this.series, this.fg, this.selected, this.zs, this.ze);
+  final double ys, ye; // visible part of the amount axis
+  const _LinePainter(
+    this.series,
+    this.fg,
+    this.selected,
+    this.zs,
+    this.ze,
+    this.ys,
+    this.ye,
+  );
 
   @override
   void paint(Canvas canvas, Size size) {
-    final geo = _LineGeo.of(series, zs, ze);
+    final geo = _LineGeo.of(series, zs, ze, ys, ye);
     final w = size.width - _lcLeft - _lcRight;
     final h = size.height - _lcTop - _lcBottom;
     final axis = TextStyle(fontSize: 10, color: fg.withValues(alpha: 0.65));
@@ -7802,7 +7835,8 @@ class _LinePainter extends CustomPainter {
       ..color = fg.withValues(alpha: 0.12)
       ..strokeWidth = 1;
 
-    // Side axis: amounts.
+    // Side axis: amounts (of the visible part).
+    final vRange = geo.vMax - geo.vMin;
     for (var i = 0; i <= 4; i++) {
       final y = _lcTop + h * i / 4;
       canvas.drawLine(
@@ -7810,7 +7844,13 @@ class _LinePainter extends CustomPainter {
         Offset(size.width - _lcRight, y),
         grid,
       );
-      _paintRight(canvas, _short(geo.maxV * (4 - i) / 4), _lcLeft - 6, y, axis);
+      _paintRight(
+        canvas,
+        _axisLabel(geo.vMin + vRange * (4 - i) / 4, vRange),
+        _lcLeft - 6,
+        y,
+        axis,
+      );
     }
 
     // Bottom axis: dates of the visible part only.
@@ -7844,10 +7884,15 @@ class _LinePainter extends CustomPainter {
       );
     }
 
-    // Lines and vertices are clipped to the graph area (needed for zoom).
+    // Lines and vertices are clipped to the plot area (needed for zoom).
     canvas.save();
     canvas.clipRect(
-      Rect.fromLTRB(_lcLeft - 8, _lcTop - 6, size.width - _lcRight + 8, size.height),
+      Rect.fromLTRB(
+        _lcLeft - 8,
+        _lcTop - 6,
+        size.width - _lcRight + 8,
+        _lcTop + h + 2,
+      ),
     );
 
     final baseY = _lcTop + h;
@@ -7912,6 +7957,7 @@ class _LinePainter extends CustomPainter {
         final e = s.entries[sel.$2];
         final p = geo.at(e, size);
         if (p.dx < _lcLeft - 1 || p.dx > size.width - _lcRight + 1) return;
+        if (p.dy < _lcTop - 1 || p.dy > _lcTop + h + 1) return;
         final on = AppTheme.onColor(s.color);
         final amountTp = TextPainter(
           text: TextSpan(
@@ -7964,6 +8010,23 @@ class _LinePainter extends CustomPainter {
   bool shouldRepaint(_LinePainter o) => true;
 }
 
+/// A scale recognizer that takes over a ONE-finger drag as soon as the
+/// graph is zoomed. That way dragging up / down moves the zoomed graph
+/// instead of scrolling the page behind it. While the graph is not zoomed
+/// a one-finger drag still scrolls the page, and two fingers always zoom.
+class _ChartScaleRecognizer extends ScaleGestureRecognizer {
+  _ChartScaleRecognizer({required this.canPan});
+  final bool Function() canPan;
+
+  @override
+  void handleEvent(PointerEvent event) {
+    super.handleEvent(event);
+    if (event is PointerMoveEvent && canPan()) {
+      resolvePointer(event.pointer, GestureDisposition.accepted);
+    }
+  }
+}
+
 class _TxLineChart extends StatefulWidget {
   final List<_Series> series; // not empty
   final Color fg;
@@ -7978,6 +8041,7 @@ class _TxLineChart extends StatefulWidget {
 
 class _TxLineChartState extends State<_TxLineChart> {
   static const double _minWindow = 0.02; // closest zoom (2% of the dates)
+  static const double _minWindowY = 0.02; // closest zoom (2% of the amounts)
 
   (int, int)? _selected;
 
@@ -7985,11 +8049,19 @@ class _TxLineChartState extends State<_TxLineChart> {
   double _zs = 0;
   double _ze = 1;
 
+  // Visible part of the amount axis (0.0 = bottom, 1.0 = top).
+  double _ys = 0;
+  double _ye = 1;
+
   // Values saved when a pinch / drag starts.
   double _startWindow = 1;
   double _startFocalData = 0;
+  double _startWindowY = 1;
+  double _startFocalDataY = 0;
 
-  bool get _zoomed => _ze - _zs < 0.999;
+  bool get _zoomedX => _ze - _zs < 0.999;
+  bool get _zoomedY => _ye - _ys < 0.999;
+  bool get _zoomed => _zoomedX || _zoomedY;
 
   @override
   void initState() {
@@ -8031,23 +8103,45 @@ class _TxLineChartState extends State<_TxLineChart> {
     return ((dx - _lcLeft) / w).clamp(0.0, 1.0).toDouble();
   }
 
-  void _onScaleStart(ScaleStartDetails d, double width) {
-    _startWindow = _ze - _zs;
-    _startFocalData =
-        _zs + _plotFraction(d.localFocalPoint.dx, width) * _startWindow;
+  /// 0.0 = bottom of the plot, 1.0 = top of the plot.
+  double _plotFractionY(double dy, double height) {
+    final h = height - _lcTop - _lcBottom;
+    return (1 - (dy - _lcTop) / h).clamp(0.0, 1.0).toDouble();
   }
 
-  void _onScaleUpdate(ScaleUpdateDetails d, double width) {
-    final newW = (_startWindow / d.scale).clamp(_minWindow, 1.0).toDouble();
-    final frac = _plotFraction(d.localFocalPoint.dx, width);
-    final newS = (_startFocalData - frac * newW).clamp(0.0, 1.0 - newW).toDouble();
+  void _onScaleStart(ScaleStartDetails d, Size size) {
+    _startWindow = _ze - _zs;
+    _startFocalData =
+        _zs + _plotFraction(d.localFocalPoint.dx, size.width) * _startWindow;
+    _startWindowY = _ye - _ys;
+    _startFocalDataY =
+        _ys + _plotFractionY(d.localFocalPoint.dy, size.height) * _startWindowY;
+  }
+
+  void _onScaleUpdate(ScaleUpdateDetails d, Size size) {
+    // Sideways: horizontalScale. Up / down: verticalScale.
+    // (A normal pinch moves both, a vertical pinch only the second.)
+    final newW =
+        (_startWindow / d.horizontalScale).clamp(_minWindow, 1.0).toDouble();
+    final fx = _plotFraction(d.localFocalPoint.dx, size.width);
+    final newS =
+        (_startFocalData - fx * newW).clamp(0.0, 1.0 - newW).toDouble();
+
+    final newWY =
+        (_startWindowY / d.verticalScale).clamp(_minWindowY, 1.0).toDouble();
+    final fy = _plotFractionY(d.localFocalPoint.dy, size.height);
+    final newSY =
+        (_startFocalDataY - fy * newWY).clamp(0.0, 1.0 - newWY).toDouble();
+
     setState(() {
       _zs = newS;
       _ze = newS + newW;
+      _ys = newSY;
+      _ye = newSY + newWY;
     });
   }
 
-  /// Zoom around the middle of the visible part (buttons).
+  /// Zoom around the middle of the visible part (buttons, sideways).
   void _zoomBy(double factor) {
     final w = _ze - _zs;
     final newW = (w / factor).clamp(_minWindow, 1.0).toDouble();
@@ -8062,7 +8156,26 @@ class _TxLineChartState extends State<_TxLineChart> {
   void _resetZoom() => setState(() {
         _zs = 0;
         _ze = 1;
+        _ys = 0;
+        _ye = 1;
       });
+
+  void _onTapAt(Offset pos, Size size) {
+    final geo = _LineGeo.of(widget.series, _zs, _ze, _ys, _ye);
+    (int, int)? best;
+    var bestD = 28.0;
+    for (var si = 0; si < widget.series.length; si++) {
+      final list = widget.series[si].entries;
+      for (var pi = 0; pi < list.length; pi++) {
+        final dist = (geo.at(list[pi], size) - pos).distance;
+        if (dist < bestD) {
+          bestD = dist;
+          best = (si, pi);
+        }
+      }
+    }
+    if (best != null) setState(() => _selected = best);
+  }
 
   Widget _zoomButton(IconData icon, VoidCallback? onTap) {
     final c = widget.fg.withValues(alpha: onTap == null ? 0.25 : 0.85);
@@ -8135,8 +8248,9 @@ class _TxLineChartState extends State<_TxLineChart> {
                       )
                     : const SizedBox.shrink(),
               ),
-              _zoomButton(Icons.remove, _zoomed ? () => _zoomBy(0.5) : null),
+              _zoomButton(Icons.remove, _zoomedX ? () => _zoomBy(0.5) : null),
               _zoomButton(Icons.add, () => _zoomBy(2)),
+              // Resets both the sideways and the up / down zoom.
               _zoomButton(
                 Icons.zoom_out_map,
                 _zoomed ? _resetZoom : null,
@@ -8147,32 +8261,46 @@ class _TxLineChartState extends State<_TxLineChart> {
         LayoutBuilder(
           builder: (context, c) {
             final size = Size(c.maxWidth, 210);
-            return GestureDetector(
+            return RawGestureDetector(
               behavior: HitTestBehavior.opaque,
-              // Pinch = zoom, drag = move the zoomed graph.
-              onScaleStart: (d) => _onScaleStart(d, size.width),
-              onScaleUpdate: (d) => _onScaleUpdate(d, size.width),
-              onDoubleTap: _resetZoom,
-              onTapUp: (d) {
-                final geo = _LineGeo.of(widget.series, _zs, _ze);
-                (int, int)? best;
-                var bestD = 28.0;
-                for (var si = 0; si < widget.series.length; si++) {
-                  final list = widget.series[si].entries;
-                  for (var pi = 0; pi < list.length; pi++) {
-                    final dist =
-                        (geo.at(list[pi], size) - d.localPosition).distance;
-                    if (dist < bestD) {
-                      bestD = dist;
-                      best = (si, pi);
-                    }
-                  }
-                }
-                if (best != null) setState(() => _selected = best);
+              gestures: <Type, GestureRecognizerFactory>{
+                // Pinch = zoom (sideways, up / down or both).
+                // Drag = move the zoomed graph in any direction.
+                _ChartScaleRecognizer:
+                    GestureRecognizerFactoryWithHandlers<_ChartScaleRecognizer>(
+                  () => _ChartScaleRecognizer(canPan: () => _zoomed),
+                  (_ChartScaleRecognizer r) {
+                    r.onStart = (ScaleStartDetails d) => _onScaleStart(d, size);
+                    r.onUpdate = (ScaleUpdateDetails d) =>
+                        _onScaleUpdate(d, size);
+                  },
+                ),
+                TapGestureRecognizer:
+                    GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
+                  () => TapGestureRecognizer(),
+                  (r) {
+                    r.onTapUp = (d) => _onTapAt(d.localPosition, size);
+                  },
+                ),
+                DoubleTapGestureRecognizer: GestureRecognizerFactoryWithHandlers<
+                    DoubleTapGestureRecognizer>(
+                  () => DoubleTapGestureRecognizer(),
+                  (r) {
+                    r.onDoubleTap = _resetZoom;
+                  },
+                ),
               },
               child: CustomPaint(
                 size: size,
-                painter: _LinePainter(widget.series, fg, _selected, _zs, _ze),
+                painter: _LinePainter(
+                  widget.series,
+                  fg,
+                  _selected,
+                  _zs,
+                  _ze,
+                  _ys,
+                  _ye,
+                ),
               ),
             );
           },
@@ -8196,7 +8324,6 @@ class _TxLineChartState extends State<_TxLineChart> {
     );
   }
 }
-
 // ---------- Pie / donut by category (uses the saved category colors) ----------
 
 class _PiePainter extends CustomPainter {
