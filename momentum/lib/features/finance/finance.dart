@@ -2396,8 +2396,11 @@ class _AccountViewSheet extends StatefulWidget {
 class _AccountViewSheetState extends State<_AccountViewSheet> {
   final _db = DatabaseHelper.instance;
   late _AccountCardData? _account = widget.account;
-  late _HistoryRange _range =
-      widget.range ?? _HistoryRange.of(_Period.month, DateTime.now());
+  // A range handed in (from Analytics) wins. Otherwise the last filter
+  // used on this pop-up, otherwise this month.
+  late _HistoryRange _range = widget.range ??
+      _lastAccountRange ??
+      _HistoryRange.of(_Period.month, DateTime.now());
   List<HistoryEntry> _entries = const [];
   List<ReminderItem> _reminders = const [];
   final Set<String> _collapsed = {}; // day headers that are folded
@@ -2535,6 +2538,7 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
     );
     if (picked == null || !mounted) return;
     setState(() => _range = picked);
+    if (!_catMode) _lastAccountRange = picked; // remember it
     _load();
   }
 
@@ -3354,6 +3358,9 @@ TransactionColorType _typeOf(String type) {
 
 /// The last date filter the user used. Kept while the app is open.
 _HistoryRange? _lastHistoryRange;
+
+/// The last date filter used in the account pop-up. Kept while the app is open.
+_HistoryRange? _lastAccountRange;
 
 /// Rich, bright version of a color (stays saturated, not pale).
 /// Grays are left as grays, so they never turn red.
@@ -5390,6 +5397,8 @@ class _RangeDialogState extends State<_RangeDialog> {
   Widget _dayCell(int day, int days, Color fg) {
     if (day < 1 || day > days) return const SizedBox(height: 38);
     final date = DateTime(_view.year, _view.month, day);
+    final today = _dateOnly(DateTime.now());
+    final isToday = date == today;
     var inRange = false;
     var strong = false;
     switch (_period) {
@@ -5409,6 +5418,12 @@ class _RangeDialogState extends State<_RangeDialog> {
       default:
         break;
     }
+    // Week tab: every day of the current week gets a soft outline.
+    var inThisWeek = false;
+    if (_period == _Period.week) {
+      final tw = _HistoryRange.of(_Period.week, today);
+      inThisWeek = !date.isBefore(tw.start) && !date.isAfter(tw.end);
+    }
     final highlighted = inRange || strong;
     return Padding(
       padding: const EdgeInsets.all(2),
@@ -5418,17 +5433,24 @@ class _RangeDialogState extends State<_RangeDialog> {
         child: Container(
           height: 34,
           alignment: Alignment.center,
-          decoration: BoxDecoration(
+                    decoration: BoxDecoration(
             color: strong
                 ? fg.withValues(alpha: 0.38)
                 : (inRange ? fg.withValues(alpha: 0.16) : null),
             borderRadius: BorderRadius.circular(12),
+            border: isToday
+                ? Border.all(color: fg, width: 2)
+                : (inThisWeek
+                    ? Border.all(color: fg.withValues(alpha: 0.5), width: 1.5)
+                    : null),
           ),
           child: Text(
             '$day',
             style: TextStyle(
               fontSize: 16,
-              fontWeight: highlighted ? FontWeight.w700 : FontWeight.w400,
+              fontWeight: (highlighted || isToday)
+                  ? FontWeight.w700
+                  : FontWeight.w400,
               color: fg,
             ),
           ),
@@ -5473,7 +5495,13 @@ class _RangeDialogState extends State<_RangeDialog> {
     );
   }
 
-  Widget _gridCell(String text, bool selected, Color fg, VoidCallback onTap) {
+  Widget _gridCell(
+    String text,
+    bool selected,
+    Color fg,
+    VoidCallback onTap, {
+    bool current = false,
+  }) {
     return Padding(
       padding: const EdgeInsets.all(4),
       child: InkWell(
@@ -5481,15 +5509,18 @@ class _RangeDialogState extends State<_RangeDialog> {
         onTap: onTap,
         child: Container(
           alignment: Alignment.center,
-          decoration: BoxDecoration(
+                    decoration: BoxDecoration(
             color: selected ? fg.withValues(alpha: 0.3) : null,
             borderRadius: BorderRadius.circular(14),
+            border: current ? Border.all(color: fg, width: 2) : null,
           ),
           child: Text(
             text,
             style: TextStyle(
               fontSize: 17,
-              fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
+              fontWeight: (selected || current)
+                  ? FontWeight.w800
+                  : FontWeight.w500,
               color: fg,
             ),
           ),
@@ -5516,6 +5547,7 @@ class _RangeDialogState extends State<_RangeDialog> {
   Widget _body(Color fg) {
     switch (_period) {
       case _Period.month:
+        final now = DateTime.now();
         return _grid(
           12,
           (i) => _gridCell(
@@ -5523,9 +5555,11 @@ class _RangeDialogState extends State<_RangeDialog> {
             _picked.year == _view.year && _picked.month == i + 1,
             fg,
             () => setState(() => _picked = DateTime(_view.year, i + 1)),
+            current: now.year == _view.year && now.month == i + 1,
           ),
         );
       case _Period.year:
+        final now = DateTime.now();
         return _grid(
           10,
           (i) => _gridCell(
@@ -5533,6 +5567,7 @@ class _RangeDialogState extends State<_RangeDialog> {
             _picked.year == _decadeStart + i,
             fg,
             () => setState(() => _picked = DateTime(_decadeStart + i)),
+            current: now.year == _decadeStart + i,
           ),
         );
       case _Period.all:
@@ -7838,12 +7873,14 @@ String _axisLabel(double v, double range) {
 class _LinePainter extends CustomPainter {
   final List<_Series> series;
   final Color fg;
+  final Color border; // outline of the node bubble
   final (int, int)? selected; // (line, point)
   final double zs, ze; // visible part of the time axis
   final double ys, ye; // visible part of the amount axis
   const _LinePainter(
     this.series,
     this.fg,
+    this.border,
     this.selected,
     this.zs,
     this.ze,
@@ -8003,26 +8040,38 @@ class _LinePainter extends CustomPainter {
           ),
           textDirection: TextDirection.ltr,
         )..layout();
-        const padX = 8.0, padY = 4.0, gap = 12.0;
+                const padX = 8.0, padY = 4.0, gap = 12.0;
         final bw = math.max(amountTp.width, dateTp.width) + padX * 2;
         final bh = amountTp.height + dateTp.height + padY * 2 + 1;
         final left = (p.dx - bw / 2).clamp(0.0, size.width - bw).toDouble();
         final bTop = math.max(0.0, p.dy - gap - bh);
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(
-            Rect.fromLTWH(left, bTop, bw, bh),
-            const Radius.circular(8),
-          ),
-          Paint()..color = s.color,
-        );
-        canvas.drawPath(
+
+        // Bubble + arrow as one shape, filled, then outlined.
+        final bubble = Path.combine(
+          PathOperation.union,
+          Path()
+            ..addRRect(
+              RRect.fromRectAndRadius(
+                Rect.fromLTWH(left, bTop, bw, bh),
+                const Radius.circular(8),
+              ),
+            ),
           Path()
             ..moveTo(p.dx - 5, bTop + bh)
             ..lineTo(p.dx + 5, bTop + bh)
             ..lineTo(p.dx, bTop + bh + 6)
             ..close(),
-          Paint()..color = s.color,
         );
+        canvas.drawPath(bubble, Paint()..color = s.color);
+        canvas.drawPath(
+          bubble,
+          Paint()
+            ..color = border
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2
+            ..strokeJoin = StrokeJoin.round,
+        );
+
         amountTp.paint(canvas, Offset(left + (bw - amountTp.width) / 2, bTop + padY));
         dateTp.paint(
           canvas,
@@ -8340,6 +8389,10 @@ class _TxLineChartState extends State<_TxLineChart> {
   @override
   Widget build(BuildContext context) {
     final fg = widget.fg;
+    final border = Color.alphaBlend(
+      fg.withValues(alpha: 0.06),
+      _lighter(AppTheme.accentOf(context).background),
+    );
     final selIdx = _selected;
     final sel =
         selIdx == null ? null : widget.series[selIdx.$1].entries[selIdx.$2];
@@ -8410,6 +8463,7 @@ class _TxLineChartState extends State<_TxLineChart> {
                   painter: _LinePainter(
                     widget.series,
                     fg,
+                    border,
                     _selected,
                     _zs,
                     _ze,
@@ -8756,6 +8810,7 @@ class _TxCountPainter extends CustomPainter {
   final bool horizontal; // true = calendar (days go left to right)
   final String? kind;
   final Color fg;
+  final Color border; 
   final int? selected;
 
   const _TxCountPainter({
@@ -8770,6 +8825,7 @@ class _TxCountPainter extends CustomPainter {
     required this.horizontal,
     required this.kind,
     required this.fg,
+    required this.border,
     required this.selected,
   });
 
@@ -8942,15 +8998,15 @@ class _TxCountPainter extends CustomPainter {
       final above = bTop >= 0; // no room on top: open below the box
       if (!above) bTop = o.dy + cellH + gapB + arrow;
 
-      final paint = Paint()..color = color;
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(left, bTop, bw, bh),
-          const Radius.circular(8),
-        ),
-        paint,
-      );
-      canvas.drawPath(
+      final bubble = Path.combine(
+        PathOperation.union,
+        Path()
+          ..addRRect(
+            RRect.fromRectAndRadius(
+              Rect.fromLTWH(left, bTop, bw, bh),
+              const Radius.circular(8),
+            ),
+          ),
         above
             ? (Path()
               ..moveTo(cx - 5, bTop + bh)
@@ -8962,8 +9018,17 @@ class _TxCountPainter extends CustomPainter {
               ..lineTo(cx + 5, bTop)
               ..lineTo(cx, bTop - arrow)
               ..close()),
-        paint,
       );
+      canvas.drawPath(bubble, Paint()..color = color);
+      canvas.drawPath(
+        bubble,
+        Paint()
+          ..color = border
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2
+          ..strokeJoin = StrokeJoin.round,
+      );
+
       countTp.paint(canvas, Offset(left + (bw - countTp.width) / 2, bTop + padY));
       dateTp.paint(
         canvas,
@@ -9106,6 +9171,10 @@ class _TxCountGraphState extends State<_TxCountGraph> {
   @override
   Widget build(BuildContext context) {
     final fg = widget.fg;
+    final border = Color.alphaBlend(
+      fg.withValues(alpha: 0.06),
+      _lighter(AppTheme.accentOf(context).background),
+    );
     final muted = fg.withValues(alpha: AppConstants.mutedAlpha);
     final kind = widget.kind;
     final today = _dateOnly(DateTime.now());
@@ -9281,6 +9350,7 @@ class _TxCountGraphState extends State<_TxCountGraph> {
                   horizontal: horizontal,
                   kind: kind,
                   fg: fg,
+                  border: border,
                   selected: selIdx,
                 ),
               ),
