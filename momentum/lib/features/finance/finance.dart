@@ -2399,6 +2399,7 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
   late _HistoryRange _range =
       widget.range ?? _HistoryRange.of(_Period.month, DateTime.now());
   List<HistoryEntry> _entries = const [];
+  List<ReminderItem> _reminders = const [];
   final Set<String> _collapsed = {}; // day headers that are folded
   bool _loaded = false;
   String? _error;
@@ -2471,9 +2472,11 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
         }
       }
       final all = await _db.getHistory(from: _range.from, until: _range.until);
+      final reminders = await _db.getReminders();
       if (!mounted) return;
       setState(() {
         _account = fresh;
+        _reminders = reminders;
         _entries = [
           for (final e in all)
             if (_matches(e, fresh)) e,
@@ -3113,17 +3116,30 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
       ];
     }
     if (_view == 'all') {
-      // Default: income/expense line graph, then the 2-column pie.
+      final id = _account?.id;
       return [
-        Padding(
-          padding: const EdgeInsets.all(AppConstants.spaceMd),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _dualLineCard(_entries, fg, _openKind),
-              const SizedBox(height: AppConstants.spaceMd),
-              _dualPieCard(_entries, fg, _openKind),
-            ],
+        _DayLinked(
+          builder: (link) => Padding(
+            padding: const EdgeInsets.all(AppConstants.spaceMd),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _txCountCard(
+                  entries: _entries,
+                  reminders: [
+                    for (final r in _reminders)
+                      if (r.accountId == id) r,
+                  ],
+                  range: _range,
+                  fg: fg,
+                  link: link,
+                ),
+                const SizedBox(height: AppConstants.spaceMd),
+                _dualLineCard(_entries, fg, _openKind, link: link),
+                const SizedBox(height: AppConstants.spaceMd),
+                _dualPieCard(_entries, fg, _openKind),
+              ],
+            ),
           ),
         ),
       ];
@@ -3132,6 +3148,7 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
       _KindCharts(
         entries: _entries,
         kind: _view,
+        range: _range,
         fg: fg,
         onOpenCategory: _openCategory,
       ),
@@ -4431,6 +4448,7 @@ class _AnalyticsPanelState extends State<_AnalyticsPanel> {
   final _db = DatabaseHelper.instance;
   late _HistoryRange _range;
   List<HistoryEntry> _entries = const [];
+  List<ReminderItem> _reminders = const [];
   List<_AccountCardData> _accounts = const [];
   List<int> _typeOrder = const [];
   String _view = 'all'; // all (default graphs) | income | expense | net
@@ -4479,6 +4497,7 @@ class _AnalyticsPanelState extends State<_AnalyticsPanel> {
     try {
       final entries =
           await _db.getHistory(from: _range.from, until: _range.until);
+      final reminders = await _db.getReminders();
       final options = await _db.getAccountOptions();
       final order = await _db.getTypeOrder(); // same order as Finance
       final accounts = <_AccountCardData>[];
@@ -4489,6 +4508,7 @@ class _AnalyticsPanelState extends State<_AnalyticsPanel> {
       if (!mounted) return;
       setState(() {
         _entries = entries;
+        _reminders = reminders;
         _accounts = accounts;
         _typeOrder = order;
       });
@@ -4663,6 +4683,8 @@ class _AnalyticsPanelState extends State<_AnalyticsPanel> {
                       stats: _accountStats(_accounts, _entries),
                       typeOrder: _typeOrder,
                       entries: _entries,
+                      reminders: _reminders,
+                      range: _range,
                       fg: fg,
                       onOpen: (v) => setState(() => _view = v),
                     )
@@ -4683,6 +4705,7 @@ class _AnalyticsPanelState extends State<_AnalyticsPanel> {
                     _KindCharts(
                       entries: _entries,
                       kind: _view,
+                      range: _range,
                       fg: fg,
                       onOpenCategory: _openCategory,
                     ),
@@ -7253,6 +7276,9 @@ class _ChartTitles {
   /// Two-line graph (default views)
   static const overTime = 'Balance Over Time';
 
+  /// GitHub-style day boxes
+  static const transactionCount = 'Transaction Count';
+
   /// Two-column pie (default views)
   static const byCategory = 'Category Analytics';
 
@@ -8033,7 +8059,16 @@ class _TxLineChart extends StatefulWidget {
 
   /// When given, the Income / Expense legend chips open that kind.
   final ValueChanged<String>? onOpenKind;
-  const _TxLineChart({required this.series, required this.fg, this.onOpenKind});
+
+  /// Links the line graph with the Transaction Count boxes:
+  /// a pressed box picks a node, a pressed node picks the box.
+  final _DayLink? link;
+  const _TxLineChart({
+    required this.series,
+    required this.fg,
+    this.onOpenKind,
+    this.link,
+  });
 
   @override
   State<_TxLineChart> createState() => _TxLineChartState();
@@ -8066,32 +8101,100 @@ class _TxLineChartState extends State<_TxLineChart> {
   @override
   void initState() {
     super.initState();
-    _selected = _latest();
+    final day = widget.link?.day;
+    _selected = day == null ? _latest() : _pickForDay(day);
+    widget.link?.addListener(_onLink);
   }
 
-  /// The most recent point of all lines.
+  @override
+  void dispose() {
+    widget.link?.removeListener(_onLink);
+    super.dispose();
+  }
+
   (int, int)? _latest() {
+    (int, int)? latest;
+    DateTime? latestDate;
+    for (var si = 0; si < widget.series.length; si++) {
+      final entries = widget.series[si].entries;
+      for (var pi = 0; pi < entries.length; pi++) {
+        final date = entries[pi].date;
+        if (latestDate == null || date.isAfter(latestDate)) {
+          latestDate = date;
+          latest = (si, pi);
+        }
+      }
+    }
+    return latest;
+  }
+
+  /// The highest-amount point of that day (income or expense, whichever is
+  /// higher), or null when the day has no point on this graph.
+  (int, int)? _pickForDay(DateTime day) {
     (int, int)? best;
-    var bestT = -1;
-    for (var s = 0; s < widget.series.length; s++) {
-      final e = widget.series[s].entries;
-      if (e.isEmpty) continue;
-      final t = e.last.date.millisecondsSinceEpoch;
-      if (t > bestT) {
-        bestT = t;
-        best = (s, e.length - 1);
+    var bestAmount = -1.0;
+    for (var si = 0; si < widget.series.length; si++) {
+      final list = widget.series[si].entries;
+      for (var pi = 0; pi < list.length; pi++) {
+        final e = list[pi];
+        if (_dateOnly(e.date) == day && e.amount > bestAmount) {
+          bestAmount = e.amount;
+          best = (si, pi);
+        }
       }
     }
     return best;
   }
 
+  /// Keeps the current node if it is already on [day], else the day's
+  /// highest point.
+  (int, int)? _resolveDay(DateTime day) {
+    final cur = _selected;
+    if (cur != null &&
+        cur.$1 < widget.series.length &&
+        cur.$2 < widget.series[cur.$1].entries.length &&
+        _dateOnly(widget.series[cur.$1].entries[cur.$2].date) == day) {
+      return cur;
+    }
+    return _pickForDay(day);
+  }
+
+  /// The link changed (a count box was pressed or unpressed).
+  void _onLink() {
+    if (!mounted) return;
+    final day = widget.link?.day;
+    if (day == null) {
+      if (_selected != null) setState(() => _selected = null);
+      return;
+    }
+    final next = _resolveDay(day);
+    if (next != _selected) setState(() => _selected = next);
+  }
+
+  /// Deselects the node and the matching count box.
+  void _deselect() {
+    setState(() => _selected = null);
+    widget.link?.set(null);
+  }
+
   @override
   void didUpdateWidget(_TxLineChart old) {
     super.didUpdateWidget(old);
+    if (old.link != widget.link) {
+      old.link?.removeListener(_onLink);
+      widget.link?.addListener(_onLink);
+    }
+    final day = widget.link?.day;
+    if (day != null) {
+      _selected = _resolveDay(day);
+      return;
+    }
+    // Only fix a selection that no longer exists. A deselected graph
+    // stays deselected.
     final sel = _selected;
-    if (sel == null ||
-        sel.$1 >= widget.series.length ||
-        sel.$2 >= widget.series[sel.$1].entries.length) {
+    if (sel != null &&
+        (sel.$1 >= widget.series.length ||
+            sel.$2 >= widget.series[sel.$1].entries.length)) {
       _selected = _latest();
     }
   }
@@ -8160,6 +8263,8 @@ class _TxLineChartState extends State<_TxLineChart> {
         _ye = 1;
       });
 
+  /// Tap on the plot: select the nearest node (and pop up its box on the
+  /// Transaction Count), or deselect when no node is near.
   void _onTapAt(Offset pos, Size size) {
     final geo = _LineGeo.of(widget.series, _zs, _ze, _ys, _ye);
     (int, int)? best;
@@ -8174,7 +8279,13 @@ class _TxLineChartState extends State<_TxLineChart> {
         }
       }
     }
-    if (best != null) setState(() => _selected = best);
+    if (best != null) {
+      setState(() => _selected = best);
+      final e = widget.series[best.$1].entries[best.$2];
+      widget.link?.set(_dateOnly(e.date));
+    } else {
+      _deselect();
+    }
   }
 
   Widget _zoomButton(IconData icon, VoidCallback? onTap) {
@@ -8232,13 +8343,17 @@ class _TxLineChartState extends State<_TxLineChart> {
     final selIdx = _selected;
     final sel =
         selIdx == null ? null : widget.series[selIdx.$1].entries[selIdx.$2];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Legend (left) + zoom buttons (right)
-        Padding(
-          padding: const EdgeInsets.only(bottom: 0),
-          child: Row(
+
+    // Tapping anywhere on this chart that is not a node, a legend chip or
+    // a zoom button deselects the node (and the count box).
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _deselect,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Legend (left) + zoom buttons (right)
+          Row(
             children: [
               Expanded(
                 child: (widget.series.length > 1 || widget.onOpenKind != null)
@@ -8251,79 +8366,81 @@ class _TxLineChartState extends State<_TxLineChart> {
               _zoomButton(Icons.remove, _zoomedX ? () => _zoomBy(0.5) : null),
               _zoomButton(Icons.add, () => _zoomBy(2)),
               // Resets both the sideways and the up / down zoom.
-              _zoomButton(
-                Icons.zoom_out_map,
-                _zoomed ? _resetZoom : null,
-              ),
+              _zoomButton(Icons.zoom_out_map, _zoomed ? _resetZoom : null),
             ],
           ),
-        ),
-        LayoutBuilder(
-          builder: (context, c) {
-            final size = Size(c.maxWidth, 210);
-            return RawGestureDetector(
-              behavior: HitTestBehavior.opaque,
-              gestures: <Type, GestureRecognizerFactory>{
-                // Pinch = zoom (sideways, up / down or both).
-                // Drag = move the zoomed graph in any direction.
-                _ChartScaleRecognizer:
-                    GestureRecognizerFactoryWithHandlers<_ChartScaleRecognizer>(
-                  () => _ChartScaleRecognizer(canPan: () => _zoomed),
-                  (_ChartScaleRecognizer r) {
-                    r.onStart = (ScaleStartDetails d) => _onScaleStart(d, size);
-                    r.onUpdate = (ScaleUpdateDetails d) =>
-                        _onScaleUpdate(d, size);
-                  },
+          LayoutBuilder(
+            builder: (context, c) {
+              final size = Size(c.maxWidth, 210);
+              return RawGestureDetector(
+                behavior: HitTestBehavior.opaque,
+                gestures: <Type, GestureRecognizerFactory>{
+                  // Pinch = zoom (sideways, up / down or both).
+                  // Drag = move the zoomed graph in any direction.
+                  _ChartScaleRecognizer:
+                      GestureRecognizerFactoryWithHandlers<
+                          _ChartScaleRecognizer>(
+                    () => _ChartScaleRecognizer(canPan: () => _zoomed),
+                    (_ChartScaleRecognizer r) {
+                      r.onStart =
+                          (ScaleStartDetails d) => _onScaleStart(d, size);
+                      r.onUpdate =
+                          (ScaleUpdateDetails d) => _onScaleUpdate(d, size);
+                    },
+                  ),
+                  TapGestureRecognizer:
+                      GestureRecognizerFactoryWithHandlers<
+                          TapGestureRecognizer>(
+                    () => TapGestureRecognizer(),
+                    (r) {
+                      r.onTapUp = (d) => _onTapAt(d.localPosition, size);
+                    },
+                  ),
+                  DoubleTapGestureRecognizer:
+                      GestureRecognizerFactoryWithHandlers<
+                          DoubleTapGestureRecognizer>(
+                    () => DoubleTapGestureRecognizer(),
+                    (r) {
+                      r.onDoubleTap = _resetZoom;
+                    },
+                  ),
+                },
+                child: CustomPaint(
+                  size: size,
+                  painter: _LinePainter(
+                    widget.series,
+                    fg,
+                    _selected,
+                    _zs,
+                    _ze,
+                    _ys,
+                    _ye,
+                  ),
                 ),
-                TapGestureRecognizer:
-                    GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
-                  () => TapGestureRecognizer(),
-                  (r) {
-                    r.onTapUp = (d) => _onTapAt(d.localPosition, size);
-                  },
-                ),
-                DoubleTapGestureRecognizer: GestureRecognizerFactoryWithHandlers<
-                    DoubleTapGestureRecognizer>(
-                  () => DoubleTapGestureRecognizer(),
-                  (r) {
-                    r.onDoubleTap = _resetZoom;
-                  },
-                ),
-              },
-              child: CustomPaint(
-                size: size,
-                painter: _LinePainter(
-                  widget.series,
-                  fg,
-                  _selected,
-                  _zs,
-                  _ze,
-                  _ys,
-                  _ye,
-                ),
-              ),
-            );
-          },
-        ),
-        const SizedBox(height: AppConstants.spaceSm),
-        Text(
-          sel == null
-              ? 'Tap a point to see its amount'
-              : (sel.categoryName == null
-                  ? sel.title
-                  : '${sel.title}  •  ${sel.categoryName}'),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: fg.withValues(alpha: AppConstants.mutedAlpha),
+              );
+            },
           ),
-        ),
-      ],
+          const SizedBox(height: AppConstants.spaceSm),
+          Text(
+            sel == null
+                ? 'Tap a point to see its amount'
+                : (sel.categoryName == null
+                    ? sel.title
+                    : '${sel.title}  •  ${sel.categoryName}'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: fg.withValues(alpha: AppConstants.mutedAlpha),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
+
 // ---------- Pie / donut by category (uses the saved category colors) ----------
 
 class _PiePainter extends CustomPainter {
@@ -8496,14 +8613,713 @@ class _CategoryPie extends StatelessWidget {
   }
 }
 
+// ---------- Transaction Count (GitHub-style day boxes) ----------
+
+/// Transactions of one day, split by kind.
+class _DayCount {
+  int income = 0, expense = 0, transfer = 0, reminder = 0;
+
+  int get total => income + expense + transfer + reminder;
+
+  int of(String kind) {
+    switch (kind) {
+      case 'income':
+        return income;
+      case 'expense':
+        return expense;
+      case 'transfer':
+        return transfer;
+      default:
+        return reminder;
+    }
+  }
+
+  /// The kind with the most transactions that day.
+  /// Ties: income, expense, transfer, reminder (in that order).
+  String get dominant {
+    var best = 'income';
+    var most = income;
+    if (expense > most) {
+      best = 'expense';
+      most = expense;
+    }
+    if (transfer > most) {
+      best = 'transfer';
+      most = transfer;
+    }
+    if (reminder > most) {
+      best = 'reminder';
+    }
+    return best;
+  }
+}
+
+const List<String> _countKinds = ['income', 'expense', 'transfer', 'reminder'];
+const Map<String, String> _countKindLabels = {
+  'income': 'Income',
+  'expense': 'Expense',
+  'transfer': 'Transfer',
+  'reminder': 'Reminder',
+};
+
+Color _countKindColor(String kind) {
+  final s = AppSettings.instance;
+  switch (kind) {
+    case 'income':
+      return s.incomeColor;
+    case 'expense':
+      return s.expenseColor;
+    case 'transfer':
+      return s.transferColor;
+    default:
+      return s.reminderColor;
+  }
+}
+
+DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+
+/// Links the Transaction Count boxes to the line graph: the day that was
+/// pressed (null = none).
+class _DayLink extends ChangeNotifier {
+  DateTime? _day;
+  DateTime? get day => _day;
+  void set(DateTime? d) {
+    if (_day == d) return;
+    _day = d;
+    notifyListeners();
+  }
+}
+
+/// Owns one [_DayLink] for the graphs built inside it.
+class _DayLinked extends StatefulWidget {
+  final Widget Function(_DayLink link) builder;
+  const _DayLinked({required this.builder});
+
+  @override
+  State<_DayLinked> createState() => _DayLinkedState();
+}
+
+class _DayLinkedState extends State<_DayLinked> {
+  final _link = _DayLink();
+
+  @override
+  void dispose() {
+    _link.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(_link);
+}
+
+/// The Transaction Count card.
+/// [kind] null = every kind (colored by the busiest kind of each day),
+/// 'income' / 'expense' = only that kind. [reminders] are only counted
+/// when [kind] is null. [link] picks the matching point on a line graph.
+Widget _txCountCard({
+  required List<HistoryEntry> entries,
+  required _HistoryRange range,
+  required Color fg,
+  List<ReminderItem> reminders = const [],
+  String? kind,
+  _DayLink? link,
+}) {
+  return GestureDetector(
+    behavior: HitTestBehavior.opaque,
+    // Tap anywhere on the card that isn't a day box: deselect.
+    onTap: link == null ? null : () => link.set(null),
+    child: _chartCard(
+      fg,
+      _TxCountGraph(
+        entries: entries,
+        reminders: reminders,
+        range: range,
+        kind: kind,
+        fg: fg,
+        link: link,
+      ),
+      title: _ChartTitles.transactionCount,
+      dot: kind == null ? null : _countKindColor(kind),
+    ),
+  );
+}
+
+class _TxCountPainter extends CustomPainter {
+  static const double gap = 3; // space between boxes
+  static const double pad = 3; // room for the glow
+  static const double headH = 16; // month names / weekday letters row
+
+  final Map<int, _DayCount> days;
+  final DateTime gridStart; // UTC, the Monday of the first week
+  final int weeks, firstIdx, lastIdx, maxTotal;
+  final double cellW, cellH;
+  final bool horizontal; // true = calendar (days go left to right)
+  final String? kind;
+  final Color fg;
+  final int? selected;
+
+  const _TxCountPainter({
+    required this.days,
+    required this.gridStart,
+    required this.weeks,
+    required this.firstIdx,
+    required this.lastIdx,
+    required this.maxTotal,
+    required this.cellW,
+    required this.cellH,
+    required this.horizontal,
+    required this.kind,
+    required this.fg,
+    required this.selected,
+  });
+
+  /// Top left corner of the box of day [idx].
+  static Offset origin(int idx, double cellW, double cellH, bool horizontal) {
+    final week = idx ~/ 7;
+    final wd = idx % 7;
+    final col = horizontal ? wd : week;
+    final row = horizontal ? week : wd;
+    return Offset(pad + col * (cellW + gap), headH + row * (cellH + gap));
+  }
+
+  /// The day under a tap (null = no day there).
+  static int? indexAt(
+    Offset p,
+    double cellW,
+    double cellH,
+    bool horizontal,
+    int weeks,
+    int firstIdx,
+    int lastIdx,
+  ) {
+    final x = p.dx - pad;
+    final y = p.dy - headH;
+    if (x < 0 || y < 0) return null;
+    final col = (x / (cellW + gap)).floor();
+    final row = (y / (cellH + gap)).floor();
+    final week = horizontal ? row : col;
+    final wd = horizontal ? col : row;
+    if (wd >= 7 || week >= weeks) return null;
+    final idx = week * 7 + wd;
+    if (idx < firstIdx || idx > lastIdx) return null;
+    return idx;
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final radius = Radius.circular(math.min(cellW, cellH) * 0.22);
+    final labelStyle = TextStyle(fontSize: 10, color: fg.withValues(alpha: 0.65));
+
+    // Header: weekday letters (calendar) or month names (week columns).
+    if (horizontal) {
+      const letters = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+      for (var i = 0; i < 7; i++) {
+        _paintCentered(
+          canvas,
+          letters[i],
+          pad + i * (cellW + gap) + cellW / 2,
+          2,
+          labelStyle,
+          maxWidth: cellW,
+        );
+      }
+    } else {
+      var lastLabelCol = -10;
+      int? lastMonth;
+      for (var col = 0; col < weeks; col++) {
+        final idx = math.max(col * 7, firstIdx);
+        if (idx > lastIdx) break;
+        final d = gridStart.add(Duration(days: idx));
+        if (d.month != lastMonth) {
+          lastMonth = d.month;
+          if (col - lastLabelCol >= 3) {
+            lastLabelCol = col;
+            final tp = TextPainter(
+              text: TextSpan(
+                text: _monthNames[d.month - 1].substring(0, 3),
+                style: labelStyle,
+              ),
+              textDirection: TextDirection.ltr,
+              maxLines: 1,
+            )..layout();
+            tp.paint(
+              canvas,
+              Offset(pad + col * (cellW + gap), (headH - tp.height) / 2),
+            );
+          }
+        }
+      }
+    }
+
+    const alphas = [0.0, 0.35, 0.55, 0.78, 1.0];
+    for (var idx = firstIdx; idx <= lastIdx; idx++) {
+      final o = origin(idx, cellW, cellH, horizontal);
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(o.dx, o.dy, cellW, cellH),
+        radius,
+      );
+      final c = days[idx];
+      if (c == null || c.total == 0) {
+        canvas.drawRRect(rect, Paint()..color = fg.withValues(alpha: 0.08));
+      } else {
+        final color = _countKindColor(kind ?? c.dominant);
+        final level = (c.total / maxTotal * 4).ceil().clamp(1, 4).toInt();
+        final a = alphas[level];
+        // Glow, then the box.
+        canvas.drawRRect(
+          rect,
+          Paint()
+            ..color = color.withValues(alpha: 0.55 * a)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+        );
+        canvas.drawRRect(rect, Paint()..color = color.withValues(alpha: a));
+      }
+      // Day number inside the box (calendar layout only).
+      if (horizontal && cellH >= 16) {
+        final day = gridStart.add(Duration(days: idx)).day;
+        final tp = TextPainter(
+          text: TextSpan(
+            text: '$day',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: fg.withValues(alpha: 0.75),
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        tp.paint(
+          canvas,
+          Offset(o.dx + (cellW - tp.width) / 2, o.dy + (cellH - tp.height) / 2),
+        );
+      }
+      if (idx == selected) {
+        canvas.drawRRect(
+          rect.inflate(1.5),
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2
+            ..color = fg,
+        );
+      }
+    }
+
+    // Bubble of the selected box (same look as the line graph nodes).
+    final sel = selected;
+    if (sel != null) {
+      final c = days[sel];
+      final n = c?.total ?? 0;
+      final color = n == 0 ? fg : _countKindColor(kind ?? c!.dominant);
+      final on = AppTheme.onColor(color);
+      final u = gridStart.add(Duration(days: sel));
+      final date = DateTime(u.year, u.month, u.day);
+      final countTp = TextPainter(
+        text: TextSpan(
+          text: '$n transaction${n == 1 ? '' : 's'}',
+          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: on),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final dateTp = TextPainter(
+        text: TextSpan(
+          text: _fmtLong(date),
+          style: TextStyle(
+            fontSize: 9.5,
+            fontWeight: FontWeight.w600,
+            color: on.withValues(alpha: 0.85),
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      const padX = 8.0, padY = 4.0, arrow = 6.0, gapB = 2.0;
+      final bw = math.max(countTp.width, dateTp.width) + padX * 2;
+      final bh = countTp.height + dateTp.height + padY * 2 + 1;
+      final o = origin(sel, cellW, cellH, horizontal);
+      final cx = o.dx + cellW / 2;
+      final left = (cx - bw / 2).clamp(0.0, math.max(0.0, size.width - bw)).toDouble();
+
+      var bTop = o.dy - gapB - arrow - bh;
+      final above = bTop >= 0; // no room on top: open below the box
+      if (!above) bTop = o.dy + cellH + gapB + arrow;
+
+      final paint = Paint()..color = color;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(left, bTop, bw, bh),
+          const Radius.circular(8),
+        ),
+        paint,
+      );
+      canvas.drawPath(
+        above
+            ? (Path()
+              ..moveTo(cx - 5, bTop + bh)
+              ..lineTo(cx + 5, bTop + bh)
+              ..lineTo(cx, bTop + bh + arrow)
+              ..close())
+            : (Path()
+              ..moveTo(cx - 5, bTop)
+              ..lineTo(cx + 5, bTop)
+              ..lineTo(cx, bTop - arrow)
+              ..close()),
+        paint,
+      );
+      countTp.paint(canvas, Offset(left + (bw - countTp.width) / 2, bTop + padY));
+      dateTp.paint(
+        canvas,
+        Offset(left + (bw - dateTp.width) / 2, bTop + padY + countTp.height + 1),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_TxCountPainter o) => true;
+}
+
+class _TxCountGraph extends StatefulWidget {
+  final List<HistoryEntry> entries;
+  final List<ReminderItem> reminders;
+  final _HistoryRange range;
+  final String? kind; // null = all kinds
+  final Color fg;
+  final _DayLink? link;
+  const _TxCountGraph({
+    required this.entries,
+    required this.reminders,
+    required this.range,
+    required this.kind,
+    required this.fg,
+    this.link,
+  });
+
+  @override
+  State<_TxCountGraph> createState() => _TxCountGraphState();
+}
+
+class _TxCountGraphState extends State<_TxCountGraph> {
+  static const double _minCell = 12;
+  static const double _maxCell = 26;
+  static const double _labelW = 22;
+
+  DateTime? _selectedDate; // date only
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedDate = widget.link?.day;
+    widget.link?.addListener(_onLink);
+  }
+
+  @override
+  void dispose() {
+    widget.link?.removeListener(_onLink);
+    super.dispose();
+  }
+
+  void _onLink() {
+    if (!mounted) return;
+    final d = widget.link?.day;
+    if (d != _selectedDate) setState(() => _selectedDate = d);
+  }
+
+  void _clearSelection() {
+    setState(() => _selectedDate = null);
+    widget.link?.set(null);
+  }
+
+  @override
+  void didUpdateWidget(_TxCountGraph old) {
+      if (old.link != widget.link) {
+      old.link?.removeListener(_onLink);
+      widget.link?.addListener(_onLink);
+    }
+    super.didUpdateWidget(old);
+    // A new date range: forget the picked box (and the line graph pick).
+    if (!identical(old.range, widget.range) && _selectedDate != null) {
+      _selectedDate = null;
+      final link = widget.link;
+      WidgetsBinding.instance.addPostFrameCallback((_) => link?.set(null));
+    }
+  }
+
+  void _onTap(
+    Offset p,
+    double cellW,
+    double cellH,
+    bool horizontal,
+    int weeks,
+    int firstIdx,
+    int lastIdx,
+    DateTime gridStart,
+  ) {
+    final idx = _TxCountPainter.indexAt(
+      p,
+      cellW,
+      cellH,
+      horizontal,
+      weeks,
+      firstIdx,
+      lastIdx,
+    );
+    if (idx == null) {
+      _clearSelection();
+      return;
+    }
+    final u = gridStart.add(Duration(days: idx));
+    final date = DateTime(u.year, u.month, u.day);
+    final next = _selectedDate == date ? null : date;
+    setState(() => _selectedDate = next);
+    // The line graph picks that day's point (or nothing).
+    widget.link?.set(next);
+  }
+
+  Widget _weekdayLabels(double cell, Color fg) {
+    const names = {0: 'M', 2: 'W', 4: 'F'};
+    final style = TextStyle(fontSize: 10, color: fg.withValues(alpha: 0.65));
+    return SizedBox(
+      width: _labelW,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: _TxCountPainter.headH),
+          for (var r = 0; r < 7; r++) ...[
+            SizedBox(
+              height: cell,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: names.containsKey(r) ? Text(names[r]!, style: style) : null,
+              ),
+            ),
+            if (r < 6) const SizedBox(height: _TxCountPainter.gap),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _dot(Color c) => Container(
+        width: 8,
+        height: 8,
+        decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = widget.fg;
+    final muted = fg.withValues(alpha: AppConstants.mutedAlpha);
+    final kind = widget.kind;
+    final today = _dateOnly(DateTime.now());
+
+    // Everything that counts: (day, kind).
+    final items = <(DateTime, String)>[];
+    for (final e in widget.entries) {
+      if (kind == null || e.type == kind) items.add((_dateOnly(e.date), e.type));
+    }
+    if (kind == null) {
+      for (final r in widget.reminders) {
+        items.add((_dateOnly(r.dueDate), 'reminder'));
+      }
+    }
+
+    // First and last day shown.
+    final r = widget.range;
+    DateTime first;
+    DateTime last;
+    if (r.isAll) {
+      first = today;
+      last = today;
+      for (final i in items) {
+        if (i.$1.isBefore(first)) first = i.$1;
+        if (i.$2 != 'reminder' && i.$1.isAfter(last)) last = i.$1;
+      }
+    } else {
+      first = _dateOnly(r.start);
+      last = _dateOnly(r.end);
+      if (last.isBefore(first)) last = first;
+    }
+
+    // Day / Week / Month fill the card as a calendar.
+    final horizontal = r.period == _Period.day ||
+        r.period == _Period.week ||
+        r.period == _Period.month;
+
+    // Weeks (Monday first) are numbered from the Monday of the first day.
+    final gridStart = DateTime.utc(first.year, first.month, first.day)
+        .subtract(Duration(days: first.weekday - 1));
+    final firstIdx = first.weekday - 1;
+    final lastIdx =
+        DateTime.utc(last.year, last.month, last.day).difference(gridStart).inDays;
+    final weeks = lastIdx ~/ 7 + 1;
+
+    final days = <int, _DayCount>{};
+    for (final i in items) {
+      final idx = DateTime.utc(i.$1.year, i.$1.month, i.$1.day)
+          .difference(gridStart)
+          .inDays;
+      if (idx < firstIdx || idx > lastIdx) continue;
+      final c = days.putIfAbsent(idx, _DayCount.new);
+      switch (i.$2) {
+        case 'income':
+          c.income++;
+        case 'expense':
+          c.expense++;
+        case 'transfer':
+          c.transfer++;
+        default:
+          c.reminder++;
+      }
+    }
+    var maxTotal = 1;
+    for (final c in days.values) {
+      maxTotal = math.max(maxTotal, c.total);
+    }
+
+    // Selected day.
+    int? selIdx;
+    final sd = _selectedDate;
+    if (sd != null) {
+      final i = DateTime.utc(sd.year, sd.month, sd.day).difference(gridStart).inDays;
+      if (i >= firstIdx && i <= lastIdx) selIdx = i;
+    }
+
+    // Legend: normal = all kinds. A box selected = only the kinds on that
+    // day, with their counts, most to least.
+    final selCount = selIdx == null ? null : days[selIdx];
+    final legendKinds = <String>[
+      for (final k in _countKinds)
+        if (selIdx == null || (selCount?.of(k) ?? 0) > 0) k,
+    ];
+    if (selCount != null) {
+      legendKinds.sort((a, b) {
+        final c = selCount.of(b).compareTo(selCount.of(a));
+        return c != 0 ? c : _countKinds.indexOf(a).compareTo(_countKinds.indexOf(b));
+      });
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Colors legend (default views only)
+        if (kind == null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 0, 4, AppConstants.spaceSm),
+            child: legendKinds.isEmpty
+                ? Text(
+                    'No transactions',
+                    style: TextStyle(fontSize: 11, color: muted),
+                  )
+                : Wrap(
+                    spacing: 12,
+                    runSpacing: 2,
+                    children: [
+                      for (final k in legendKinds)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _dot(_countKindColor(k)),
+                            const SizedBox(width: 5),
+                            Text(
+                              selCount == null
+                                  ? _countKindLabels[k]!
+                                  : '${_countKindLabels[k]} ${selCount.of(k)}',
+                              style: TextStyle(fontSize: 11, color: muted),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+          ),
+        LayoutBuilder(
+          builder: (context, c) {
+            const gap = _TxCountPainter.gap;
+            const pad = _TxCountPainter.pad;
+            final labelW = horizontal ? 0.0 : _labelW;
+            final avail = c.maxWidth - labelW;
+
+            double cellW, cellH, gridW, gridH;
+            if (horizontal) {
+              // 7 columns that fill the whole card.
+              cellW = (avail - pad * 2 - 6 * gap) / 7;
+              cellH = (cellW * 0.7).clamp(18.0, 34.0).toDouble();
+              gridW = avail;
+              gridH = _TxCountPainter.headH +
+                  weeks * cellH +
+                  (weeks - 1) * gap +
+                  pad +
+                  // Room for the bubble that opens below the first row.
+                  (weeks < 3 ? 46 : 0);
+            } else {
+              final fit = (avail - pad * 2 - (weeks - 1) * gap) / weeks;
+              cellW = cellH = fit.clamp(_minCell, _maxCell).toDouble();
+              gridW = weeks * cellW + (weeks - 1) * gap + pad * 2;
+              gridH = _TxCountPainter.headH + 7 * cellH + 6 * gap + pad;
+            }
+
+            final grid = GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapUp: (d) => _onTap(
+                d.localPosition,
+                cellW,
+                cellH,
+                horizontal,
+                weeks,
+                firstIdx,
+                lastIdx,
+                gridStart,
+              ),
+              child: CustomPaint(
+                size: Size(gridW, gridH),
+                painter: _TxCountPainter(
+                  days: days,
+                  gridStart: gridStart,
+                  weeks: weeks,
+                  firstIdx: firstIdx,
+                  lastIdx: lastIdx,
+                  maxTotal: maxTotal,
+                  cellW: cellW,
+                  cellH: cellH,
+                  horizontal: horizontal,
+                  kind: kind,
+                  fg: fg,
+                  selected: selIdx,
+                ),
+              ),
+            );
+
+            if (horizontal) return grid;
+
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _weekdayLabels(cellH, fg),
+                Expanded(
+                  // Long ranges scroll sideways, starting at the newest days.
+                  child: gridW > avail
+                      ? SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          reverse: true,
+                          child: grid,
+                        )
+                      : Align(alignment: Alignment.centerLeft, child: grid),
+                ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
 // ---------- Default (all-graphs) cards ----------
 
 /// Two lines (income + expense). Tap a legend chip to open that kind.
 Widget _dualLineCard(
   List<HistoryEntry> entries,
   Color fg,
-  ValueChanged<String> onOpenKind,
-) {
+  ValueChanged<String> onOpenKind, {
+  _DayLink? link,
+}) {
   final s = AppSettings.instance;
   List<HistoryEntry> of(String k) => [
         for (final e in entries)
@@ -8527,7 +9343,12 @@ Widget _dualLineCard(
                       color: fg.withValues(alpha: AppConstants.mutedAlpha))),
             ),
           )
-        : _TxLineChart(series: series, fg: fg, onOpenKind: onOpenKind),
+        : _TxLineChart(
+            series: series,
+            fg: fg,
+            onOpenKind: onOpenKind,
+            link: link,
+          ),
     title: _ChartTitles.overTime,
   );
 }
@@ -8626,12 +9447,16 @@ class _AnalyticsDefault extends StatelessWidget {
   final List<_AccountStat> stats;
   final List<int> typeOrder;
   final List<HistoryEntry> entries;
+  final List<ReminderItem> reminders;
+  final _HistoryRange range;
   final Color fg;
   final ValueChanged<String> onOpen; // 'net' | 'income' | 'expense'
   const _AnalyticsDefault({
     required this.stats,
     required this.typeOrder,
     required this.entries,
+    required this.reminders,
+    required this.range,
     required this.fg,
     required this.onOpen,
   });
@@ -8639,34 +9464,44 @@ class _AnalyticsDefault extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final muted = fg.withValues(alpha: AppConstants.mutedAlpha);
-    return Padding(
-      padding: const EdgeInsets.all(AppConstants.spaceMd),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => onOpen('net'),
-            child: _chartCard(
-              fg,
-              stats.isEmpty
-                  ? SizedBox(
-                      height: 80,
-                      child: Center(
-                        child: Text('No accounts',
-                            style: TextStyle(color: muted)),
-                      ),
-                    )
-                  : _AccountBars(
-                      groups: _groupStats(stats, typeOrder), fg: fg),
-              title: _ChartTitles.accounts,
+    return _DayLinked(
+      builder: (link) => Padding(
+        padding: const EdgeInsets.all(AppConstants.spaceMd),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => onOpen('net'),
+              child: _chartCard(
+                fg,
+                stats.isEmpty
+                    ? SizedBox(
+                        height: 80,
+                        child: Center(
+                          child: Text('No accounts',
+                              style: TextStyle(color: muted)),
+                        ),
+                      )
+                    : _AccountBars(
+                        groups: _groupStats(stats, typeOrder), fg: fg),
+                title: _ChartTitles.accounts,
+              ),
             ),
-          ),
-          const SizedBox(height: AppConstants.spaceMd),
-          _dualLineCard(entries, fg, onOpen),
-          const SizedBox(height: AppConstants.spaceMd),
-          _dualPieCard(entries, fg, onOpen),
-        ],
+            const SizedBox(height: AppConstants.spaceMd),
+            _txCountCard(
+              entries: entries,
+              reminders: reminders,
+              range: range,
+              fg: fg,
+              link: link,
+            ),
+            const SizedBox(height: AppConstants.spaceMd),
+            _dualLineCard(entries, fg, onOpen, link: link),
+            const SizedBox(height: AppConstants.spaceMd),
+            _dualPieCard(entries, fg, onOpen),
+          ],
+        ),
       ),
     );
   }
@@ -8678,11 +9513,13 @@ class _AnalyticsDefault extends StatelessWidget {
 class _KindCharts extends StatelessWidget {
   final List<HistoryEntry> entries;
   final String kind;
+  final _HistoryRange range;
   final Color fg;
   final ValueChanged<_CatSlice>? onOpenCategory;
   const _KindCharts({
     required this.entries,
     required this.kind,
+    required this.range,
     required this.fg,
     this.onOpenCategory,
   });
@@ -8706,25 +9543,39 @@ class _KindCharts extends StatelessWidget {
       );
     }
     final label = kind == 'income' ? 'Income' : 'Expense';
-    return Padding(
-      padding: const EdgeInsets.all(AppConstants.spaceMd),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _chartCard(
-            fg,
-            _TxLineChart(series: [_Series(kind, list, color)], fg: fg),
-            title: _ChartTitles.kindOverTime(label),
-            dot: color,
-          ),
-          const SizedBox(height: AppConstants.spaceMd),
-          _chartCard(
-            fg,
-            _CategoryPie(entries: list, fg: fg, onOpen: onOpenCategory),
-            title: _ChartTitles.kindByCategory(label),
-            dot: color,
-          ),
-        ],
+    return _DayLinked(
+      builder: (link) => Padding(
+        padding: const EdgeInsets.all(AppConstants.spaceMd),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _txCountCard(
+              entries: list,
+              range: range,
+              kind: kind,
+              fg: fg,
+              link: link,
+            ),
+            const SizedBox(height: AppConstants.spaceMd),
+            _chartCard(
+              fg,
+              _TxLineChart(
+                series: [_Series(kind, list, color)],
+                fg: fg,
+                link: link,
+              ),
+              title: _ChartTitles.kindOverTime(label),
+              dot: color,
+            ),
+            const SizedBox(height: AppConstants.spaceMd),
+            _chartCard(
+              fg,
+              _CategoryPie(entries: list, fg: fg, onOpen: onOpenCategory),
+              title: _ChartTitles.kindByCategory(label),
+              dot: color,
+            ),
+          ],
+        ),
       ),
     );
   }
