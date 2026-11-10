@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -14,6 +15,253 @@ import '../../core/screens/settings.dart';
 import '../../core/themes.dart';
 import '../../core/utils.dart';
 import '../../database/helper.dart';
+
+/// Look of one account: its color, plus either a pattern or a picture
+/// for the card. A picture wins over a pattern.
+class AccountTheme {
+  final int? color; // ARGB
+  final String? pattern;
+  final String? imagePath;
+  const AccountTheme({this.color, this.pattern, this.imagePath});
+
+  static const AccountTheme none = AccountTheme();
+
+  bool get isDefault => color == null && pattern == null && imagePath == null;
+
+  String encode() =>
+      jsonEncode({'color': color, 'pattern': pattern, 'image': imagePath});
+
+  factory AccountTheme.decode(String? raw) {
+    if (raw == null) return none;
+    try {
+      final m = jsonDecode(raw) as Map;
+      return AccountTheme(
+        color: (m['color'] as num?)?.toInt(),
+        pattern: m['pattern'] as String?,
+        imagePath: m['image'] as String?,
+      );
+    } catch (_) {
+      return none;
+    }
+  }
+}
+
+/// Every account's theme. Saved in the `settings` table (so it is in
+/// backups) and reloaded whenever the database changes (for example after
+/// an import).
+class _AccountThemes extends ChangeNotifier {
+  _AccountThemes() {
+    DatabaseHelper.instance.changes.addListener(reload);
+    reload();
+  }
+
+  static const String _prefix = 'accountTheme.';
+  Map<int, AccountTheme> _themes = {};
+  int _version = 0; // lets a save win over a reload that started earlier
+
+  AccountTheme of(int accountId) => _themes[accountId] ?? AccountTheme.none;
+
+  Future<void> reload() async {
+    final started = _version;
+    try {
+      final all = await DatabaseHelper.instance.getAllSettings();
+      if (started != _version) return;
+      final next = <int, AccountTheme>{};
+      for (final e in all.entries) {
+        if (!e.key.startsWith(_prefix)) continue;
+        final id = int.tryParse(e.key.substring(_prefix.length));
+        if (id != null) next[id] = AccountTheme.decode(e.value);
+      }
+      _themes = next;
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  Future<void> set(int accountId, AccountTheme theme) async {
+    _version++;
+    if (theme.isDefault) {
+      _themes.remove(accountId);
+    } else {
+      _themes[accountId] = theme;
+    }
+    notifyListeners();
+    try {
+      final db = DatabaseHelper.instance;
+      if (theme.isDefault) {
+        await db.removeSetting('$_prefix$accountId');
+      } else {
+        await db.setSetting('$_prefix$accountId', theme.encode());
+      }
+    } catch (_) {
+    } finally {
+      _version++;
+    }
+  }
+}
+
+final _accountThemes = _AccountThemes();
+
+/// Background of the list area under an account's header: a bit darker
+/// when the panel color is light, a bit lighter when it is dark.
+Color _contentTone(Color panel) {
+  final light = panel.computeLuminance() > 0.5;
+  return Color.alphaBlend(
+    (light ? Colors.black : Colors.white).withValues(alpha: light ? 0.10 : 0.12),
+    panel,
+  );
+}
+
+const List<String> _patternNames = [
+  'Dots', 'Stripes', 'Grid', 'Waves', 'Diamonds', 'Circles',
+];
+
+/// Colors + backdrop of a card, worked out from the account's theme.
+class _CardLook {
+  final Color bg;
+  final Color fg;
+  final String? image;
+  final String? pattern;
+  const _CardLook._(this.bg, this.fg, this.image, this.pattern);
+
+  factory _CardLook.of(BuildContext context, AccountTheme t) {
+    final accent = AppTheme.accentOf(context);
+    final img = t.imagePath;
+    if (img != null && File(img).existsSync()) {
+      // Picture: dark scrim, so the text is white.
+      return const _CardLook._(Colors.black, Colors.white, null, null)
+          ._withImage(img);
+    }
+    final c = t.color != null ? Color(t.color!) : null;
+    return _CardLook._(
+      c ?? accent.background,
+      c != null ? AppTheme.onColor(c) : accent.foreground,
+      null,
+      t.pattern,
+    );
+  }
+
+  _CardLook _withImage(String path) => _CardLook._(bg, fg, path, null);
+}
+
+/// Picture / pattern layers that sit behind the card's content.
+List<Widget> _cardBackdrop(_CardLook look) => [
+      if (look.image != null) ...[
+        Positioned.fill(
+          child: Image.file(
+            File(look.image!),
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+          ),
+        ),
+        Positioned.fill(
+          child: ColoredBox(color: Colors.black.withValues(alpha: 0.35)),
+        ),
+      ] else if (look.pattern != null)
+        Positioned.fill(
+          child: CustomPaint(
+            painter: _PatternPainter(
+              look.pattern!,
+              look.fg.withValues(alpha: 0.14),
+            ),
+          ),
+        ),
+    ];
+
+class _PatternPainter extends CustomPainter {
+  final String pattern;
+  final Color color;
+  const _PatternPainter(this.pattern, this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final k = size.width / 306; // pattern scales with the card
+    final line = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5 * k;
+    final fill = Paint()..color = color;
+    final w = size.width, h = size.height;
+
+    switch (pattern) {
+      case 'Dots':
+        final s = 22 * k;
+        for (var y = s / 2; y < h; y += s) {
+          for (var x = s / 2; x < w; x += s) {
+            canvas.drawCircle(Offset(x, y), 2.5 * k, fill);
+          }
+        }
+      case 'Stripes':
+        final s = 20 * k;
+        for (var x = -h; x < w; x += s) {
+          canvas.drawLine(Offset(x, h), Offset(x + h, 0), line);
+        }
+      case 'Grid':
+        final s = 24 * k;
+        for (var x = 0.0; x < w; x += s) {
+          canvas.drawLine(Offset(x, 0), Offset(x, h), line);
+        }
+        for (var y = 0.0; y < h; y += s) {
+          canvas.drawLine(Offset(0, y), Offset(w, y), line);
+        }
+      case 'Waves':
+        final s = 22 * k;
+        for (var y = s / 2; y < h + s; y += s) {
+          final path = Path()..moveTo(0, y);
+          for (var x = 0.0; x <= w; x += 4) {
+            path.lineTo(x, y + math.sin(x / (18 * k) * math.pi) * 6 * k);
+          }
+          canvas.drawPath(path, line);
+        }
+      case 'Diamonds':
+        final s = 32 * k;
+        for (var y = 0.0; y < h + s; y += s) {
+          for (var x = 0.0; x < w + s; x += s) {
+            final c = Offset(x, y);
+            canvas.drawPath(
+              Path()
+                ..moveTo(c.dx, c.dy - s / 2)
+                ..lineTo(c.dx + s / 2, c.dy)
+                ..lineTo(c.dx, c.dy + s / 2)
+                ..lineTo(c.dx - s / 2, c.dy)
+                ..close(),
+              line,
+            );
+          }
+        }
+      case 'Circles':
+        final s = 24 * k;
+        final corner = Offset(w, h);
+        final maxR = math.sqrt(w * w + h * h);
+        for (var r = s; r < maxR; r += s) {
+          canvas.drawCircle(corner, r, line);
+        }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_PatternPainter o) =>
+      o.pattern != pattern || o.color != color;
+}
+
+/// Copies a picked picture into the app's own folder.
+Future<String> _storeThemeImage(String source) async {
+  final dir = await getApplicationDocumentsDirectory();
+  final folder = Directory(p.join(dir.path, 'account_themes'));
+  if (!await folder.exists()) await folder.create(recursive: true);
+  final target = p.join(
+    folder.path,
+    '${DateTime.now().microsecondsSinceEpoch}${p.extension(source)}',
+  );
+  await File(source).copy(target);
+  return target;
+}
+
+void _deleteThemeImage(String? path) {
+  if (path == null) return;
+  try {
+    File(path).delete();
+  } catch (_) {}
+}
 
 /// One account as shown on a card.
 class _AccountCardData {
@@ -649,10 +897,49 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
   List<CategoryItem> _categories = const [];
   CategoryItem? _type;
   CategoryItem? _category;
+  AccountTheme _theme = AccountTheme.none;
+  String? _savedImage; // picture the saved theme already has
   bool _saving = false;
+  bool _didSave = false;
   String? _error;
 
   bool get _editing => widget.account != null;
+
+  /// Background / glyph color of this sheet (follows the chosen account color).
+  (Color, Color) _colors() {
+    final accent = AppTheme.accentOf(context);
+    final custom = _theme.color != null;
+    final bg = custom ? Color(_theme.color!) : accent.background;
+    return (bg, custom ? AppTheme.onColor(bg) : accent.foreground);
+  }
+
+  Future<void> _pickType() async {
+    final (bg, fg) = _colors();
+    final picked = await _pickItem(
+      context,
+      title: 'Type',
+      items: _types,
+      selected: _type,
+      iconFor: (item) => _iconForType(item.name, item.icon),
+      background: bg,
+      foreground: fg,
+    );
+    if (picked != null) setState(() => _type = picked);
+  }
+
+  Future<void> _pickCategory() async {
+    final (bg, fg) = _colors();
+    final picked = await _pickItem(
+      context,
+      title: 'Category',
+      items: _categories,
+      selected: _category,
+      iconFor: (item) => _iconForCategory(item.icon),
+      background: bg,
+      foreground: fg,
+    );
+    if (picked != null) setState(() => _category = picked);
+  }
 
   @override
   void initState() {
@@ -662,6 +949,8 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
       _name.text = a.name;
       _noteTitle.text = a.noteTitle ?? '';
       _noteBody.text = a.noteBody ?? '';
+      _theme = _accountThemes.of(a.id);
+      _savedImage = _theme.imagePath;
     }
     for (final c in [_name, _balance, _noteTitle, _noteBody]) {
       c.addListener(_refresh);
@@ -671,6 +960,10 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
 
   @override
   void dispose() {
+    // A picture picked but never saved is not kept.
+    if (!_didSave && _theme.imagePath != _savedImage) {
+      _deleteThemeImage(_theme.imagePath);
+    }
     for (final c in [_name, _balance, _noteTitle, _noteBody]) {
       c.removeListener(_refresh);
       c.dispose();
@@ -721,6 +1014,7 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
     });
     try {
       final a = widget.account;
+      final int id;
       if (a != null) {
         await DatabaseHelper.instance.updateAccount(
           id: a.id,
@@ -730,8 +1024,9 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
           noteTitle: _noteTitle.text,
           noteBody: _noteBody.text,
         );
+        id = a.id;
       } else {
-        await DatabaseHelper.instance.addAccount(
+        id = await DatabaseHelper.instance.addAccount(
           name: _name.text,
           typeId: _type!.id,
           categoryId: _category!.id,
@@ -740,6 +1035,12 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
           noteBody: _noteBody.text,
         );
       }
+      // The theme is saved together with the account.
+      await _accountThemes.set(id, _theme);
+      if (_savedImage != null && _savedImage != _theme.imagePath) {
+        _deleteThemeImage(_savedImage); // the replaced picture
+      }
+      _didSave = true;
       if (mounted) Navigator.of(context).pop();
     } on Failure catch (f) {
       if (mounted) setState(() => _error = f.message);
@@ -764,7 +1065,14 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
       _error = null;
     });
     try {
-      await DatabaseHelper.instance.softDeleteAccount(widget.account!.id);
+      final id = widget.account!.id;
+      final image = _accountThemes.of(id).imagePath;
+
+      await DatabaseHelper.instance.softDeleteAccount(id);
+
+      _accountThemes.set(id, AccountTheme.none);
+      _deleteThemeImage(image);
+
       if (mounted) Navigator.of(context).pop();
     } on Failure catch (f) {
       if (mounted) setState(() => _error = f.message);
@@ -775,26 +1083,60 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
     }
   }
 
-  Future<void> _pickType() async {
-    final picked = await _pickItem(
-      context,
-      title: 'Type',
-      items: _types,
-      selected: _type,
-      iconFor: (item) => _iconForType(item.name, item.icon),
-    );
-    if (picked != null) setState(() => _type = picked);
+Future<void> _pickTheme() {
+  return _showAccountThemeSheet(
+    context,
+    initial: _theme,
+    onChanged: (next) {
+      // Delete the replaced picture now, unless it is the one the account
+      // already has saved (that one is removed in _save()).
+      final old = _theme.imagePath;
+      if (old != null && old != next.imagePath && old != _savedImage) {
+        _deleteThemeImage(old);
+      }
+      if (mounted) setState(() => _theme = next);
+    },
+  );
+}
+
+  /// null = nothing chosen yet.
+  String? get _themeText {
+    if (_theme.imagePath != null) return 'Image';
+    if (_theme.pattern != null) return _theme.pattern!;
+    if (_theme.color != null) return 'Custom color';
+    return null;
   }
 
-  Future<void> _pickCategory() async {
-    final picked = await _pickItem(
-      context,
-      title: 'Category',
-      items: _categories,
-      selected: _category,
-      iconFor: (item) => _iconForCategory(item.icon),
+  Widget _themeField(Color fg) {
+    final text = _themeText;
+    return InkWell(
+      onTap: _pickTheme,
+      borderRadius: BorderRadius.circular(_fieldRadius),
+      child: InputDecorator(
+        isEmpty: false,
+        decoration: _decoration(
+          fg,
+          // No label above until something is chosen.
+          label: text == null ? null : 'Account Theme',
+          floating: FloatingLabelBehavior.always,
+          icon: Icon(Icons.style_outlined, color: fg),
+        ),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            text ?? 'Account Theme',
+            maxLines: 1,
+            style: TextStyle(
+              color: text == null
+                  ? fg.withValues(alpha: AppConstants.mutedAlpha)
+                  : fg,
+              fontSize: 16,
+            ),
+          ),
+        ),
+      ),
     );
-    if (picked != null) setState(() => _category = picked);
   }
 
   /// The biggest font size (down to the minimum) at which the typed
@@ -822,7 +1164,7 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
   /// Outlined box look shared by every field (glyph-colored outline).
   InputDecoration _decoration(
     Color fg, {
-    required String label,
+    required String? label,
     required Widget icon,
     Widget? suffix,
     FloatingLabelBehavior? floating,
@@ -890,10 +1232,22 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final base = Theme.of(context);
     final accent = AppTheme.accentOf(context);
-    final fg = accent.foreground;
-    final bg = accent.background;
+    final custom = _theme.color != null;
+    final bg = custom ? Color(_theme.color!) : accent.background;
+    final fg = custom ? AppTheme.onColor(bg) : accent.foreground;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: _form(context, fg, bg),
+    );
+  }
+
+  Widget _form(BuildContext context, Color fg, Color bg) {
+    final base = Theme.of(context);
     final muted = fg.withValues(alpha: AppConstants.mutedAlpha);
 
     return Theme(
@@ -963,48 +1317,70 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
               ),
               const SizedBox(height: AppConstants.spaceMd),
 
-              // Account name
-              TextField(
-                controller: _name,
-                style: TextStyle(color: fg, fontSize: 16),
-                cursorColor: fg,
-                textCapitalization: TextCapitalization.words,
-                textInputAction: TextInputAction.next,
-                decoration: _decoration(
-                  fg,
-                  label: 'Account Name',
-                  icon: Icon(Icons.label_outline, color: fg),
-                ),
+              // Account name (theme sits beside it when editing)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 5,
+                    child: TextField(
+                      controller: _name,
+                      style: TextStyle(color: fg, fontSize: 16),
+                      cursorColor: fg,
+                      textCapitalization: TextCapitalization.words,
+                      textInputAction: TextInputAction.next,
+                      decoration: _decoration(
+                        fg,
+                        label: 'Account Name',
+                        icon: Icon(Icons.label_outline, color: fg),
+                      ),
+                    ),
+                  ),
+                  if (_editing) ...[
+                    const SizedBox(width: _gap),
+                    Expanded(flex: 4, child: _themeField(fg)),
+                  ],
+                ],
               ),
               const SizedBox(height: _gap),
 
-              // Initial balance (new accounts only): no length limit,
-              // the text shrinks to fit.
+              // Initial balance + theme beside it (new accounts only)
               if (!_editing) ...[
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final size = _balanceFontSize(constraints.maxWidth);
-                    return TextField(
-                      controller: _balance,
-                      style: TextStyle(color: fg, fontSize: size),
-                      cursorColor: fg,
-                      maxLines: 1,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 5,
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final size = _balanceFontSize(constraints.maxWidth);
+                          return TextField(
+                            controller: _balance,
+                            style: TextStyle(color: fg, fontSize: size),
+                            cursorColor: fg,
+                            maxLines: 1,
+                            keyboardType:
+                                const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            inputFormatters: [
+                              FilteringTextInputFormatter.allow(
+                                RegExp(r'^\d*\.?\d{0,2}'),
+                              ),
+                            ],
+                            decoration: _decoration(
+                              fg,
+                              label:
+                                  'Initial Balance (${AppConstants.currencySymbol})',
+                              icon: Icon(Icons.payments_outlined, color: fg),
+                            ),
+                          );
+                        },
                       ),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(
-                          RegExp(r'^\d*\.?\d{0,2}'),
-                        ),
-                      ],
-                      decoration: _decoration(
-                        fg,
-                        label:
-                            'Initial Balance (${AppConstants.currencySymbol})',
-                        icon: Icon(Icons.payments_outlined, color: fg),
-                      ),
-                    );
-                  },
+                    ),
+                    const SizedBox(width: _gap),
+                    Expanded(flex: 4, child: _themeField(fg)),
+                  ],
                 ),
                 const SizedBox(height: _gap),
               ],
@@ -1032,45 +1408,6 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
                     ),
                   ),
                 ],
-              ),
-              const SizedBox(height: _gap),
-
-              // Card theme (empty for now)
-              InkWell(
-                onTap: () {}, // TODO: card theme picker
-                borderRadius: BorderRadius.circular(_fieldRadius),
-                child: InputDecorator(
-                  decoration: _decoration(
-                    fg,
-                    label: 'Card Theme',
-                    vPad: _selectorVPad,
-                    floating: FloatingLabelBehavior.always,
-                    icon: Icon(Icons.style_outlined, color: fg),
-                    suffix: Icon(Icons.chevron_right, color: fg),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 46,
-                        height: 24,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(8),
-                          gradient: LinearGradient(
-                            colors: [
-                              fg.withValues(alpha: 0.35),
-                              fg.withValues(alpha: 0.15),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: AppConstants.spaceSmMd),
-                      Text(
-                        'Classic',
-                        style: TextStyle(color: fg, fontSize: 16),
-                      ),
-                    ],
-                  ),
-                ),
               ),
               const SizedBox(height: _gap),
 
@@ -1350,6 +1687,306 @@ Future<bool> _confirmDeleteAccount(
   return ok ?? false;
 }
 
+/// Account Theme pop-up: Account Color + Card Theme (pattern / camera /
+/// gallery). Pops the chosen [AccountTheme] on Apply.
+Future<void> _showAccountThemeSheet(
+  BuildContext context, {
+  required AccountTheme initial,
+  required ValueChanged<AccountTheme> onChanged,
+}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    backgroundColor: Colors.transparent, // the sheet paints its own color
+    barrierColor: AppConstants.popupBarrier,
+    builder: (_) => _AccountThemeSheet(initial: initial, onChanged: onChanged),
+  );
+}
+
+/// Account Theme bottom sheet: Account Color + Card Theme (pattern / camera /
+/// gallery). Every change is sent to [onChanged] right away; the account
+/// popup's Save button is what keeps it.
+class _AccountThemeSheet extends StatefulWidget {
+  final AccountTheme initial;
+  final ValueChanged<AccountTheme> onChanged;
+  const _AccountThemeSheet({required this.initial, required this.onChanged});
+
+  @override
+  State<_AccountThemeSheet> createState() => _AccountThemeSheetState();
+}
+
+class _AccountThemeSheetState extends State<_AccountThemeSheet> {
+  late int? _color = widget.initial.color;
+  late String? _pattern = widget.initial.pattern;
+  late String? _image = widget.initial.imagePath;
+  String? _error;
+
+  void _emit() => widget.onChanged(
+        AccountTheme(color: _color, pattern: _pattern, imagePath: _image),
+      );
+
+  /// Same colors as the account popup behind this sheet.
+  (Color, Color) _colors() {
+    final accent = AppTheme.accentOf(context);
+    final custom = _color != null;
+    final bg = custom ? Color(_color!) : accent.background;
+    return (bg, custom ? AppTheme.onColor(bg) : accent.foreground);
+  }
+
+  Future<void> _pickColor() async {
+    final accent = AppTheme.accentOf(context);
+    final picked = await showDialog<Color>(
+      context: context,
+      barrierColor: AppConstants.popupBarrier,
+      builder: (_) => ColorPickerDialog(
+        title: 'Account Color',
+        icon: Icons.palette_outlined,
+        initial: _color != null ? Color(_color!) : accent.background,
+      ),
+    );
+    if (picked != null && mounted) {
+      setState(() => _color = picked.toARGB32());
+      _emit();
+    }
+  }
+
+  Future<void> _pickCardTheme() async {
+    final (bg, fg) = _colors();
+    final choice = await _pickItem(
+      context,
+      title: 'Card Theme',
+      background: bg,
+      foreground: fg,
+      items: const [
+        CategoryItem(0, 'Pattern'),
+        CategoryItem(1, 'Camera'),
+        CategoryItem(2, 'Gallery'),
+        CategoryItem(3, 'None'),
+      ],
+      iconFor: (item) => switch (item.id) {
+        0 => Icons.grid_on,
+        1 => Icons.photo_camera_outlined,
+        2 => Icons.photo_library_outlined,
+        _ => Icons.block,
+      },
+    );
+    if (choice == null || !mounted) return;
+
+    switch (choice.id) {
+      case 0:
+        final picked = await _pickItem(
+          context,
+          title: 'Pattern',
+          background: bg,
+          foreground: fg,
+          items: [
+            for (var i = 0; i < _patternNames.length; i++)
+              CategoryItem(i, _patternNames[i]),
+          ],
+          iconFor: (_) => Icons.grid_on,
+        );
+        if (picked == null || !mounted) return;
+        setState(() {
+          _pattern = _patternNames[picked.id];
+          _image = null;
+          _error = null;
+        });
+        _emit();
+      case 3:
+        setState(() {
+          _pattern = null;
+          _image = null;
+        });
+        _emit();
+      default:
+        try {
+          final file = await ImagePicker().pickImage(
+            source: choice.id == 1 ? ImageSource.camera : ImageSource.gallery,
+            imageQuality: 80,
+            maxWidth: 1600,
+          );
+          if (file == null) return;
+          final saved = await _storeThemeImage(file.path);
+          if (!mounted) {
+            _deleteThemeImage(saved); // sheet closed while picking
+            return;
+          }
+          setState(() {
+            _image = saved;
+            _pattern = null;
+            _error = null;
+          });
+          _emit();
+        } catch (_) {
+          if (mounted) setState(() => _error = 'Couldn\'t get that image.');
+        }
+    }
+  }
+
+  String get _cardThemeText {
+    if (_image != null) return 'Image';
+    if (_pattern != null) return 'Pattern  ·  $_pattern';
+    return 'None';
+  }
+
+  Widget _row({
+    required Color fg,
+    required IconData icon,
+    required String label,
+    required String value,
+    required Widget trailing,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: fg.withValues(alpha: AppConstants.tintAlpha),
+      borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppConstants.spaceMd,
+            vertical: AppConstants.spaceSmMd,
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: fg, size: 22),
+              const SizedBox(width: AppConstants.spaceSmMd),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: fg,
+                      ),
+                    ),
+                    Text(
+                      value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: fg.withValues(alpha: AppConstants.mutedAlpha),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              trailing,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final (bg, fg) = _colors();
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(
+          AppConstants.spaceLg,
+          AppConstants.spaceSmMd,
+          AppConstants.spaceLg,
+          AppConstants.spaceLg,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Drag handle
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: fg.withValues(alpha: AppConstants.borderAlpha),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+              const SizedBox(height: AppConstants.spaceLg),
+              Text(
+                'Account Theme',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: fg,
+                    ),
+              ),
+              const SizedBox(height: AppConstants.spaceMd),
+            // Account color
+            _row(
+              fg: fg,
+              icon: Icons.palette_outlined,
+              label: 'Account Color',
+              value: _color == null ? 'Default' : 'Custom',
+              onTap: _pickColor,
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_color != null)
+                    InkResponse(
+                      onTap: () {
+                        setState(() => _color = null);
+                        _emit();
+                      },
+                      radius: 18,
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: Icon(Icons.close, size: 18, color: fg),
+                      ),
+                    ),
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: _color != null ? Color(_color!) : bg,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: fg.withValues(alpha: AppConstants.borderAlpha),
+                        width: 1.5,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppConstants.spaceSm),
+
+            // Card theme: pattern / camera / gallery
+            _row(
+              fg: fg,
+              icon: Icons.credit_card,
+              label: 'Card Theme',
+              value: _cardThemeText,
+              onTap: _pickCardTheme,
+              trailing: Icon(Icons.chevron_right, color: fg),
+            ),
+
+            if (_error != null) ...[
+              const SizedBox(height: AppConstants.spaceSm),
+              Text(_error!, style: TextStyle(fontSize: 13, color: fg)),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
 /// Second bottom sheet: a wrap of chips (icon + name) to pick one item.
 Future<CategoryItem?> _pickItem(
   BuildContext context, {
@@ -1357,14 +1994,17 @@ Future<CategoryItem?> _pickItem(
   required List<CategoryItem> items,
   required IconData Function(CategoryItem) iconFor,
   CategoryItem? selected,
+  Color? background, // new
+  Color? foreground, // new
 }) {
   final base = Theme.of(context);
   final accent = AppTheme.accentOf(context);
-  final fg = accent.foreground;
+  final fg = foreground ?? accent.foreground;
 
   return showModalBottomSheet<CategoryItem>(
     context: context,
-    backgroundColor: accent.background,
+    backgroundColor: background ?? accent.background,
+    // ...everything else stays the same
     barrierColor: AppConstants.popupBarrier,
     isScrollControlled: true,
     useSafeArea: true,
@@ -1726,62 +2366,67 @@ class _FlipAccountCardState extends State<_FlipAccountCard>
 
   @override
   Widget build(BuildContext context) {
-    final accent = AppTheme.accentOf(context);
-
-    // The text size is worked out here (a small adjustment around the
-    // "Big" size), so the full font size scaling is switched off inside
-    // the card to avoid scaling the text twice.
     final textFactor = _textFactorFor(context);
 
-    return MediaQuery(
-      data: MediaQuery.of(context).copyWith(textScaler: TextScaler.noScaling),
-      child: GestureDetector(
-        onTap: _flip,
-        onLongPress: widget.allowLongPress
-            ? () {
-                HapticFeedback.mediumImpact();
-                _showAccountView(
-                  context,
-                  widget.account,
-                  hidden: widget.hidden,
-                );
-              }
-            : null,
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, _) {
-            final curved = Curves.easeInOut.transform(_controller.value);
-            final angle = curved * math.pi;
-            final isFront = angle < math.pi / 2;
-
-            return Transform(
-              alignment: Alignment.center,
-              transform: Matrix4.identity()
-                ..setEntry(3, 2, 0.001)
-                ..rotateY(angle),
-              child: isFront
-                  ? _CardFront(
-                      account: widget.account,
+    return ListenableBuilder(
+      listenable: Listenable.merge([AppSettings.instance, _accountThemes]),
+      builder: (context, _) {
+        final look = _CardLook.of(
+          context,
+          _accountThemes.of(widget.account.id),
+        );
+        return MediaQuery(
+          data: MediaQuery.of(context)
+              .copyWith(textScaler: TextScaler.noScaling),
+          child: GestureDetector(
+            onTap: _flip,
+            onLongPress: widget.allowLongPress
+                ? () {
+                    HapticFeedback.mediumImpact();
+                    _showAccountView(
+                      context,
+                      widget.account,
                       hidden: widget.hidden,
-                      accent: accent,
-                      width: widget.width,
-                      textFactor: textFactor,
-                    )
-                  // The back is turned around so its text isn't mirrored.
-                  : Transform(
-                      alignment: Alignment.center,
-                      transform: Matrix4.identity()..rotateY(math.pi),
-                      child: _CardBack(
-                        account: widget.account,
-                        accent: accent,
-                        width: widget.width,
-                        textFactor: textFactor,
-                      ),
-                    ),
-            );
-          },
-        ),
-      ),
+                    );
+                  }
+                : null,
+            child: AnimatedBuilder(
+              animation: _controller,
+              builder: (context, _) {
+                final curved = Curves.easeInOut.transform(_controller.value);
+                final angle = curved * math.pi;
+                final isFront = angle < math.pi / 2;
+
+                return Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.identity()
+                    ..setEntry(3, 2, 0.001)
+                    ..rotateY(angle),
+                  child: isFront
+                      ? _CardFront(
+                          account: widget.account,
+                          hidden: widget.hidden,
+                          look: look,
+                          width: widget.width,
+                          textFactor: textFactor,
+                        )
+                      // The back is turned around so its text isn't mirrored.
+                      : Transform(
+                          alignment: Alignment.center,
+                          transform: Matrix4.identity()..rotateY(math.pi),
+                          child: _CardBack(
+                            account: widget.account,
+                            look: look,
+                            width: widget.width,
+                            textFactor: textFactor,
+                          ),
+                        ),
+                );
+              },
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -1794,14 +2439,14 @@ class _FlipAccountCardState extends State<_FlipAccountCard>
 class _CardFront extends StatelessWidget {
   final _AccountCardData account;
   final bool hidden;
-  final AppAccent accent;
+  final _CardLook look;
   final double width;
   final double textFactor;
 
   const _CardFront({
     required this.account,
     required this.hidden,
-    required this.accent,
+    required this.look,
     required this.width,
     required this.textFactor,
   });
@@ -1809,7 +2454,7 @@ class _CardFront extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final fg = accent.foreground;
+    final fg = look.fg;
     final u = width / AppConstants.cardSampleWidth;
     final k = u * textFactor; // text size unit
 
@@ -1825,11 +2470,12 @@ class _CardFront extends StatelessWidget {
       height: _cardHeightFor(width),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: accent.background,
+        color: look.bg,
         borderRadius: BorderRadius.circular(40 * u),
       ),
       child: Stack(
         children: [
+          ..._cardBackdrop(look),
           // Icon, top right (the account's category icon)
           Positioned(
             top: 29 * u,
@@ -1934,13 +2580,13 @@ class _CardFront extends StatelessWidget {
 /// slightly with the font size like the front.
 class _CardBack extends StatelessWidget {
   final _AccountCardData account;
-  final AppAccent accent;
+  final _CardLook look;
   final double width;
   final double textFactor;
 
   const _CardBack({
     required this.account,
-    required this.accent,
+    required this.look,
     required this.width,
     required this.textFactor,
   });
@@ -1948,7 +2594,7 @@ class _CardBack extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final fg = accent.foreground;
+    final fg = look.fg;
     final u = width / AppConstants.cardSampleWidth;
     final k = u * textFactor; // text size unit
 
@@ -1960,11 +2606,12 @@ class _CardBack extends StatelessWidget {
       height: _cardHeightFor(width),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: accent.background,
+        color: look.bg,
         borderRadius: BorderRadius.circular(40 * u),
       ),
       child: Stack(
         children: [
+          ..._cardBackdrop(look),
           // The black band, the same on every card.
           Positioned(
             top: 58 * u,
@@ -2413,6 +3060,13 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
 
   bool get _catMode => widget.category != null;
 
+  /// Panel color: the account's own color, or the app accent.
+  Color _bgColor(BuildContext context) {
+    final a = _account;
+    final t = a == null ? null : _accountThemes.of(a.id).color;
+    return t != null ? Color(t) : AppTheme.accentOf(context).background;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -2531,10 +3185,19 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
 
   /// Opens the date picker used by the transaction history.
   Future<void> _pickRange() async {
+    final accent = AppTheme.accentOf(context);
+    final bg = _bgColor(context);
+    final custom = bg != accent.background;
+    final fg = custom ? AppTheme.onColor(bg) : accent.foreground;
+
     final picked = await showDialog<_HistoryRange>(
       context: context,
       barrierColor: AppConstants.popupBarrier,
-      builder: (_) => _RangeDialog(initial: _range),
+      builder: (_) => _RangeDialog(
+        initial: _range,
+        background: bg,
+        foreground: fg,
+      ),
     );
     if (picked == null || !mounted) return;
     setState(() => _range = picked);
@@ -2924,7 +3587,6 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
   Widget _entryRow(HistoryEntry e, Color fg) {
     final s = AppSettings.instance;
     final theme = Theme.of(context);
-    final accent = AppTheme.accentOf(context);
     final k = _fontScale(context).clamp(0.8, 1.3).toDouble();
     final isTransfer = e.type == 'transfer';
     final color = isTransfer
@@ -2936,7 +3598,7 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
         : e.accountName;
 
     final card = Material(
-      color: _lighter(accent.background),
+      color: _contentTone(_bgColor(context)),
       borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -3094,7 +3756,7 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
   Widget build(BuildContext context) {
     // Rebuilds when a Specific Color changes.
     return ListenableBuilder(
-      listenable: AppSettings.instance,
+      listenable: Listenable.merge([AppSettings.instance, _accountThemes]),
       builder: (context, _) => _buildSheet(context),
     );
   }
@@ -3188,7 +3850,9 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
 
   Widget _buildSheet(BuildContext context) {
     final accent = AppTheme.accentOf(context);
-    final fg = accent.foreground;
+    final bg = _bgColor(context);
+    final custom = bg != accent.background;
+    final fg = custom ? AppTheme.onColor(bg) : accent.foreground;
     final screenW = MediaQuery.sizeOf(context).width;
     final cardW = math.min(_cardWidthFor(context) * 1.25, screenW - 32);
     final cardH = _cardHeightFor(cardW);
@@ -3249,7 +3913,7 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
                   height: panelH,
                   clipBehavior: Clip.antiAlias,
                   decoration: BoxDecoration(
-                    color: accent.background,
+                    color: bg,
                     borderRadius: const BorderRadius.vertical(
                       top: Radius.circular(28),
                     ),
@@ -3304,7 +3968,7 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
                       ),
                       Expanded(
                         child: ColoredBox(
-                          color: _lighter(accent.background),
+                          color: _contentTone(bg),
                           child: ListView(
                             padding: EdgeInsets.only(
                               bottom: bottomInset + AppConstants.spaceMd,
@@ -5211,7 +5875,13 @@ class _ScallopPainter extends CustomPainter {
 
 class _RangeDialog extends StatefulWidget {
   final _HistoryRange initial;
-  const _RangeDialog({required this.initial});
+  final Color? background; // new
+  final Color? foreground; // new
+  const _RangeDialog({
+    required this.initial,
+    this.background,
+    this.foreground,
+  });
 
   @override
   State<_RangeDialog> createState() => _RangeDialogState();
@@ -5599,8 +6269,8 @@ class _RangeDialogState extends State<_RangeDialog> {
   @override
   Widget build(BuildContext context) {
     final accent = AppTheme.accentOf(context);
-    final fg = accent.foreground;
-    final bg = accent.background;
+    final fg = widget.foreground ?? accent.foreground;
+    final bg = widget.background ?? accent.background;
 
     return Dialog(
       backgroundColor: bg,
