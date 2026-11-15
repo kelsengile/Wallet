@@ -131,13 +131,15 @@ class _DatabaseScreenState extends State<DatabaseScreen> {
       title: 'Clear all data',
       message: 'This permanently deletes every account, transaction and '
           'category (including the trash) and resets the database to its '
-          'original configuration. This can\'t be undone.',
+          'original configuration and puts all colors and themes back to '
+          'default. This can\'t be undone.',
       confirmLabel: 'Clear & reset',
     );
     if (!ok) return;
 
     await _run(() async {
       await _db.resetDatabase();
+      await AppSettings.instance.load();
       _say('Database reset to its original configuration.');
     });
   }

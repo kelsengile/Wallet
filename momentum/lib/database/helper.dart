@@ -7,6 +7,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/constants.dart';
 import '../core/failures.dart';
@@ -188,6 +189,72 @@ class HistoryEntry {
 class DatabaseHelper {
   DatabaseHelper._();
   static final DatabaseHelper instance = DatabaseHelper._();
+
+  /// Appearance values kept in SharedPreferences that go in a backup.
+  /// Add a key here to back up more.
+  static const _appearancePrefs = <String>[
+    AppConstants.prefTheme,
+    AppConstants.prefColor,
+    AppConstants.prefAccent,
+    AppConstants.prefText,
+    AppConstants.prefIncomeColor,
+    AppConstants.prefExpenseColor,
+    AppConstants.prefTransferColor,
+    AppConstants.prefReminderColor,
+    AppConstants.prefDeleteColor,
+    AppConstants.prefDoneColor,
+  ];
+
+  /// Settings > Appearance / Theme values that Clear all data resets.
+  static const _designPrefs = <String>[
+    ..._appearancePrefs,
+    AppConstants.prefTextSize,
+    AppConstants.prefFontStyle,
+    AppConstants.prefBoldText,
+    AppConstants.prefAnimEnabled,
+    AppConstants.prefAnimSpeed,
+  ];
+
+  Future<void> _clearDesignPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    for (final key in _designPrefs) {
+      await prefs.remove(key);
+    }
+  }
+
+  Future<Map<String, Object?>> _readAppearance() async {
+    final prefs = await SharedPreferences.getInstance();
+    return {
+      for (final key in _appearancePrefs)
+        if (prefs.containsKey(key)) key: prefs.get(key),
+    };
+  }
+
+  /// Puts the backed-up values back. A key missing from the backup means it
+  /// was at its default, so it is cleared. Old backups without an
+  /// "appearance" section leave the current colors alone.
+  Future<void> _writeAppearance(Object? raw) async {
+    if (raw is! Map) return;
+    final prefs = await SharedPreferences.getInstance();
+    for (final key in _appearancePrefs) {
+      if (!raw.containsKey(key)) {
+        await prefs.remove(key);
+        continue;
+      }
+      final value = raw[key];
+      if (value is bool) {
+        await prefs.setBool(key, value);
+      } else if (value is int) {
+        await prefs.setInt(key, value);
+      } else if (value is double) {
+        await prefs.setDouble(key, value);
+      } else if (value is String) {
+        await prefs.setString(key, value);
+      } else if (value is List) {
+        await prefs.setStringList(key, [for (final item in value) '$item']);
+      }
+    }
+  }
 
   /// Screens listen to this and reload when it changes.
   /// Call [notifyChanged] after any insert, update or delete.
@@ -1508,17 +1575,29 @@ class DatabaseHelper {
           whereArgs: [AppConstants.prefIconLibrary],
         ))
           ..._libraryPaths(r['value']),
+        for (final r in await db.query(
+          'settings',
+          columns: ['value'],
+          where: 'name LIKE ?',
+          whereArgs: ['$_themePrefix%'],
+        ))
+          _themeImageOf(r['value']),
       ];
       await _rebuild(db);
       await db.delete(
         'settings',
-        where: 'name LIKE ? OR name = ? OR name LIKE ?',
+        where: 'name LIKE ? OR name = ? OR name LIKE ? OR name LIKE ?',
         whereArgs: [
           '${AppConstants.prefCategoryOrder}%',
           AppConstants.prefTypeOrder,
           'categoryIcons.%',
+          '$_themePrefix%',
         ],
       );
+      for (final key in _designPrefs) {
+        await db.delete('settings', where: 'name = ?', whereArgs: [key]);
+      }
+      await _clearDesignPrefs();
       await _deleteImageFiles(images);
       notifyChanged();
     });
@@ -1591,11 +1670,13 @@ class DatabaseHelper {
           _ => rows,
         };
       }
-      return const JsonEncoder.withIndent('  ').convert({
+      final appearance = await _readAppearance();
+      return JsonEncoder.withIndent('  ').convert({
         'app': AppConstants.exportApp,
         'format': AppConstants.exportFormat,
         'appVersion': AppConstants.appVersion,
         'exportedAt': DateTime.now().toIso8601String(),
+        'appearance': appearance,
         'tables': tables,
       });
     });
@@ -1766,6 +1847,7 @@ class DatabaseHelper {
           'The backup file is damaged or doesn\'t match this app.',
         );
       }
+      await _writeAppearance(decoded['appearance']);
       await _deleteImageFiles(oldImages.where((p) => !keep.contains(p)));
       notifyChanged();
     });
