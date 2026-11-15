@@ -8,6 +8,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/gestures.dart';
+import 'package:installed_apps/installed_apps.dart';
+import 'package:installed_apps/app_info.dart';
 
 import '../core/constants.dart';
 import '../core/failures.dart';
@@ -163,6 +165,98 @@ ShapeBorder _bottomOnly(ShapeBorder shape) {
 }
 
 final _accountThemes = _AccountThemes();
+
+/// The app an account's card button opens.
+class AccountApp {
+  final String package;
+  final String name;
+  const AccountApp(this.package, this.name);
+
+  String encode() => jsonEncode({'package': package, 'name': name});
+
+  static AccountApp? decode(String? raw) {
+    if (raw == null) return null;
+    try {
+      final m = jsonDecode(raw) as Map;
+      final p = m['package'] as String?;
+      if (p == null || p.isEmpty) return null;
+      return AccountApp(p, (m['name'] as String?) ?? p);
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+/// Every account's linked app. Saved in the `settings` table (so it is in
+/// backups) and reloaded whenever the database changes.
+class _AccountApps extends ChangeNotifier {
+  _AccountApps() {
+    DatabaseHelper.instance.changes.addListener(reload);
+    reload();
+  }
+
+  static const String _prefix = 'accountApp.';
+  Map<int, AccountApp> _apps = {};
+  int _version = 0;
+
+  AccountApp? of(int accountId) => _apps[accountId];
+
+  Future<void> reload() async {
+    final started = _version;
+    try {
+      final all = await DatabaseHelper.instance.getAllSettings();
+      if (started != _version) return;
+      final next = <int, AccountApp>{};
+      for (final e in all.entries) {
+        if (!e.key.startsWith(_prefix)) continue;
+        final id = int.tryParse(e.key.substring(_prefix.length));
+        final app = AccountApp.decode(e.value);
+        if (id != null && app != null) next[id] = app;
+      }
+      _apps = next;
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  Future<void> set(int accountId, AccountApp? app) async {
+    _version++;
+    if (app == null) {
+      _apps.remove(accountId);
+    } else {
+      _apps[accountId] = app;
+    }
+    notifyListeners();
+    try {
+      final db = DatabaseHelper.instance;
+      if (app == null) {
+        await db.removeSetting('$_prefix$accountId');
+      } else {
+        await db.setSetting('$_prefix$accountId', app.encode());
+      }
+    } catch (_) {
+    } finally {
+      _version++;
+    }
+  }
+}
+
+final _accountApps = _AccountApps();
+
+/// All installed apps (with icons), loaded once and reused.
+Future<Map<String, Uint8List?>>? _installedAppIcons;
+
+Future<Uint8List?> _appIcon(String package) async {
+  _installedAppIcons ??= () async {
+    try {
+      final apps = await InstalledApps.getInstalledApps(false, true);
+      return {for (final a in apps) a.packageName: a.icon};
+    } catch (_) {
+      return <String, Uint8List?>{};
+    }
+  }();
+  final icons = await _installedAppIcons!;
+  return icons[package];
+}
 
 /// Background of the list area under an account's header: a bit darker
 /// when the panel color is light, a bit lighter when it is dark.
@@ -1368,6 +1462,7 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
       await DatabaseHelper.instance.softDeleteAccount(id);
 
       _accountThemes.set(id, AccountTheme.none);
+      _accountApps.set(id, null);
       _deleteThemeImage(image);
 
       if (mounted) Navigator.of(context).pop();
@@ -3039,6 +3134,285 @@ class _CardFront extends StatelessWidget {
   }
 }
 
+/// Button on the back of a card: opens the app chosen for this account.
+/// Tap = open (or choose, the first time). Long press = change / remove.
+class _CardAppButton extends StatelessWidget {
+  final int accountId;
+  final _CardLook look;
+  final double u;
+  const _CardAppButton({
+    required this.accountId,
+    required this.look,
+    required this.u,
+  });
+
+  void _snack(BuildContext context, String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _choose(BuildContext context) async {
+    final picked = await _showAppPicker(
+      context,
+      background: look.bg,
+      foreground: look.fg,
+    );
+    if (picked == null) return;
+    await _accountApps.set(
+      accountId,
+      AccountApp(picked.packageName, picked.name),
+    );
+  }
+
+  Future<void> _open(BuildContext context) async {
+    final app = _accountApps.of(accountId);
+    if (app == null) return _choose(context);
+    try {
+      final ok = await InstalledApps.startApp(app.package);
+      if (ok != true && context.mounted) {
+        _snack(context, 'Couldn\'t open ${app.name}.');
+      }
+    } catch (_) {
+      if (context.mounted) _snack(context, 'Couldn\'t open ${app.name}.');
+    }
+  }
+
+  Future<void> _manage(BuildContext context) async {
+    if (_accountApps.of(accountId) == null) return _choose(context);
+    HapticFeedback.mediumImpact();
+    final picked = await _pickItem(
+      context,
+      title: 'Linked app',
+      background: look.bg,
+      foreground: look.fg,
+      items: const [
+        CategoryItem(0, 'Change app'),
+        CategoryItem(1, 'Remove app'),
+      ],
+      iconFor: (item) =>
+          item.id == 0 ? Icons.swap_horiz : Icons.link_off,
+    );
+    if (picked == null || !context.mounted) return;
+    if (picked.id == 0) {
+      await _choose(context);
+    } else {
+      await _accountApps.set(accountId, null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = look.fg;
+    final size = 46 * u;
+    return ListenableBuilder(
+      listenable: _accountApps,
+      builder: (context, _) {
+        final app = _accountApps.of(accountId);
+        final Widget child = app == null
+            ? Icon(Icons.add_link, size: 26 * u, color: fg)
+            : FutureBuilder<Uint8List?>(
+                future: _appIcon(app.package),
+                builder: (context, snap) {
+                  final bytes = snap.data;
+                  if (bytes == null) {
+                    return Icon(Icons.open_in_new, size: 24 * u, color: fg);
+                  }
+                  return Padding(
+                    padding: EdgeInsets.all(6 * u),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8 * u),
+                      child: Image.memory(bytes, fit: BoxFit.cover),
+                    ),
+                  );
+                },
+              );
+        return Tooltip(
+          message: app == null ? 'Link an app' : 'Open ${app.name}',
+          child: Material(
+            color: fg.withValues(alpha: AppConstants.tintAlpha),
+            borderRadius: BorderRadius.circular(14 * u),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: () => _open(context),
+              onLongPress: () => _manage(context),
+              child: SizedBox(width: size, height: size, child: child),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Bottom sheet that lists the apps installed on the phone.
+Future<AppInfo?> _showAppPicker(
+  BuildContext context, {
+  required Color background,
+  required Color foreground,
+}) {
+  return showModalBottomSheet<AppInfo>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    backgroundColor: background,
+    barrierColor: AppConstants.popupBarrier,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+    ),
+    builder: (_) => _AppPickerSheet(fg: foreground),
+  );
+}
+
+class _AppPickerSheet extends StatefulWidget {
+  final Color fg;
+  const _AppPickerSheet({required this.fg});
+
+  @override
+  State<_AppPickerSheet> createState() => _AppPickerSheetState();
+}
+
+class _AppPickerSheetState extends State<_AppPickerSheet> {
+  final _search = TextEditingController();
+  List<AppInfo> _apps = const [];
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _search.addListener(() => setState(() {}));
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      // true = leave out system apps, true = with icons
+      final apps = await InstalledApps.getInstalledApps(true, true);
+      apps.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      if (!mounted) return;
+      setState(() {
+        _apps = apps;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Couldn\'t load the apps on this device.';
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = widget.fg;
+    final muted = fg.withValues(alpha: AppConstants.mutedAlpha);
+    final q = _search.text.trim().toLowerCase();
+    final shown = q.isEmpty
+        ? _apps
+        : [for (final a in _apps) if (a.name.toLowerCase().contains(q)) a];
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.8,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppConstants.spaceLg,
+            AppConstants.spaceSmMd,
+            AppConstants.spaceLg,
+            0,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: fg.withValues(alpha: AppConstants.borderAlpha),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppConstants.spaceLg),
+              Text(
+                'Choose an app',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: fg,
+                ),
+              ),
+              const SizedBox(height: AppConstants.spaceMd),
+              TextField(
+                controller: _search,
+                style: TextStyle(color: fg, fontSize: 16),
+                cursorColor: fg,
+                decoration: _sheetDecoration(
+                  fg,
+                  label: 'Search',
+                  icon: Icon(Icons.search, color: fg),
+                ),
+              ),
+              const SizedBox(height: AppConstants.spaceSm),
+              Expanded(
+                child: _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _error != null
+                    ? Center(
+                        child: Text(_error!, style: TextStyle(color: muted)),
+                      )
+                    : shown.isEmpty
+                    ? Center(
+                        child: Text('No apps found',
+                            style: TextStyle(color: muted)),
+                      )
+                    : ListView.builder(
+                        itemCount: shown.length,
+                        itemBuilder: (context, i) {
+                          final a = shown[i];
+                          return ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: a.icon == null
+                                ? Icon(Icons.apps, color: fg)
+                                : ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Image.memory(
+                                      a.icon!,
+                                      width: 36,
+                                      height: 36,
+                                    ),
+                                  ),
+                            title: Text(
+                              a.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: fg,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            onTap: () => Navigator.of(context).pop(a),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Back: a dark band (the same on every card), a small notes box under it,
 /// then a bigger notes area with no box. Sizes are measured from the sample
 /// (u = width / 612) and fitted to the real card height. Text changes
@@ -3146,6 +3520,16 @@ class _CardBack extends StatelessWidget {
               fallback: _iconForType(account.typeName, account.typeIcon),
               size: 34 * u,
               color: fg.withValues(alpha: AppConstants.mutedAlpha),
+            ),
+          ),
+         // Open-app button, bottom right
+          Positioned(
+            right: 40 * u,
+            bottom: 28 * u,
+            child: _CardAppButton(
+              accountId: account.id,
+              look: look,
+              u: u,
             ),
           ),
         ],
