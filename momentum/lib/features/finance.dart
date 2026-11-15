@@ -3544,6 +3544,8 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
       _HistoryRange.of(_Period.month, DateTime.now());
   List<HistoryEntry> _entries = const [];
   List<ReminderItem> _reminders = const [];
+  double? _budget; // category pop-up (expense): budget in pesos
+  double _spent = 0; // spent on that category in the selected range
   final Set<String> _collapsed = {}; // day headers that are folded
   bool _loaded = false;
   String? _error;
@@ -3625,10 +3627,26 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
       }
       final all = await _db.getHistory(from: _range.from, until: _range.until);
       final reminders = await _db.getReminders();
+      double? budget;
+      var spent = 0.0;
+      final cat = widget.category;
+      if (cat != null && cat.kind == 'expense') {
+        final items = await _db.getCategoryItems(CategoryGroup.expense);
+        for (final item in items) {
+          if (item.id == cat.id) budget = item.budget;
+        }
+        for (final entry in all) {
+          if (entry.type == 'expense' && entry.categoryId == cat.id) {
+            spent += entry.amount;
+          }
+        }
+      }
       if (!mounted) return;
       setState(() {
         _account = fresh;
         _reminders = reminders;
+        _budget = budget;
+        _spent = spent;
         _entries = [
           for (final e in all)
             if (_matches(e, fresh)) e,
@@ -3968,6 +3986,28 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
                         ),
                       ],
                     ),
+                  ),
+                ],
+                if (_catMode && _budget != null) ...[
+                  const SizedBox(height: 2),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
+                    child: widget.hidden
+                        ? TotalBalanceCard._maskedText(
+                            context,
+                            TextStyle(fontSize: 13, color: muted),
+                            prefix: AppConstants.currencyPrefix,
+                          )
+                        : Text(
+                            Utils.formatCurrency(
+                              _budget! - _spent,
+                              symbol: AppConstants.currencyPrefix,
+                            ),
+                            maxLines: 1,
+                            softWrap: false,
+                            style: TextStyle(fontSize: 13, color: muted),
+                          ),
                   ),
                 ],
               ],

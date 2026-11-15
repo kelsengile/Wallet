@@ -92,7 +92,10 @@ class CategoryItem {
   /// Saved color (ARGB int). null = automatic. Only income / expense
   /// categories use it.
   final int? color;
-  const CategoryItem(this.id, this.name, [this.icon, this.color]);
+
+  /// Budget in pesos. null = no budget. Only expense categories use it.
+  final double? budget;
+  const CategoryItem(this.id, this.name, [this.icon, this.color, this.budget]);
 }
 
 /// An active account in a picker (Transfer From/To, Account fields).
@@ -374,6 +377,7 @@ class DatabaseHelper {
     await _addMissingNoteColumns(db);
     await _addMissingTransactionColumns(db);
     await _addMissingTables(db);
+    await _addMissingBudgetColumn(db);
     final ready = await _schemaIsValid(db) && await _isSeeded(db);
     if (ready) {
       await _fillDefaultIcons(db);
@@ -432,6 +436,16 @@ class DatabaseHelper {
     await _runScript(db, schema);
   }
 
+  /// Older databases get the expense-category budget column without losing
+  /// any data.
+  Future<void> _addMissingBudgetColumn(DatabaseExecutor db) async {
+    final rows = await db.rawQuery('PRAGMA table_info(categories)');
+    final columns = {for (final row in rows) row['name'] as String};
+    if (columns.isNotEmpty && !columns.contains('budget')) {
+      await db.execute('ALTER TABLE categories ADD COLUMN budget INTEGER');
+    }
+  }
+
   Future<Set<String>> _columnsOf(Database db, String table) async {
     final rows = await db.rawQuery('PRAGMA table_info($table)');
     return {for (final row in rows) row['name'] as String};
@@ -487,6 +501,7 @@ class DatabaseHelper {
     await db.transaction((txn) async {
       await _dropAll(txn);
       await _runScript(txn, schema);
+      await _addMissingBudgetColumn(txn);
       await _runScript(txn, seed);
       await _fillDefaultIcons(txn);
     });
@@ -755,9 +770,16 @@ class DatabaseHelper {
     return _guard(() async {
       final db = await database;
       final kind = _kindOf(group);
+      final isCategories = _tableOf(group) == 'categories';
       final rows = await db.query(
         _tableOf(group),
-        columns: ['id', 'name', 'icon', 'color'],
+        columns: [
+          'id',
+          'name',
+          'icon',
+          'color',
+          if (isCategories) 'budget',
+        ],
         where: kind == null ? null : 'kind = ?',
         whereArgs: kind == null ? null : [kind],
         orderBy: 'id',
@@ -769,6 +791,10 @@ class DatabaseHelper {
             row['name'] as String,
             row['icon'] as String?,
             (row['color'] as num?)?.toInt(),
+            (row['budget'] as num?) == null
+                ? null
+                : (row['budget'] as num).toInt() /
+                      AppConstants.centavosPerPeso,
           ),
       ];
       return _applyOrder(
@@ -783,6 +809,7 @@ class DatabaseHelper {
     String name, {
     String? icon,
     int? color,
+    double? budget,
   }) {
     return _guard(() async {
       _checkEditable(group);
@@ -792,6 +819,8 @@ class DatabaseHelper {
         'name': _cleanName(name),
         'icon': icon,
         'color': color,
+        if (_tableOf(group) == 'categories')
+          'budget': budget == null ? null : _positiveCentavos(budget),
         // ignore: use_null_aware_elements
         if (kind != null) 'kind': kind,
       });
@@ -805,6 +834,7 @@ class DatabaseHelper {
     String name, {
     String? icon,
     int? color,
+    double? budget,
   }) {
     return _guard(() async {
       _checkEditable(group);
@@ -816,6 +846,8 @@ class DatabaseHelper {
           'name': _cleanName(name),
           'icon': icon,
           if (_tableOf(group) == 'categories') 'color': color,
+          if (_tableOf(group) == 'categories')
+            'budget': budget == null ? null : _positiveCentavos(budget),
         },
         where: 'id = ?',
         whereArgs: [id],
@@ -1621,7 +1653,7 @@ class DatabaseHelper {
       'created_at',
       'deleted_at',
     ],
-    'categories': ['id', 'name', 'kind', 'icon', 'color'],
+    'categories': ['id', 'name', 'kind', 'icon', 'color', 'budget'],
     'transactions': [
       'id',
       'type',
@@ -1832,6 +1864,7 @@ class DatabaseHelper {
         await db.transaction((txn) async {
           await _dropAll(txn);
           await _runScript(txn, schema);
+          await _addMissingBudgetColumn(txn);
           if (hasSettings) await txn.delete('settings');
           for (final table in _exportColumns.keys) {
             for (final row in data[table]!) {
