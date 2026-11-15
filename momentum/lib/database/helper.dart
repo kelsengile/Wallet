@@ -738,6 +738,7 @@ class DatabaseHelper {
     return _guard(() async {
       _checkEditable(group);
       final db = await database;
+      final oldIcon = await _iconOf(db, group, id);
       await db.update(
         _tableOf(group),
         {
@@ -748,6 +749,7 @@ class DatabaseHelper {
         where: 'id = ?',
         whereArgs: [id],
       );
+      if (oldIcon != icon) await _deleteImageFiles([_iconImageOf(oldIcon)]);
       notifyChanged();
     });
   }
@@ -756,7 +758,9 @@ class DatabaseHelper {
     return _guard(() async {
       _checkEditable(group);
       final db = await database;
+      final oldIcon = await _iconOf(db, group, id);
       await db.delete(_tableOf(group), where: 'id = ?', whereArgs: [id]);
+      await _deleteImageFiles([_iconImageOf(oldIcon)]);
       notifyChanged();
     });
   }
@@ -1490,6 +1494,9 @@ class DatabaseHelper {
             .map((r) => r['image_path']),
         ...(await db.rawQuery('SELECT image_path FROM reminders'))
             .map((r) => r['image_path']),
+        for (final t in _iconTables)
+          ...(await db.query(t, columns: ['icon']))
+              .map((r) => _iconImageOf(r['icon'])),
       ];
       await _rebuild(db);
       await db.delete(
@@ -1563,6 +1570,11 @@ class DatabaseHelper {
       for (final table in _exportColumns.keys) {
         final rows = await db.query(table, orderBy: 'rowid');
         tables[table] = switch (table) {
+          'account_types' ||
+          'account_categories' ||
+          'categories' => [
+              for (final row in rows) await _withIconImage(row),
+            ],
           'transactions' || 'reminders' => [
               for (final row in rows) await _withImage(row),
             ],
@@ -1637,6 +1649,25 @@ class DatabaseHelper {
               map['image_path'] = null;
             }
           }
+          if (_iconTables.contains(entry.key) &&
+              _iconImageOf(map['icon']) != null) {
+            final iconB64 = row['icon_base64'];
+            if (iconB64 is String && iconB64.isNotEmpty) {
+              try {
+                final path = await _writeImage(
+                  base64Decode(iconB64),
+                  _iconImageOf(map['icon']),
+                  folder: AppConstants.iconImageFolder,
+                );
+                written.add(path);
+                map['icon'] = '${AppConstants.iconImagePrefix}$path';
+              } catch (_) {
+                map['icon'] = null;
+              }
+            } else {
+              map['icon'] = null; // picture wasn't in the backup
+            }
+          }
           rows.add(map);
           if (entry.key == 'settings' && b64 is String && b64.isNotEmpty) {
             map['value'] = await _restoreThemeImage(map['value'], b64, written);
@@ -1669,11 +1700,16 @@ class DatabaseHelper {
         ...(await db.rawQuery('SELECT image_path FROM reminders'))
             .map((r) => r['image_path']),
         ...oldThemes.map((r) => _themeImageOf(r['value'])),
+        for (final t in _iconTables)
+          ...(await db.query(t, columns: ['icon']))
+              .map((r) => _iconImageOf(r['icon'])),
       ];
       final keep = <Object?>{
         for (final t in ['transactions', 'reminders'])
           for (final row in data[t]!) row['image_path'],
         for (final row in data['settings']!) _themeImageOf(row['value']),
+        for (final t in _iconTables)
+          for (final row in data[t]!) _iconImageOf(row['icon']),
       };
 
       final hasSettings = tables['settings'] is List;
@@ -1714,6 +1750,40 @@ class DatabaseHelper {
       } catch (_) {}
     }
     return copy;
+  }
+
+    /// The picture path of an imported icon (null = a normal icon).
+  String? _iconImageOf(Object? icon) {
+    if (icon is String && icon.startsWith(AppConstants.iconImagePrefix)) {
+      final path = icon.substring(AppConstants.iconImagePrefix.length);
+      return path.isEmpty ? null : path;
+    }
+    return null;
+  }
+
+  /// Copy of [row] with the icon picture bytes added (base64).
+  Future<Map<String, Object?>> _withIconImage(Map<String, Object?> row) async {
+    final copy = Map<String, Object?>.from(row);
+    final path = _iconImageOf(row['icon']);
+    if (path != null) {
+      try {
+        final file = File(path);
+        if (await file.exists()) {
+          copy['icon_base64'] = base64Encode(await file.readAsBytes());
+        }
+      } catch (_) {}
+    }
+    return copy;
+  }
+
+  Future<String?> _iconOf(DatabaseExecutor db, CategoryGroup group, int id) async {
+    final rows = await db.query(
+      _tableOf(group),
+      columns: ['icon'],
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    return rows.isEmpty ? null : rows.first['icon'] as String?;
   }
 
   /// Writes picture bytes into the app's attachments folder.
