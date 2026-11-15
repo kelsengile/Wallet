@@ -134,15 +134,20 @@ class AppConstants {
   static const String prefIncomeColor = 'settings.transactionColor.income';
   static const String prefExpenseColor = 'settings.transactionColor.expense';
   static const String prefTransferColor = 'settings.transactionColor.transfer';
+    // Defaults for the action colors (Delete / Done)
+  static const Color deleteColor = Color(0xFFE53935); // Colors.red.shade600
+  static const Color doneColor = Color(0xFF1B6B3A);
   // Key text kept from the old "notification" name so saved colors survive.
-  static const String prefReminderColor =
-      'settings.transactionColor.notification';
+  static const String prefReminderColor = 'settings.transactionColor.notification';
   // Order of the account types on the Finance screen.
   static const String prefTypeOrder = 'finance.typeOrder';
   // Order of each category list on the Categories screen.
   // The full key is this prefix + the group name (e.g. "category.order.income").
   static const String prefCategoryOrder = 'category.order.';
   static const prefAnimEnabled = 'settings.animEnabled';
+  // Saved action colors (Specific Color)
+  static const String prefDeleteColor = 'settings.actionColor.delete';
+  static const String prefDoneColor = 'settings.actionColor.done';
 
   static const List<String> textSizeLabels = [
     'Smallest',
