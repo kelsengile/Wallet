@@ -22,14 +22,20 @@ class AccountTheme {
   final int? color; // ARGB
   final String? pattern;
   final String? imagePath;
-  const AccountTheme({this.color, this.pattern, this.imagePath});
+  final String? corner; // null = Rounded (default)
+  const AccountTheme({this.color, this.pattern, this.imagePath, this.corner});
 
   static const AccountTheme none = AccountTheme();
 
-  bool get isDefault => color == null && pattern == null && imagePath == null;
+  bool get isDefault =>
+      color == null && pattern == null && imagePath == null && corner == null;
 
-  String encode() =>
-      jsonEncode({'color': color, 'pattern': pattern, 'image': imagePath});
+  String encode() => jsonEncode({
+        'color': color,
+        'pattern': pattern,
+        'image': imagePath,
+        'corner': corner,
+      });
 
   factory AccountTheme.decode(String? raw) {
     if (raw == null) return none;
@@ -39,6 +45,7 @@ class AccountTheme {
         color: (m['color'] as num?)?.toInt(),
         pattern: m['pattern'] as String?,
         imagePath: m['image'] as String?,
+        corner: m['corner'] as String?,
       );
     } catch (_) {
       return none;
@@ -122,25 +129,88 @@ const List<String> _patternNames = [
   'Circles',
 ];
 
+/// Corner styles of the account card. 'Rounded' is the default (null).
+const List<String> _cornerNames = [
+  'Rounded', 'Soft', 'Sharp', 'Square', 'Pill', 'Beveled',
+  'Squircle', 'Leaf', 'Reverse leaf', 'Top round', 'Bottom round',
+];
+
+IconData _cornerIcon(String name) => switch (name) {
+      'Soft' => Icons.crop_din,
+      'Sharp' => Icons.crop_square,
+      'Square' => Icons.square_outlined,
+      'Pill' => Icons.crop_16_9,
+      'Beveled' => Icons.hexagon_outlined,
+      'Squircle' => Icons.rounded_corner,
+      'Leaf' => Icons.eco_outlined,
+      'Reverse leaf' => Icons.spa_outlined,
+      'Top round' => Icons.vertical_align_top,
+      'Bottom round' => Icons.vertical_align_bottom,
+      _ => Icons.rounded_corner,
+    };
+
+/// The shape of the card. [u] = card width / cardSampleWidth.
+ShapeBorder _cardShape(String? corner, double u) {
+  RoundedRectangleBorder r(BorderRadius b) =>
+      RoundedRectangleBorder(borderRadius: b);
+  switch (corner) {
+    case 'Soft':
+      return r(BorderRadius.circular(22 * u));
+    case 'Sharp':
+      return r(BorderRadius.circular(8 * u));
+    case 'Square':
+      return r(BorderRadius.zero);
+    case 'Pill':
+      return r(BorderRadius.circular(130 * u));
+    case 'Beveled':
+      return BeveledRectangleBorder(borderRadius: BorderRadius.circular(40 * u));
+    case 'Squircle':
+      return ContinuousRectangleBorder(
+        borderRadius: BorderRadius.circular(90 * u),
+      );
+    case 'Leaf':
+      return r(BorderRadius.only(
+        topLeft: Radius.circular(90 * u),
+        bottomRight: Radius.circular(90 * u),
+        topRight: Radius.circular(10 * u),
+        bottomLeft: Radius.circular(10 * u),
+      ));
+    case 'Reverse leaf':
+      return r(BorderRadius.only(
+        topRight: Radius.circular(90 * u),
+        bottomLeft: Radius.circular(90 * u),
+        topLeft: Radius.circular(10 * u),
+        bottomRight: Radius.circular(10 * u),
+      ));
+    case 'Top round':
+      return r(BorderRadius.vertical(
+        top: Radius.circular(80 * u),
+        bottom: Radius.circular(10 * u),
+      ));
+    case 'Bottom round':
+      return r(BorderRadius.vertical(
+        top: Radius.circular(10 * u),
+        bottom: Radius.circular(80 * u),
+      ));
+    default:
+      return r(BorderRadius.circular(40 * u));
+  }
+}
+
 /// Colors + backdrop of a card, worked out from the account's theme.
 class _CardLook {
   final Color bg;
   final Color fg;
   final String? image;
   final String? pattern;
-  const _CardLook._(this.bg, this.fg, this.image, this.pattern);
+  final String? corner;
+  const _CardLook._(this.bg, this.fg, this.image, this.pattern, this.corner);
 
   factory _CardLook.of(BuildContext context, AccountTheme t) {
     final accent = AppTheme.accentOf(context);
     final img = t.imagePath;
     if (img != null && File(img).existsSync()) {
-      // Picture: dark scrim, so the text is white.
-      return const _CardLook._(
-        Colors.black,
-        Colors.white,
-        null,
-        null,
-      )._withImage(img);
+      return _CardLook._(Colors.black, Colors.white, img, null, t.corner);
     }
     final c = t.color != null ? Color(t.color!) : null;
     return _CardLook._(
@@ -148,10 +218,9 @@ class _CardLook {
       c != null ? AppTheme.onColor(c) : accent.foreground,
       null,
       t.pattern,
+      t.corner,
     );
   }
-
-  _CardLook _withImage(String path) => _CardLook._(bg, fg, path, null);
 }
 
 /// Picture / pattern layers that sit behind the card's content.
@@ -1151,10 +1220,13 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
 
   /// null = nothing chosen yet.
   String? get _themeText {
-    if (_theme.imagePath != null) return 'Image';
-    if (_theme.pattern != null) return _theme.pattern!;
-    if (_theme.color != null) return 'Custom color';
-    return null;
+    final parts = <String>[
+      if (_theme.imagePath != null) 'Image',
+      if (_theme.imagePath == null && _theme.pattern != null) _theme.pattern!,
+      if (_theme.color != null) 'Color',
+      if (_theme.corner != null) _theme.corner!,
+    ];
+    return parts.isEmpty ? null : parts.join(' · ');
   }
 
   Widget _themeField(Color fg) {
@@ -1778,12 +1850,17 @@ class _AccountThemeSheetState extends State<_AccountThemeSheet> {
   late int? _color = widget.initial.color;
   late String? _pattern = widget.initial.pattern;
   late String? _image = widget.initial.imagePath;
+  late String? _corner = widget.initial.corner;
   String? _error;
 
   void _emit() => widget.onChanged(
-    AccountTheme(color: _color, pattern: _pattern, imagePath: _image),
-  );
-
+      AccountTheme(
+        color: _color,
+        pattern: _pattern,
+        imagePath: _image,
+        corner: _corner,
+      ),
+    );
   /// Same colors as the account popup behind this sheet.
   (Color, Color) _colors() {
     final accent = AppTheme.accentOf(context);
@@ -1791,6 +1868,26 @@ class _AccountThemeSheetState extends State<_AccountThemeSheet> {
     final bg = custom ? Color(_color!) : accent.background;
     return (bg, custom ? AppTheme.onColor(bg) : accent.foreground);
   }
+
+  Future<void> _pickCorner() async {
+  final (bg, fg) = _colors();
+  final current = _corner ?? 'Rounded';
+  final picked = await _pickItem(
+    context,
+    title: 'Card Corner',
+    background: bg,
+    foreground: fg,
+    selected: CategoryItem(_cornerNames.indexOf(current), current),
+    items: [
+      for (var i = 0; i < _cornerNames.length; i++)
+        CategoryItem(i, _cornerNames[i]),
+    ],
+    iconFor: (item) => _cornerIcon(item.name),
+  );
+  if (picked == null || !mounted) return;
+  setState(() => _corner = picked.name == 'Rounded' ? null : picked.name);
+  _emit();
+}
 
   Future<void> _pickColor() async {
     final accent = AppTheme.accentOf(context);
@@ -2021,14 +2118,38 @@ class _AccountThemeSheetState extends State<_AccountThemeSheet> {
             ),
             const SizedBox(height: AppConstants.spaceSm),
 
-            // Card theme: pattern / camera / gallery
+            // Card theme (pattern / camera / gallery / none)  <- was missing
             _row(
               fg: fg,
-              icon: Icons.credit_card,
+              icon: Icons.style_outlined,
               label: 'Card Theme',
               value: _cardThemeText,
               onTap: _pickCardTheme,
-              trailing: Icon(Icons.chevron_right, color: fg),
+              trailing: Icon(
+                Icons.chevron_right,
+                color: fg.withValues(alpha: AppConstants.mutedAlpha),
+              ),
+            ),
+            const SizedBox(height: AppConstants.spaceSm),
+
+            // Card corner
+            _row(
+              fg: fg,
+              icon: Icons.rounded_corner,
+              label: 'Card Corner',
+              value: _corner ?? 'Rounded',
+              onTap: _pickCorner,
+              trailing: Container(
+                width: 48,
+                height: 30,
+                decoration: ShapeDecoration(
+                  color: fg.withValues(alpha: AppConstants.borderAlpha),
+                  shape: _cardShape(
+                    _corner,
+                    48 / AppConstants.cardSampleWidth,
+                  ),
+                ),
+              ),
             ),
 
             if (_error != null) ...[
@@ -2531,9 +2652,9 @@ class _CardFront extends StatelessWidget {
       width: width,
       height: _cardHeightFor(width),
       clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: look.bg,
-        borderRadius: BorderRadius.circular(40 * u),
+        shape: _cardShape(look.corner, u),
       ),
       child: Stack(
         children: [
@@ -2668,9 +2789,9 @@ class _CardBack extends StatelessWidget {
       width: width,
       height: _cardHeightFor(width),
       clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: look.bg,
-        borderRadius: BorderRadius.circular(40 * u),
+        shape: _cardShape(look.corner, u),
       ),
       child: Stack(
         children: [
