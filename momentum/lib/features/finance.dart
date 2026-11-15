@@ -368,11 +368,13 @@ Widget _iconWidget(
   required IconData fallback,
   required double size,
   required Color color,
+  double pictureScale = 1.3, // imported pictures are drawn at size * this
+  bool framed = false, // inside a form field: smaller and padded
 }) {
   if (_isImageIcon(saved)) {
     final path = saved!.substring(AppConstants.iconImagePrefix.length);
-    final s = size * 1.3;
-    return ClipRRect(
+    final s = framed ? size * 0.75 : size * pictureScale;
+    final picture = ClipRRect(
       borderRadius: BorderRadius.circular(s * 0.22),
       child: Image.file(
         File(path),
@@ -382,6 +384,10 @@ Widget _iconWidget(
         errorBuilder: (_, _, _) => Icon(fallback, size: size, color: color),
       ),
     );
+    // Keep the picture centered in the same box a glyph would use.
+    return framed
+        ? SizedBox(width: size, height: size, child: Center(child: picture))
+        : picture;
   }
   return Icon(fallback, size: size, color: color);
 }
@@ -1267,7 +1273,7 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
                   value.icon,
                   fallback: iconFor(value),
                   size: 24,
-                  color: fg,
+                  color: fg, framed: true
                 ),
           suffix: Icon(Icons.expand_more, color: fg),
         ),
@@ -7295,7 +7301,7 @@ class _TransactionSheetState extends State<_TransactionSheet> {
               value.icon,
               fallback: _accountIcon(value),
               size: 24,
-              color: fg,
+              color: fg, framed: true
             ),
       onTap: () => _pickAccount(isTo: isTo),
     );
@@ -7316,7 +7322,7 @@ class _TransactionSheetState extends State<_TransactionSheet> {
               value.icon,
               fallback: _iconForCategory(value.icon),
               size: 24,
-              color: fg,
+              color: fg, framed: true
             ),
       onTap: _pickCategory,
     );
