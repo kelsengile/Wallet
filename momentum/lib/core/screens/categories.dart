@@ -1,4 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 import '../../database/helper.dart';
 import '../constants.dart';
@@ -116,14 +121,62 @@ class _CategoryIcons {
   static String defaultKey(CategoryGroup group, String name) =>
       _nameDefaults[group]?[name] ?? _groupDefault[group] ?? fallback;
 
+  static bool isImage(String key) =>
+      key.startsWith(AppConstants.iconImagePrefix);
+
+  static String? imagePath(String key) {
+    if (!isImage(key)) return null;
+    final path = key.substring(AppConstants.iconImagePrefix.length);
+    return path.isEmpty ? null : path;
+  }
+
   /// The saved icon key, or the default one when nothing is saved.
   static String keyOf(CategoryGroup group, CategoryItem item) {
     final saved = item.icon;
-    if (saved != null && all.containsKey(saved)) return saved;
+    if (saved != null && (all.containsKey(saved) || isImage(saved))) {
+      return saved;
+    }
     return defaultKey(group, item.name);
   }
 
   static IconData of(String key) => all[key] ?? all[fallback]!;
+
+  /// The icon as a widget: a picture for imported icons, else the glyph.
+  static Widget view(String key, {required double size, required Color color}) {
+    final path = imagePath(key);
+    if (path != null) {
+      return Image.file(
+        File(path),
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) =>
+            Icon(all[fallback], size: size * 0.5, color: color),
+      );
+    }
+    return Icon(of(key), size: size, color: color);
+  }
+}
+
+/// Copies a picked picture into the app's own icon folder.
+Future<String> _storeIconImage(String source) async {
+  final dir = await getApplicationDocumentsDirectory();
+  final folder = Directory(p.join(dir.path, AppConstants.iconImageFolder));
+  if (!await folder.exists()) await folder.create(recursive: true);
+  final target = p.join(
+    folder.path,
+    '${DateTime.now().microsecondsSinceEpoch}${p.extension(source)}',
+  );
+  await File(source).copy(target);
+  return target;
+}
+
+Future<void> _deleteIconFile(String? key) async {
+  final path = key == null ? null : _CategoryIcons.imagePath(key);
+  if (path == null) return;
+  try {
+    await File(path).delete();
+  } catch (_) {}
 }
 
 /// Colors a pop-up: [background] behind, [foreground] for text, buttons and
@@ -204,7 +257,7 @@ Future<bool> _confirmDeleteDialog(
   BuildContext context, {
   required String title,
   required String name,
-  required IconData icon,
+  required Widget icon,
   required String message,
 }) async {
   final accent = AppTheme.accentOf(context);
@@ -276,7 +329,10 @@ Future<bool> _confirmDeleteDialog(
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(icon, size: 20, color: red),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(5),
+                          child: icon,
+                        ),
                         const SizedBox(width: AppConstants.spaceSm),
                         Flexible(
                           child: Text(
@@ -459,7 +515,11 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
       context,
       title: 'Delete $kind',
       name: item.name,
-      icon: _CategoryIcons.of(_CategoryIcons.keyOf(group, item)),
+            icon: _CategoryIcons.view(
+        _CategoryIcons.keyOf(group, item),
+        size: 20,
+        color: AppSettings.instance.deleteColor,
+      ),
       message: 'This ${_singular(group)} will be removed. '
           'This action cannot be undone.',
     );
@@ -484,8 +544,9 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     final startIcon = item == null
         ? _CategoryIcons.defaultKey(group, '')
         : _CategoryIcons.keyOf(group, item);
-    const showColor = true; // every editable list can have a color now
-    final startColor = item?.color;
+        final showColor =
+        group == CategoryGroup.income || group == CategoryGroup.expense;
+    final startColor = showColor ? item?.color : null;
     final kindTitle = _singular(group)
         .split(' ')
         .map((w) => w[0].toUpperCase() + w.substring(1))
@@ -538,7 +599,11 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
       title: title,
       items: _items[group] ?? const [],
       editable: editable,
-      iconFor: (item) => _CategoryIcons.of(_CategoryIcons.keyOf(group, item)),
+      useColor:
+          group == CategoryGroup.income || group == CategoryGroup.expense,
+      iconKeyFor: (item) => _CategoryIcons.keyOf(group, item),
+        iconFor: (item) =>
+          _CategoryIcons.of(_CategoryIcons.keyOf(group, item)),
       onAdd: () => _openEditor(group),
       onTapItem: (item) => _openEditor(group, item: item),
       onDeleteItem: (item) => _deleteItem(group, item),
@@ -650,6 +715,8 @@ class _SectionHeader extends StatelessWidget {
 ///
 /// Text sizes, big to small: section header > card title > category name.
 class _CategoryGroupCard extends StatelessWidget {
+  final bool useColor;
+  final String Function(CategoryItem item) iconKeyFor;
   final String title;
   final List<CategoryItem> items;
   final bool editable;
@@ -661,6 +728,8 @@ class _CategoryGroupCard extends StatelessWidget {
   final void Function(int oldIndex, int newIndex) onReorder;
 
   const _CategoryGroupCard({
+    required this.useColor,
+    required this.iconKeyFor,
     required this.title,
     required this.items,
     required this.editable,
@@ -682,7 +751,10 @@ class _CategoryGroupCard extends StatelessWidget {
     Color barColor,
   ) {
     final theme = Theme.of(context);
-    final tint = item.color == null ? null : Color(item.color!);
+    final tint =
+        (useColor && item.color != null) ? Color(item.color!) : null;
+    final iconKey = iconKeyFor(item);
+    final isImg = _CategoryIcons.isImage(iconKey);
 
     final bar = Material(
       color: barColor,
@@ -703,14 +775,18 @@ class _CategoryGroupCard extends StatelessWidget {
               Container(
                 width: 44,
                 height: 44,
+                clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: tint ??
-                      fg.withValues(alpha: AppConstants.categoryAvatarAlpha),
+                  color: isImg
+                      ? null
+                      : (tint ??
+                          fg.withValues(
+                              alpha: AppConstants.categoryAvatarAlpha)),
                 ),
-                child: Icon(
-                  iconFor(item),
-                  size: 22,
+                child: _CategoryIcons.view(
+                  iconKey,
+                  size: isImg ? 44 : 22,
                   color: tint == null ? fg : AppTheme.onColor(tint),
                 ),
               ),
@@ -951,6 +1027,9 @@ class _NameDialogState extends State<_NameDialog> {
   late String _icon;
   int? _color;
   String? _errorText;
+  String? _iconError;
+  String? _pickedKey; // picture imported in THIS dialog
+  bool _saved = false;
 
   @override
   void initState() {
@@ -962,6 +1041,11 @@ class _NameDialogState extends State<_NameDialog> {
 
   @override
   void dispose() {
+    // A picture imported but never saved is not kept.
+    final picked = _pickedKey;
+    if (picked != null && !(_saved && _icon == picked)) {
+      _deleteIconFile(picked);
+    }
     _controller.dispose();
     super.dispose();
   }
@@ -972,13 +1056,43 @@ class _NameDialogState extends State<_NameDialog> {
       setState(() => _errorText = 'Enter a name');
       return;
     }
-    Navigator.of(context).pop(_NameResult(name, _icon, _color));
+    _saved = true;
+    Navigator.of(context).pop(
+      _NameResult(name, _icon, widget.showColor ? _color : null),
+    );
   }
 
-  Widget _iconTile(String key, IconData icon, Color fg) {
+  Future<void> _importIcon() async {
+    try {
+      final file = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+        maxWidth: 256,
+        maxHeight: 256,
+      );
+      if (file == null) return;
+      final saved = await _storeIconImage(file.path);
+      final key = '${AppConstants.iconImagePrefix}$saved';
+      if (!mounted) {
+        _deleteIconFile(key);
+        return;
+      }
+      _deleteIconFile(_pickedKey); // the one imported before this
+      setState(() {
+        _icon = key;
+        _pickedKey = key;
+        _iconError = null;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _iconError = 'Couldn\'t get that image.');
+    }
+  }
+
+  Widget _iconTile(String key, IconData icon, Color fg, double size) {
     final selected = key == _icon;
-    return AspectRatio(
-      aspectRatio: 1,
+    return SizedBox(
+      width: size,
+      height: size,
       child: Material(
         color: fg.withValues(
           alpha: selected
@@ -987,9 +1101,7 @@ class _NameDialogState extends State<_NameDialog> {
         ),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppConstants.iconTileRadius),
-          side: selected
-              ? BorderSide(color: fg, width: 2)
-              : BorderSide.none,
+          side: selected ? BorderSide(color: fg, width: 2) : BorderSide.none,
         ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -1000,30 +1112,91 @@ class _NameDialogState extends State<_NameDialog> {
     );
   }
 
-  /// The icon grid: rows of [AppConstants.iconGridColumns] tiles.
+  /// Import button: 2 icon blocks wide, 1 block high. Shows the imported
+  /// picture once one is chosen.
+  Widget _importTile(Color fg, double size) {
+    final hasImage = _CategoryIcons.isImage(_icon);
+    final path = _CategoryIcons.imagePath(_icon);
+    return SizedBox(
+      width: size * 2 + AppConstants.iconGridGap,
+      height: size,
+      child: Material(
+        color: fg.withValues(alpha: AppConstants.iconTileAlpha),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppConstants.iconTileRadius),
+          side: hasImage ? BorderSide(color: fg, width: 2) : BorderSide.none,
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: _importIcon,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (hasImage && path != null)
+                Image.file(
+                  File(path),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                ),
+              Center(
+                child: hasImage
+                    ? Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: const BoxDecoration(
+                          color: Colors.black54,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.file_upload_outlined,
+                            size: 14, color: Colors.white),
+                      )
+                    : Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.file_upload_outlined,
+                                  size: 14, color: fg),
+                              const SizedBox(width: 3),
+                              Text('Import',
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: fg)),
+                            ],
+                          ),
+                        ),
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The icon grid: [AppConstants.iconGridColumns] blocks per row, and the
+  /// Import block (1 x 2) right after the last icon.
   Widget _iconGrid(Color fg) {
     const columns = AppConstants.iconGridColumns;
     const gap = AppConstants.iconGridGap;
     final entries = _CategoryIcons.all.entries.toList();
-    final rows = <Widget>[];
-    for (var start = 0; start < entries.length; start += columns) {
-      final cells = <Widget>[];
-      for (var i = 0; i < columns; i++) {
-        if (i > 0) cells.add(const SizedBox(width: gap));
-        final index = start + i;
-        cells.add(
-          Expanded(
-            child: index < entries.length
-                ? _iconTile(entries[index].key, entries[index].value, fg)
-                : const SizedBox.shrink(),
-          ),
+    return LayoutBuilder(
+      builder: (context, c) {
+        final size = (c.maxWidth - gap * (columns - 1)) / columns;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: [
+            for (final e in entries) _iconTile(e.key, e.value, fg, size),
+            _importTile(fg, size),
+          ],
         );
-      }
-      if (start > 0) rows.add(const SizedBox(height: gap));
-      rows.add(Row(children: cells));
-    }
-    return Column(children: rows);
+      },
+    );
   }
+  
 
   /// Opens the same color picker as Settings > General Color.
   Future<void> _pickColor() async {
@@ -1159,6 +1332,10 @@ class _NameDialogState extends State<_NameDialog> {
             ),
             const SizedBox(height: AppConstants.spaceSm),
             _iconGrid(fg),
+            if (_iconError != null) ...[
+              const SizedBox(height: AppConstants.spaceXs),
+              Text(_iconError!, style: TextStyle(fontSize: 13, color: fg)),
+            ],
             if (widget.showColor) ...[
               const SizedBox(height: AppConstants.spaceMd),
               Text(
