@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS categories (
   kind TEXT NOT NULL CHECK (kind IN ('income', 'expense', 'transfer')),
   icon TEXT,
   color INTEGER,
+  budget INTEGER,
   UNIQUE (name, kind)
 );
 

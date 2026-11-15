@@ -7,6 +7,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/constants.dart';
 import '../core/failures.dart';
@@ -91,7 +92,10 @@ class CategoryItem {
   /// Saved color (ARGB int). null = automatic. Only income / expense
   /// categories use it.
   final int? color;
-  const CategoryItem(this.id, this.name, [this.icon, this.color]);
+
+  /// Budget in pesos. null = no budget. Only expense categories use it.
+  final double? budget;
+  const CategoryItem(this.id, this.name, [this.icon, this.color, this.budget]);
 }
 
 /// An active account in a picker (Transfer From/To, Account fields).
@@ -188,6 +192,72 @@ class HistoryEntry {
 class DatabaseHelper {
   DatabaseHelper._();
   static final DatabaseHelper instance = DatabaseHelper._();
+
+  /// Appearance values kept in SharedPreferences that go in a backup.
+  /// Add a key here to back up more.
+  static const _appearancePrefs = <String>[
+    AppConstants.prefTheme,
+    AppConstants.prefColor,
+    AppConstants.prefAccent,
+    AppConstants.prefText,
+    AppConstants.prefIncomeColor,
+    AppConstants.prefExpenseColor,
+    AppConstants.prefTransferColor,
+    AppConstants.prefReminderColor,
+    AppConstants.prefDeleteColor,
+    AppConstants.prefDoneColor,
+  ];
+
+  /// Settings > Appearance / Theme values that Clear all data resets.
+  static const _designPrefs = <String>[
+    ..._appearancePrefs,
+    AppConstants.prefTextSize,
+    AppConstants.prefFontStyle,
+    AppConstants.prefBoldText,
+    AppConstants.prefAnimEnabled,
+    AppConstants.prefAnimSpeed,
+  ];
+
+  Future<void> _clearDesignPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    for (final key in _designPrefs) {
+      await prefs.remove(key);
+    }
+  }
+
+  Future<Map<String, Object?>> _readAppearance() async {
+    final prefs = await SharedPreferences.getInstance();
+    return {
+      for (final key in _appearancePrefs)
+        if (prefs.containsKey(key)) key: prefs.get(key),
+    };
+  }
+
+  /// Puts the backed-up values back. A key missing from the backup means it
+  /// was at its default, so it is cleared. Old backups without an
+  /// "appearance" section leave the current colors alone.
+  Future<void> _writeAppearance(Object? raw) async {
+    if (raw is! Map) return;
+    final prefs = await SharedPreferences.getInstance();
+    for (final key in _appearancePrefs) {
+      if (!raw.containsKey(key)) {
+        await prefs.remove(key);
+        continue;
+      }
+      final value = raw[key];
+      if (value is bool) {
+        await prefs.setBool(key, value);
+      } else if (value is int) {
+        await prefs.setInt(key, value);
+      } else if (value is double) {
+        await prefs.setDouble(key, value);
+      } else if (value is String) {
+        await prefs.setString(key, value);
+      } else if (value is List) {
+        await prefs.setStringList(key, [for (final item in value) '$item']);
+      }
+    }
+  }
 
   /// Screens listen to this and reload when it changes.
   /// Call [notifyChanged] after any insert, update or delete.
@@ -307,6 +377,7 @@ class DatabaseHelper {
     await _addMissingNoteColumns(db);
     await _addMissingTransactionColumns(db);
     await _addMissingTables(db);
+    await _addMissingBudgetColumn(db);
     final ready = await _schemaIsValid(db) && await _isSeeded(db);
     if (ready) {
       await _fillDefaultIcons(db);
@@ -365,6 +436,16 @@ class DatabaseHelper {
     await _runScript(db, schema);
   }
 
+  /// Older databases get the expense-category budget column without losing
+  /// any data.
+  Future<void> _addMissingBudgetColumn(DatabaseExecutor db) async {
+    final rows = await db.rawQuery('PRAGMA table_info(categories)');
+    final columns = {for (final row in rows) row['name'] as String};
+    if (columns.isNotEmpty && !columns.contains('budget')) {
+      await db.execute('ALTER TABLE categories ADD COLUMN budget INTEGER');
+    }
+  }
+
   Future<Set<String>> _columnsOf(Database db, String table) async {
     final rows = await db.rawQuery('PRAGMA table_info($table)');
     return {for (final row in rows) row['name'] as String};
@@ -420,6 +501,7 @@ class DatabaseHelper {
     await db.transaction((txn) async {
       await _dropAll(txn);
       await _runScript(txn, schema);
+      await _addMissingBudgetColumn(txn);
       await _runScript(txn, seed);
       await _fillDefaultIcons(txn);
     });
@@ -688,9 +770,16 @@ class DatabaseHelper {
     return _guard(() async {
       final db = await database;
       final kind = _kindOf(group);
+      final isCategories = _tableOf(group) == 'categories';
       final rows = await db.query(
         _tableOf(group),
-        columns: ['id', 'name', 'icon', 'color'],
+        columns: [
+          'id',
+          'name',
+          'icon',
+          'color',
+          if (isCategories) 'budget',
+        ],
         where: kind == null ? null : 'kind = ?',
         whereArgs: kind == null ? null : [kind],
         orderBy: 'id',
@@ -702,6 +791,10 @@ class DatabaseHelper {
             row['name'] as String,
             row['icon'] as String?,
             (row['color'] as num?)?.toInt(),
+            (row['budget'] as num?) == null
+                ? null
+                : (row['budget'] as num).toInt() /
+                      AppConstants.centavosPerPeso,
           ),
       ];
       return _applyOrder(
@@ -716,6 +809,7 @@ class DatabaseHelper {
     String name, {
     String? icon,
     int? color,
+    double? budget,
   }) {
     return _guard(() async {
       _checkEditable(group);
@@ -725,6 +819,8 @@ class DatabaseHelper {
         'name': _cleanName(name),
         'icon': icon,
         'color': color,
+        if (_tableOf(group) == 'categories')
+          'budget': budget == null ? null : _positiveCentavos(budget),
         // ignore: use_null_aware_elements
         if (kind != null) 'kind': kind,
       });
@@ -738,6 +834,7 @@ class DatabaseHelper {
     String name, {
     String? icon,
     int? color,
+    double? budget,
   }) {
     return _guard(() async {
       _checkEditable(group);
@@ -749,6 +846,8 @@ class DatabaseHelper {
           'name': _cleanName(name),
           'icon': icon,
           if (_tableOf(group) == 'categories') 'color': color,
+          if (_tableOf(group) == 'categories')
+            'budget': budget == null ? null : _positiveCentavos(budget),
         },
         where: 'id = ?',
         whereArgs: [id],
@@ -1508,17 +1607,29 @@ class DatabaseHelper {
           whereArgs: [AppConstants.prefIconLibrary],
         ))
           ..._libraryPaths(r['value']),
+        for (final r in await db.query(
+          'settings',
+          columns: ['value'],
+          where: 'name LIKE ?',
+          whereArgs: ['$_themePrefix%'],
+        ))
+          _themeImageOf(r['value']),
       ];
       await _rebuild(db);
       await db.delete(
         'settings',
-        where: 'name LIKE ? OR name = ? OR name LIKE ?',
+        where: 'name LIKE ? OR name = ? OR name LIKE ? OR name LIKE ?',
         whereArgs: [
           '${AppConstants.prefCategoryOrder}%',
           AppConstants.prefTypeOrder,
           'categoryIcons.%',
+          '$_themePrefix%',
         ],
       );
+      for (final key in _designPrefs) {
+        await db.delete('settings', where: 'name = ?', whereArgs: [key]);
+      }
+      await _clearDesignPrefs();
       await _deleteImageFiles(images);
       notifyChanged();
     });
@@ -1542,7 +1653,7 @@ class DatabaseHelper {
       'created_at',
       'deleted_at',
     ],
-    'categories': ['id', 'name', 'kind', 'icon', 'color'],
+    'categories': ['id', 'name', 'kind', 'icon', 'color', 'budget'],
     'transactions': [
       'id',
       'type',
@@ -1591,11 +1702,13 @@ class DatabaseHelper {
           _ => rows,
         };
       }
-      return const JsonEncoder.withIndent('  ').convert({
+      final appearance = await _readAppearance();
+      return JsonEncoder.withIndent('  ').convert({
         'app': AppConstants.exportApp,
         'format': AppConstants.exportFormat,
         'appVersion': AppConstants.appVersion,
         'exportedAt': DateTime.now().toIso8601String(),
+        'appearance': appearance,
         'tables': tables,
       });
     });
@@ -1751,6 +1864,7 @@ class DatabaseHelper {
         await db.transaction((txn) async {
           await _dropAll(txn);
           await _runScript(txn, schema);
+          await _addMissingBudgetColumn(txn);
           if (hasSettings) await txn.delete('settings');
           for (final table in _exportColumns.keys) {
             for (final row in data[table]!) {
@@ -1766,6 +1880,7 @@ class DatabaseHelper {
           'The backup file is damaged or doesn\'t match this app.',
         );
       }
+      await _writeAppearance(decoded['appearance']);
       await _deleteImageFiles(oldImages.where((p) => !keep.contains(p)));
       notifyChanged();
     });

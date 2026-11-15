@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -282,12 +283,10 @@ Widget _accentDialog(
       actionsPadding: compact
           ? AppConstants.popupActionsPaddingCompact
           : AppConstants.popupActionsPadding,
-      titleTextStyle: compact
-          ? theme.textTheme.titleLarge?.copyWith(
-              color: fg,
-              fontWeight: FontWeight.w600,
-            )
-          : null,
+      titleTextStyle: theme.textTheme.titleLarge?.copyWith(
+        color: fg,
+        fontWeight: compact ? FontWeight.w600 : FontWeight.w800,
+      ),
       title: Text(title),
       content: SizedBox(width: double.maxFinite, child: content),
       actions: actions,
@@ -532,15 +531,15 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
   String _singular(CategoryGroup g) {
     switch (g) {
       case CategoryGroup.accountType:
-        return 'type';
+        return 'Type';
       case CategoryGroup.accountCategory:
-        return 'category';
+        return 'Category';
       case CategoryGroup.income:
-        return 'income category';
+        return 'Income Category';
       case CategoryGroup.expense:
-        return 'expense category';
+        return 'Expense Category';
       case CategoryGroup.transfer:
-        return 'transfer category';
+        return 'Transfer Category';
     }
   }
 
@@ -594,6 +593,8 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     final showColor =
         group == CategoryGroup.income || group == CategoryGroup.expense;
     final startColor = showColor ? item?.color : null;
+    final showBudget = group == CategoryGroup.expense;
+    final startBudget = showBudget ? item?.budget : null;
     final kindTitle = _singular(group)
         .split(' ')
         .map((w) => w[0].toUpperCase() + w.substring(1))
@@ -610,6 +611,8 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
         showColor: showColor,
         initialColor: startColor,
         colorTitle: '$kindTitle Color', // <- header text of the color picker
+        showBudget: showBudget,
+        initialBudget: startBudget,
       ),
     );
     if (result == null || !mounted) return;
@@ -622,16 +625,19 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
           result.name,
           icon: result.icon,
           color: result.color,
+          budget: result.budget,
         );
       } else if (result.name != item.name ||
           result.icon != startIcon ||
-          result.color != startColor) {
+          result.color != startColor ||
+          result.budget != startBudget) {
         await db.renameCategoryItem(
           group,
           item.id,
           result.name,
           icon: result.icon,
           color: result.color,
+          budget: result.budget,
         );
       }
     } on Failure catch (f) {
@@ -1037,7 +1043,8 @@ class _NameResult {
   final String name;
   final String icon;
   final int? color; // null = automatic
-  const _NameResult(this.name, this.icon, this.color);
+  final double? budget; // null = no budget
+  const _NameResult(this.name, this.icon, this.color, this.budget);
 }
 
 class _IconTile extends StatefulWidget {
@@ -1128,6 +1135,8 @@ class _NameDialog extends StatefulWidget {
   final bool showColor;
   final int? initialColor;
   final String colorTitle;
+  final bool showBudget;
+  final double? initialBudget;
 
   const _NameDialog({
     required this.title,
@@ -1136,6 +1145,8 @@ class _NameDialog extends StatefulWidget {
     this.showColor = false,
     this.initialColor,
     this.colorTitle = 'Color',
+    this.showBudget = false,
+    this.initialBudget,
   });
 
   @override
@@ -1144,6 +1155,7 @@ class _NameDialog extends StatefulWidget {
 
 class _NameDialogState extends State<_NameDialog> {
   late final TextEditingController _controller;
+  late final TextEditingController _budgetController;
   late String _icon;
   int? _color;
   String? _errorText;
@@ -1155,11 +1167,20 @@ class _NameDialogState extends State<_NameDialog> {
     _controller = TextEditingController(text: widget.initial);
     _icon = widget.initialIcon;
     _color = widget.initialColor;
+    final budget = widget.initialBudget;
+    _budgetController = TextEditingController(
+      text: budget == null
+          ? ''
+          : (budget == budget.roundToDouble()
+                ? budget.toStringAsFixed(0)
+                : budget.toStringAsFixed(2)),
+    );
   }
 
   @override
   void dispose() {
     _controller.dispose();
+    _budgetController.dispose();
     super.dispose();
   }
 
@@ -1169,8 +1190,13 @@ class _NameDialogState extends State<_NameDialog> {
       setState(() => _errorText = 'Enter a name');
       return;
     }
-    Navigator.of(context)
-        .pop(_NameResult(name, _icon, widget.showColor ? _color : null));
+    final parsed = double.tryParse(_budgetController.text.trim());
+    final budget = (widget.showBudget && parsed != null && parsed > 0)
+        ? parsed
+        : null;
+    Navigator.of(
+      context,
+    ).pop(_NameResult(name, _icon, widget.showColor ? _color : null, budget));
   }
 
   Future<void> _importIcons() async {
@@ -1405,6 +1431,34 @@ class _NameDialogState extends State<_NameDialog> {
     );
   }
 
+  Widget _budgetField(Color fg) {
+    OutlineInputBorder border(Color c, double w) => OutlineInputBorder(
+      borderRadius: BorderRadius.circular(AppConstants.radiusSm),
+      borderSide: BorderSide(color: c, width: w),
+    );
+    return TextField(
+      controller: _budgetController,
+      cursorColor: fg,
+      style: TextStyle(color: fg),
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+      ],
+      decoration: InputDecoration(
+        isDense: true,
+        prefixText: '${AppConstants.currencySymbol} ',
+        prefixStyle: TextStyle(color: fg),
+        hintText: 'No budget',
+        hintStyle: TextStyle(
+          color: fg.withValues(alpha: AppConstants.mutedAlpha),
+        ),
+        border: border(fg.withValues(alpha: AppConstants.borderAlpha), 1),
+        enabledBorder: border(fg.withValues(alpha: AppConstants.borderAlpha), 1),
+        focusedBorder: border(fg, 2),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final accent = AppTheme.accentOf(context);
@@ -1426,7 +1480,6 @@ class _NameDialogState extends State<_NameDialog> {
           children: [
             TextField(
               controller: _controller,
-              autofocus: true,
               cursorColor: fg,
               style: TextStyle(color: fg),
               textCapitalization: TextCapitalization.words,
@@ -1476,6 +1529,18 @@ class _NameDialogState extends State<_NameDialog> {
               ),
               const SizedBox(height: AppConstants.spaceSm),
               _colorField(fg),
+            ],
+            if (widget.showBudget) ...[
+              const SizedBox(height: AppConstants.spaceMd),
+              Text(
+                'Budget',
+                style: popupTheme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: fg,
+                ),
+              ),
+              const SizedBox(height: AppConstants.spaceSm),
+              _budgetField(fg),
             ],
             const SizedBox(height: AppConstants.spaceSm),
           ],
