@@ -3088,51 +3088,55 @@ class _CardBack extends StatelessWidget {
             ),
           ),
           // First notes section: the small one, with a box.
-          Positioned(
-            top: 160 * u,
-            left: 38 * u,
-            right: 39 * u,
-            height: 53 * u,
-            child: Container(
-              padding: EdgeInsets.symmetric(horizontal: 20 * u),
-              alignment: Alignment.centerLeft,
-              decoration: BoxDecoration(
-                color: fg.withValues(alpha: AppConstants.tintAlpha),
-                borderRadius: BorderRadius.circular(14 * u),
-              ),
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
+          // Hidden when the note title is empty.
+          if (title.isNotEmpty)
+            Positioned(
+              top: 160 * u,
+              left: 38 * u,
+              right: 39 * u,
+              height: 53 * u,
+              child: Container(
+                padding: EdgeInsets.symmetric(horizontal: 20 * u),
                 alignment: Alignment.centerLeft,
-                child: Text(
-                  title.isEmpty ? 'Notes' : title,
-                  maxLines: 1,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontSize: 24 * k,
-                    height: 1.0,
-                    fontWeight: FontWeight.w700,
-                    color: fg,
+                decoration: BoxDecoration(
+                  color: fg.withValues(alpha: AppConstants.tintAlpha),
+                  borderRadius: BorderRadius.circular(14 * u),
+                ),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontSize: 24 * k,
+                      height: 1.0,
+                      fontWeight: FontWeight.w700,
+                      color: fg,
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
           // Second notes section: the bigger one, no box.
-          Positioned(
-            top: 228 * u,
-            left: 58 * u,
-            right: 58 * u,
-            bottom: 82 * u,
-            child: Text(
-              body.isEmpty ? 'Notes' : body,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontSize: 24 * k,
-                height: 1.2,
-                fontWeight: FontWeight.w400,
-                color: fg.withValues(alpha: AppConstants.mutedAlpha),
+          // Hidden when the note body is empty.
+          if (body.isNotEmpty)
+            Positioned(
+              top: 228 * u,
+              left: 58 * u,
+              right: 58 * u,
+              bottom: 82 * u,
+              child: Text(
+                body,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontSize: 24 * k,
+                  height: 1.2,
+                  fontWeight: FontWeight.w400,
+                  color: fg.withValues(alpha: AppConstants.mutedAlpha),
+                ),
               ),
             ),
-          ),
           // Type icon, bottom left
           Positioned(
             left: 40 * u,
