@@ -122,6 +122,13 @@ class AppConstants {
   static const double iconTileAlpha = 0.10;
   static const double iconTileSelectedAlpha = 0.28;
 
+  // Imported (picture) icons on the Categories screen.
+  // An icon value that starts with this prefix is a file path.
+  static const String iconImagePrefix = 'img:';
+  static const String prefIconLibrary = 'categoryIcons.library'; // imported icons
+  static const String prefIconHidden = 'categoryIcons.hidden'; // deleted built-ins
+  static const String iconImageFolder = 'category_icons';
+
   // ---------- Settings screen ----------
   static const String prefTheme = 'settings.theme';
   static const String prefColor = 'settings.customColor';
