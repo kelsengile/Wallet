@@ -232,30 +232,65 @@ class _DatabaseScreenState extends State<DatabaseScreen> {
 
             return ListView(
               padding: const EdgeInsets.only(bottom: AppConstants.spaceLg),
-              children: [
-                const _SectionHeader('Storage'),
-                _SettingGroup(
-                  children: [
-                    ListTile(
-                      leading: const Icon(Icons.storage_outlined),
-                      title: const Text('SQLite database'),
-                      subtitle: const Text('Stored on this device'),
-                      trailing: const Icon(
-                        Icons.check_circle,
-                        color: Colors.green,
-                      ),
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.bar_chart_outlined),
-                      title: const Text('Records'),
-                      subtitle: Text(
-                        '${stats.accounts} accounts | '
-                        '${stats.transactions} transactions | '
-                        '${stats.reminders} reminders | '
-                        '${stats.categories} categories',
-                      ),
-                    ),
-                  ],
+children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppConstants.spaceMd,
+                    vertical: AppConstants.spaceMd,
+                  ),
+                  child: Builder(
+                    builder: (context) {
+                      final theme = Theme.of(context);
+                      final fg = AppTheme.accentOf(context).foreground;
+                      final muted = fg.withValues(
+                        alpha: AppConstants.mutedAlpha,
+                      );
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.storage_outlined, size: 32, color: fg),
+                          const SizedBox(height: AppConstants.spaceSm),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'SQLite Database',
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  color: fg,
+                                ),
+                              ),
+                              const SizedBox(width: AppConstants.spaceSm),
+                              const Icon(
+                                Icons.check_circle,
+                                color: Colors.green,
+                                size: 20,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Stored on this device',
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: muted,
+                            ),
+                          ),
+                          const SizedBox(height: AppConstants.spaceMd),
+                          Text(
+                            '${stats.accounts} accounts | '
+                            '${stats.transactions} transactions | '
+                            '${stats.reminders} reminders | '
+                            '${stats.categories} categories',
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: muted,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
                 ),
                 const SizedBox(height: AppConstants.spaceSm),
                 const _SectionHeader('Trash'),
@@ -291,7 +326,7 @@ class _DatabaseScreenState extends State<DatabaseScreen> {
                   ],
                 ),
                 const SizedBox(height: AppConstants.spaceSm),
-                const _SectionHeader('Danger zone'),
+                const _SectionHeader('Danger Zone'),
                 _SettingGroup(
                   children: [
                     ListTile(
