@@ -125,6 +125,8 @@ class AppConstants {
   // Imported (picture) icons on the Categories screen.
   // An icon value that starts with this prefix is a file path.
   static const String iconImagePrefix = 'img:';
+  static const String prefIconLibrary = 'categoryIcons.library'; // imported icons
+  static const String prefIconHidden = 'categoryIcons.hidden'; // deleted built-ins
   static const String iconImageFolder = 'category_icons';
 
   // ---------- Settings screen ----------

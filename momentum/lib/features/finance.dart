@@ -10122,8 +10122,9 @@ class _TxCountGraphState extends State<_TxCountGraph> {
     // Everything that counts: (day, kind).
     final items = <(DateTime, String)>[];
     for (final e in widget.entries) {
-      if (kind == null || e.type == kind)
+      if (kind == null || e.type == kind) {
         items.add((_dateOnly(e.date), e.type));
+      }
     }
     if (kind == null) {
       for (final r in widget.reminders) {

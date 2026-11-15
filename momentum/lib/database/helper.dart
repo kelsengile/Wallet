@@ -385,13 +385,15 @@ class DatabaseHelper {
   /// The locked Transfer category is the last seed row, so if it is there
   /// the whole seed finished.
   Future<bool> _isSeeded(Database db) async {
-    final transfer = Sqflite.firstIntValue(
+    final transfer =
+        Sqflite.firstIntValue(
           await db.rawQuery(
             "SELECT COUNT(*) FROM categories WHERE kind = 'transfer'",
           ),
         ) ??
         0;
-    final types = Sqflite.firstIntValue(
+    final types =
+        Sqflite.firstIntValue(
           await db.rawQuery('SELECT COUNT(*) FROM account_types'),
         ) ??
         0;
@@ -463,13 +465,13 @@ class DatabaseHelper {
       ''')).first;
 
       return AccountsSummary(
-        totalBalance: (balanceRow['total'] as num).toInt() /
-            AppConstants.centavosPerPeso,
+        totalBalance:
+            (balanceRow['total'] as num).toInt() / AppConstants.centavosPerPeso,
         accountCount: (balanceRow['count'] as num).toInt(),
-        income: (incomeRow['total'] as num).toInt() /
-            AppConstants.centavosPerPeso,
-        expense: (expenseRow['total'] as num).toInt() /
-            AppConstants.centavosPerPeso,
+        income:
+            (incomeRow['total'] as num).toInt() / AppConstants.centavosPerPeso,
+        expense:
+            (expenseRow['total'] as num).toInt() / AppConstants.centavosPerPeso,
       );
     } catch (error) {
       debugPrint('getAccountsSummary failed: $error');
@@ -485,9 +487,7 @@ class DatabaseHelper {
     return _guard(() async {
       final db = await database;
       final rows = await db.query('settings');
-      return {
-        for (final r in rows) r['name'] as String: r['value'] as String,
-      };
+      return {for (final r in rows) r['name'] as String: r['value'] as String};
     });
   }
 
@@ -495,11 +495,10 @@ class DatabaseHelper {
   Future<void> setSetting(String name, String value) {
     return _guard(() async {
       final db = await database;
-      await db.insert(
-        'settings',
-        {'name': name, 'value': value},
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
+      await db.insert('settings', {
+        'name': name,
+        'value': value,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
     });
   }
 
@@ -527,7 +526,9 @@ class DatabaseHelper {
 
   /// Saved order of the account type ids on the Finance screen.
   Future<List<int>> getTypeOrder() {
-    return _guard(() async => _readIdList(await database, AppConstants.prefTypeOrder));
+    return _guard(
+      () async => _readIdList(await database, AppConstants.prefTypeOrder),
+    );
   }
 
   Future<void> saveTypeOrder(List<int> ids) =>
@@ -703,7 +704,10 @@ class DatabaseHelper {
             (row['color'] as num?)?.toInt(),
           ),
       ];
-      return _applyOrder(items, await _readIdList(db, _categoryOrderKey(group)));
+      return _applyOrder(
+        items,
+        await _readIdList(db, _categoryOrderKey(group)),
+      );
     });
   }
 
@@ -795,7 +799,8 @@ class DatabaseHelper {
   }
 
   Future<void> _requireActiveAccount(DatabaseExecutor db, int id) async {
-    final found = Sqflite.firstIntValue(
+    final found =
+        Sqflite.firstIntValue(
           await db.rawQuery(
             'SELECT COUNT(*) FROM accounts WHERE id = ? AND deleted_at IS NULL',
             [id],
@@ -990,10 +995,7 @@ class DatabaseHelper {
   Future<List<HistoryEntry>> getHistory({DateTime? from, DateTime? until}) {
     return _guard(() async {
       final db = await database;
-      final where = <String>[
-        't.deleted_at IS NULL',
-        'a.deleted_at IS NULL',
-      ];
+      final where = <String>['t.deleted_at IS NULL', 'a.deleted_at IS NULL'];
       final args = <Object?>[];
       if (from != null) {
         where.add('t.date >= ?');
@@ -1019,7 +1021,8 @@ class DatabaseHelper {
           HistoryEntry(
             id: (row['id'] as num).toInt(),
             type: row['type'] as String,
-            title: _nonEmpty(row['title'] as String?) ??
+            title:
+                _nonEmpty(row['title'] as String?) ??
                 _nonEmpty(row['category_name'] as String?) ??
                 _capitalize(row['type'] as String),
             amount:
@@ -1292,7 +1295,8 @@ class DatabaseHelper {
           TrashItem(
             kind: TrashKind.transaction,
             id: (row['id'] as num).toInt(),
-            title: _nonEmpty(row['title'] as String?) ??
+            title:
+                _nonEmpty(row['title'] as String?) ??
                 _nonEmpty(row['category_name'] as String?) ??
                 _capitalize(row['type'] as String),
             subtitle: _transactionSubtitle(row),
@@ -1330,13 +1334,15 @@ class DatabaseHelper {
   }
 
   Future<int> _countTrash(DatabaseExecutor db) async {
-    final accounts = Sqflite.firstIntValue(
+    final accounts =
+        Sqflite.firstIntValue(
           await db.rawQuery(
             'SELECT COUNT(*) FROM accounts WHERE deleted_at IS NOT NULL',
           ),
         ) ??
         0;
-    final transactions = Sqflite.firstIntValue(
+    final transactions =
+        Sqflite.firstIntValue(
           await db.rawQuery(
             'SELECT COUNT(*) FROM transactions WHERE deleted_at IS NOT NULL',
           ),
@@ -1412,11 +1418,7 @@ class DatabaseHelper {
             where: 'account_id = ? OR to_account_id = ?',
             whereArgs: [item.id, item.id],
           );
-          await txn.delete(
-            'accounts',
-            where: 'id = ?',
-            whereArgs: [item.id],
-          );
+          await txn.delete('accounts', where: 'id = ?', whereArgs: [item.id]);
         } else {
           final rows = await txn.query(
             'transactions',
@@ -1495,14 +1497,27 @@ class DatabaseHelper {
         ...(await db.rawQuery('SELECT image_path FROM reminders'))
             .map((r) => r['image_path']),
         for (final t in _iconTables)
-          ...(await db.query(t, columns: ['icon']))
-              .map((r) => _iconImageOf(r['icon'])),
+          ...(await db.query(
+            t,
+            columns: ['icon'],
+          )).map((r) => _iconImageOf(r['icon'])),
+        for (final r in await db.query(
+          'settings',
+          columns: ['value'],
+          where: 'name = ?',
+          whereArgs: [AppConstants.prefIconLibrary],
+        ))
+          ..._libraryPaths(r['value']),
       ];
       await _rebuild(db);
       await db.delete(
         'settings',
-        where: 'name LIKE ? OR name = ?',
-        whereArgs: ['${AppConstants.prefCategoryOrder}%', AppConstants.prefTypeOrder],
+        where: 'name LIKE ? OR name = ? OR name LIKE ?',
+        whereArgs: [
+          '${AppConstants.prefCategoryOrder}%',
+          AppConstants.prefTypeOrder,
+          'categoryIcons.%',
+        ],
       );
       await _deleteImageFiles(images);
       notifyChanged();
@@ -1556,10 +1571,7 @@ class DatabaseHelper {
       'done',
       'created_at',
     ],
-    'settings': [
-      'name', 
-      'value'
-    ],
+    'settings': ['name', 'value'],
   };
 
   /// Every table (trash included) as one JSON text, ready to save as a file.
@@ -1572,15 +1584,10 @@ class DatabaseHelper {
         tables[table] = switch (table) {
           'account_types' ||
           'account_categories' ||
-          'categories' => [
-              for (final row in rows) await _withIconImage(row),
-            ],
-          'transactions' || 'reminders' => [
-              for (final row in rows) await _withImage(row),
-            ],
-          'settings' => [
-              for (final row in rows) await _withThemeImage(row),
-            ],
+          'categories' => [for (final row in rows) await _withIconImage(row)],
+          'transactions' ||
+          'reminders' => [for (final row in rows) await _withImage(row)],
+          'settings' => [for (final row in rows) await _withThemeImage(row)],
           _ => rows,
         };
       }
@@ -1594,9 +1601,8 @@ class DatabaseHelper {
     });
   }
 
-  ValidationFailure get _badBackup => const ValidationFailure(
-        'That file is not a valid Momentum backup.',
-      );
+  ValidationFailure get _badBackup =>
+      const ValidationFailure('That file is not a valid Momentum backup.');
 
   /// Replaces ALL current data with the data in a backup file.
   /// Everything happens in one transaction, so a bad file changes nothing.
@@ -1621,8 +1627,10 @@ class DatabaseHelper {
       // Keep only known columns of every row. Backups made before
       // reminders / settings existed simply have no such list.
       final data = <String, List<Map<String, Object?>>>{};
+      final iconPaths = <String, String>{};
       for (final entry in _exportColumns.entries) {
-        final raw = tables[entry.key] ??
+        final raw =
+            tables[entry.key] ??
             ((entry.key == 'reminders' || entry.key == 'settings')
                 ? <Object?>[]
                 : null);
@@ -1651,15 +1659,20 @@ class DatabaseHelper {
           }
           if (_iconTables.contains(entry.key) &&
               _iconImageOf(map['icon']) != null) {
+            final oldPath = _iconImageOf(map['icon'])!;
             final iconB64 = row['icon_base64'];
-            if (iconB64 is String && iconB64.isNotEmpty) {
+            if (iconPaths.containsKey(oldPath)) {
+              map['icon'] =
+                  '${AppConstants.iconImagePrefix}${iconPaths[oldPath]}';
+            } else if (iconB64 is String && iconB64.isNotEmpty) {
               try {
                 final path = await _writeImage(
                   base64Decode(iconB64),
-                  _iconImageOf(map['icon']),
+                  oldPath,
                   folder: AppConstants.iconImageFolder,
                 );
                 written.add(path);
+                iconPaths[oldPath] = path;
                 map['icon'] = '${AppConstants.iconImagePrefix}$path';
               } catch (_) {
                 map['icon'] = null;
@@ -1668,17 +1681,26 @@ class DatabaseHelper {
               map['icon'] = null; // picture wasn't in the backup
             }
           }
-          rows.add(map);
           if (entry.key == 'settings' && b64 is String && b64.isNotEmpty) {
             map['value'] = await _restoreThemeImage(map['value'], b64, written);
           }
+          if (entry.key == 'settings' &&
+              map['name'] == AppConstants.prefIconLibrary) {
+            map['value'] = await _restoreIconLibrary(
+              row['icons_base64'],
+              iconPaths,
+              written,
+            );
+          }
+          rows.add(map);
         }
         data[entry.key] = rows;
       }
 
       // The app needs account types and the locked Transfer category.
-      final hasTransfer =
-          data['categories']!.any((row) => row['kind'] == 'transfer');
+      final hasTransfer = data['categories']!.any(
+        (row) => row['kind'] == 'transfer',
+      );
       if (data['account_types']!.isEmpty || !hasTransfer) {
         await _deleteImageFiles(written);
         throw _badBackup;
@@ -1700,14 +1722,26 @@ class DatabaseHelper {
         ...(await db.rawQuery('SELECT image_path FROM reminders'))
             .map((r) => r['image_path']),
         ...oldThemes.map((r) => _themeImageOf(r['value'])),
+        for (final row in await db.query(
+          'settings',
+          columns: ['value'],
+          where: 'name = ?',
+          whereArgs: [AppConstants.prefIconLibrary],
+        ))
+          ..._libraryPaths(row['value']),
         for (final t in _iconTables)
-          ...(await db.query(t, columns: ['icon']))
-              .map((r) => _iconImageOf(r['icon'])),
+          ...(await db.query(
+            t,
+            columns: ['icon'],
+          )).map((r) => _iconImageOf(r['icon'])),
       ];
       final keep = <Object?>{
         for (final t in ['transactions', 'reminders'])
           for (final row in data[t]!) row['image_path'],
         for (final row in data['settings']!) _themeImageOf(row['value']),
+        for (final row in data['settings']!)
+          if (row['name'] == AppConstants.prefIconLibrary)
+            ..._libraryPaths(row['value']),
         for (final t in _iconTables)
           for (final row in data[t]!) _iconImageOf(row['icon']),
       };
@@ -1752,13 +1786,76 @@ class DatabaseHelper {
     return copy;
   }
 
-    /// The picture path of an imported icon (null = a normal icon).
+  /// Points every row that uses [oldKey] to [newKey].
+  Future<void> replaceIcon(String oldKey, String newKey) {
+    return _guard(() async {
+      final db = await database;
+      for (final table in _iconTables) {
+        await db.update(
+          table,
+          {'icon': newKey},
+          where: 'icon = ?',
+          whereArgs: [oldKey],
+        );
+      }
+      notifyChanged();
+    });
+  }
+
+  /// The picture path of an imported icon (null = a normal icon).
   String? _iconImageOf(Object? icon) {
     if (icon is String && icon.startsWith(AppConstants.iconImagePrefix)) {
       final path = icon.substring(AppConstants.iconImagePrefix.length);
       return path.isEmpty ? null : path;
     }
     return null;
+  }
+
+  List<String> _libraryPaths(Object? value) {
+    try {
+      final list = jsonDecode('$value');
+      if (list is List) {
+        return [
+          for (final entry in list)
+            if (entry is String &&
+                entry.startsWith(AppConstants.iconImagePrefix))
+              entry.substring(AppConstants.iconImagePrefix.length),
+        ];
+      }
+    } on FormatException {
+      return [];
+    }
+    return [];
+  }
+
+  Future<Object?> _restoreIconLibrary(
+    Object? icons,
+    Map<String, String> known,
+    List<String> written,
+  ) async {
+    final keys = <String>[];
+    if (icons is List) {
+      for (final entry in icons) {
+        if (entry is! Map) continue;
+        final oldPath = entry['path'] as String?;
+        final b64 = entry['b64'];
+        if (b64 is! String) continue;
+        try {
+          var path = oldPath == null ? null : known[oldPath];
+          if (path == null) {
+            path = await _writeImage(
+              base64Decode(b64),
+              oldPath,
+              folder: AppConstants.iconImageFolder,
+            );
+            written.add(path);
+            if (oldPath != null) known[oldPath] = path;
+          }
+          keys.add('${AppConstants.iconImagePrefix}$path');
+        } catch (_) {}
+      }
+    }
+    return jsonEncode(keys);
   }
 
   /// Copy of [row] with the icon picture bytes added (base64).
@@ -1776,7 +1873,11 @@ class DatabaseHelper {
     return copy;
   }
 
-  Future<String?> _iconOf(DatabaseExecutor db, CategoryGroup group, int id) async {
+  Future<String?> _iconOf(
+    DatabaseExecutor db,
+    CategoryGroup group,
+    int id,
+  ) async {
     final rows = await db.query(
       _tableOf(group),
       columns: ['icon'],
@@ -1836,6 +1937,21 @@ class DatabaseHelper {
         } catch (_) {}
       }
     }
+    if (name == AppConstants.prefIconLibrary) {
+      final out = <Map<String, String>>[];
+      for (final path in _libraryPaths(row['value'])) {
+        try {
+          final file = File(path);
+          if (await file.exists()) {
+            out.add({
+              'path': path,
+              'b64': base64Encode(await file.readAsBytes()),
+            });
+          }
+        } catch (_) {}
+      }
+      copy['icons_base64'] = out;
+    }
     return copy;
   }
 
@@ -1865,5 +1981,4 @@ class DatabaseHelper {
       return value;
     }
   }
-
 }

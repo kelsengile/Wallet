@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -50,6 +52,50 @@ class _CategoryIcons {
   };
 
   static const String fallback = 'label';
+  static final List<String> imported = [];
+  static final Set<String> hidden = {};
+
+  static List<String> get available => [
+    for (final key in all.keys)
+      if (!hidden.contains(key)) key,
+    ...imported,
+  ];
+
+  static String get first => available.isEmpty ? fallback : available.first;
+
+  static Future<void> load() async {
+    final settings = await DatabaseHelper.instance.getAllSettings();
+    imported
+      ..clear()
+      ..addAll(
+        _decodeKeys(settings[AppConstants.prefIconLibrary]).where(isImage),
+      );
+    hidden
+      ..clear()
+      ..addAll(
+        _decodeKeys(settings[AppConstants.prefIconHidden])
+            .where(all.containsKey),
+      );
+  }
+
+  static Future<void> save() async {
+    final db = DatabaseHelper.instance;
+    await db.setSetting(AppConstants.prefIconLibrary, jsonEncode(imported));
+    await db.setSetting(
+      AppConstants.prefIconHidden,
+      jsonEncode(hidden.toList()),
+    );
+  }
+
+  static List<String> _decodeKeys(String? value) {
+    if (value == null) return [];
+    try {
+      final decoded = jsonDecode(value);
+      return decoded is List ? decoded.whereType<String>().toList() : [];
+    } on FormatException {
+      return [];
+    }
+  }
 
   /// Used for new items and for anything not listed below.
   static const Map<CategoryGroup, String> _groupDefault = {
@@ -444,6 +490,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
 
   Future<void> _load() async {
     try {
+      await _CategoryIcons.load();
       final groups = CategoryGroup.values;
       // getCategoryItems already returns each list in its saved order.
       final results = await Future.wait(
@@ -474,10 +521,9 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     list.insert(newIndex, moved);
     setState(() => _items[group] = list);
     try {
-      await DatabaseHelper.instance.saveCategoryOrder(
-        group,
-        [for (final item in list) item.id],
-      );
+      await DatabaseHelper.instance.saveCategoryOrder(group, [
+        for (final item in list) item.id,
+      ]);
     } catch (_) {
       _snack('Couldn\'t save the new order.');
     }
@@ -515,12 +561,13 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
       context,
       title: 'Delete $kind',
       name: item.name,
-            icon: _CategoryIcons.view(
+      icon: _CategoryIcons.view(
         _CategoryIcons.keyOf(group, item),
         size: 20,
         color: AppSettings.instance.deleteColor,
       ),
-      message: 'This ${_singular(group)} will be removed. '
+      message:
+          'This ${_singular(group)} will be removed. '
           'This action cannot be undone.',
     );
   }
@@ -544,7 +591,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     final startIcon = item == null
         ? _CategoryIcons.defaultKey(group, '')
         : _CategoryIcons.keyOf(group, item);
-        final showColor =
+    final showColor =
         group == CategoryGroup.income || group == CategoryGroup.expense;
     final startColor = showColor ? item?.color : null;
     final kindTitle = _singular(group)
@@ -599,11 +646,9 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
       title: title,
       items: _items[group] ?? const [],
       editable: editable,
-      useColor:
-          group == CategoryGroup.income || group == CategoryGroup.expense,
+      useColor: group == CategoryGroup.income || group == CategoryGroup.expense,
       iconKeyFor: (item) => _CategoryIcons.keyOf(group, item),
-        iconFor: (item) =>
-          _CategoryIcons.of(_CategoryIcons.keyOf(group, item)),
+      iconFor: (item) => _CategoryIcons.of(_CategoryIcons.keyOf(group, item)),
       onAdd: () => _openEditor(group),
       onTapItem: (item) => _openEditor(group, item: item),
       onDeleteItem: (item) => _deleteItem(group, item),
@@ -751,8 +796,7 @@ class _CategoryGroupCard extends StatelessWidget {
     Color barColor,
   ) {
     final theme = Theme.of(context);
-    final tint =
-        (useColor && item.color != null) ? Color(item.color!) : null;
+    final tint = (useColor && item.color != null) ? Color(item.color!) : null;
     final iconKey = iconKeyFor(item);
     final isImg = _CategoryIcons.isImage(iconKey);
 
@@ -781,8 +825,9 @@ class _CategoryGroupCard extends StatelessWidget {
                   color: isImg
                       ? null
                       : (tint ??
-                          fg.withValues(
-                              alpha: AppConstants.categoryAvatarAlpha)),
+                            fg.withValues(
+                              alpha: AppConstants.categoryAvatarAlpha,
+                            )),
                 ),
                 child: _CategoryIcons.view(
                   iconKey,
@@ -886,10 +931,8 @@ class _CategoryGroupCard extends StatelessWidget {
       onReorder: onReorder,
       // While dragging: no background box or shadow behind the bar, so only
       // the bar itself is seen moving over the card.
-      proxyDecorator: (child, index, animation) => Material(
-        type: MaterialType.transparency,
-        child: child,
-      ),
+      proxyDecorator: (child, index, animation) =>
+          Material(type: MaterialType.transparency, child: child),
       children: [
         for (var i = 0; i < items.length; i++)
           _spaced(
@@ -997,10 +1040,87 @@ class _NameResult {
   const _NameResult(this.name, this.icon, this.color);
 }
 
+class _IconTile extends StatefulWidget {
+  final double size;
+  final Color fg;
+  final bool selected;
+  final VoidCallback onTap;
+  final VoidCallback onDelete;
+  final Widget child;
+
+  const _IconTile({
+    required this.size,
+    required this.fg,
+    required this.selected,
+    required this.onTap,
+    required this.onDelete,
+    required this.child,
+  });
+
+  @override
+  State<_IconTile> createState() => _IconTileState();
+}
+
+class _IconTileState extends State<_IconTile> {
+  Timer? _deleteTimer;
+  bool _deletedDuringPress = false;
+
+  void _startDeleteTimer(TapDownDetails _) {
+    _deleteTimer?.cancel();
+    _deletedDuringPress = false;
+    _deleteTimer = Timer(const Duration(seconds: 3), () {
+      _deletedDuringPress = true;
+      widget.onDelete();
+    });
+  }
+
+  void _cancelDeleteTimer([Object? _]) {
+    _deleteTimer?.cancel();
+    _deleteTimer = null;
+  }
+
+  @override
+  void dispose() {
+    _cancelDeleteTimer();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: widget.size,
+      height: widget.size,
+      child: Material(
+        color: widget.fg.withValues(
+          alpha: widget.selected
+              ? AppConstants.iconTileSelectedAlpha
+              : AppConstants.iconTileAlpha,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppConstants.iconTileRadius),
+          side: widget.selected
+              ? BorderSide(color: widget.fg, width: 2)
+              : BorderSide.none,
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () {
+            if (!_deletedDuringPress) widget.onTap();
+          },
+          onTapDown: _startDeleteTimer,
+          onTapUp: _cancelDeleteTimer,
+          onTapCancel: _cancelDeleteTimer,
+          child: widget.child,
+        ),
+      ),
+    );
+  }
+}
+
 /// Pop-up to add or edit one item: a Name field, an icon grid and a color
 /// bar that opens the same color picker as Settings > General Color.
 /// Drawn on the accent color, with Glyph-colored text and buttons.
-/// (Deleting is done by swiping the bar, not here.)
+/// Hold an icon tile for three seconds to remove it from the picker.
 class _NameDialog extends StatefulWidget {
   final String title;
   final String initial;
@@ -1028,8 +1148,6 @@ class _NameDialogState extends State<_NameDialog> {
   int? _color;
   String? _errorText;
   String? _iconError;
-  String? _pickedKey; // picture imported in THIS dialog
-  bool _saved = false;
 
   @override
   void initState() {
@@ -1041,11 +1159,6 @@ class _NameDialogState extends State<_NameDialog> {
 
   @override
   void dispose() {
-    // A picture imported but never saved is not kept.
-    final picked = _pickedKey;
-    if (picked != null && !(_saved && _icon == picked)) {
-      _deleteIconFile(picked);
-    }
     _controller.dispose();
     super.dispose();
   }
@@ -1056,31 +1169,41 @@ class _NameDialogState extends State<_NameDialog> {
       setState(() => _errorText = 'Enter a name');
       return;
     }
-    _saved = true;
-    Navigator.of(context).pop(
-      _NameResult(name, _icon, widget.showColor ? _color : null),
-    );
+    Navigator.of(context)
+        .pop(_NameResult(name, _icon, widget.showColor ? _color : null));
   }
 
-  Future<void> _importIcon() async {
+  Future<void> _importIcons() async {
     try {
-      final file = await ImagePicker().pickImage(
-        source: ImageSource.gallery,
+      final files = await ImagePicker().pickMultiImage(
         imageQuality: 85,
         maxWidth: 256,
         maxHeight: 256,
       );
-      if (file == null) return;
-      final saved = await _storeIconImage(file.path);
-      final key = '${AppConstants.iconImagePrefix}$saved';
-      if (!mounted) {
-        _deleteIconFile(key);
-        return;
+      if (files.isEmpty) return;
+      final added = <String>[];
+      String? last;
+      try {
+        for (final file in files) {
+          final saved = await _storeIconImage(file.path);
+          last = '${AppConstants.iconImagePrefix}$saved';
+          _CategoryIcons.imported.add(last);
+          added.add(last);
+        }
+        await _CategoryIcons.save();
+      } catch (_) {
+        _CategoryIcons.imported.removeWhere(added.contains);
+        try {
+          await _CategoryIcons.save();
+        } catch (_) {}
+        for (final key in added) {
+          await _deleteIconFile(key);
+        }
+        rethrow;
       }
-      _deleteIconFile(_pickedKey); // the one imported before this
+      if (!mounted) return;
       setState(() {
-        _icon = key;
-        _pickedKey = key;
+        _icon = last!;
         _iconError = null;
       });
     } catch (_) {
@@ -1088,100 +1211,102 @@ class _NameDialogState extends State<_NameDialog> {
     }
   }
 
-  Widget _iconTile(String key, IconData icon, Color fg, double size) {
-    final selected = key == _icon;
+  Future<void> _deleteIcon(String key) async {
+    if (_CategoryIcons.available.length <= 1) {
+      setState(() => _iconError = 'At least one icon has to stay.');
+      return;
+    }
+    final isImg = _CategoryIcons.isImage(key);
+    if (isImg) {
+      _CategoryIcons.imported.remove(key);
+    } else {
+      _CategoryIcons.hidden.add(key);
+    }
+    final replacement = _CategoryIcons.first;
+    try {
+      await _CategoryIcons.save();
+      await DatabaseHelper.instance.replaceIcon(key, replacement);
+      if (isImg) await _deleteIconFile(key);
+    } on Failure catch (f) {
+      if (isImg) {
+        _CategoryIcons.imported.add(key);
+      } else {
+        _CategoryIcons.hidden.remove(key);
+      }
+      try {
+        await _CategoryIcons.save();
+      } on Failure {
+        // The original failure is the useful one to show.
+      }
+      if (mounted) setState(() => _iconError = f.message);
+      return;
+    } catch (_) {
+      if (isImg) {
+        _CategoryIcons.imported.add(key);
+      } else {
+        _CategoryIcons.hidden.remove(key);
+      }
+      try {
+        await _CategoryIcons.save();
+      } catch (_) {}
+      if (mounted) {
+        setState(() => _iconError = 'Couldn\'t delete that icon.');
+      }
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      if (_icon == key) _icon = replacement;
+      _iconError = null;
+    });
+  }
+
+  Widget _iconTile(String key, Color fg, double size) {
+    final path = _CategoryIcons.imagePath(key);
+    return _IconTile(
+      size: size,
+      fg: fg,
+      selected: key == _icon,
+      onTap: () => setState(() => _icon = key),
+      onDelete: () => _deleteIcon(key),
+      child: path != null
+          ? Image.file(
+              File(path),
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) =>
+                  Icon(Icons.broken_image_outlined, size: 18, color: fg),
+            )
+          : Center(child: Icon(_CategoryIcons.of(key), size: 18, color: fg)),
+    );
+  }
+
+  /// Import button: one block, only an icon.
+  Widget _importTile(Color fg, double size) {
     return SizedBox(
       width: size,
       height: size,
       child: Material(
-        color: fg.withValues(
-          alpha: selected
-              ? AppConstants.iconTileSelectedAlpha
-              : AppConstants.iconTileAlpha,
-        ),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppConstants.iconTileRadius),
-          side: selected ? BorderSide(color: fg, width: 2) : BorderSide.none,
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: () => setState(() => _icon = key),
-          child: Center(child: Icon(icon, size: 18, color: fg)),
-        ),
-      ),
-    );
-  }
-
-  /// Import button: 2 icon blocks wide, 1 block high. Shows the imported
-  /// picture once one is chosen.
-  Widget _importTile(Color fg, double size) {
-    final hasImage = _CategoryIcons.isImage(_icon);
-    final path = _CategoryIcons.imagePath(_icon);
-    return SizedBox(
-      width: size * 2 + AppConstants.iconGridGap,
-      height: size,
-      child: Material(
         color: fg.withValues(alpha: AppConstants.iconTileAlpha),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppConstants.iconTileRadius),
-          side: hasImage ? BorderSide(color: fg, width: 2) : BorderSide.none,
-        ),
+        borderRadius: BorderRadius.circular(AppConstants.iconTileRadius),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
-          onTap: _importIcon,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (hasImage && path != null)
-                Image.file(
-                  File(path),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                ),
-              Center(
-                child: hasImage
-                    ? Container(
-                        padding: const EdgeInsets.all(3),
-                        decoration: const BoxDecoration(
-                          color: Colors.black54,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.file_upload_outlined,
-                            size: 14, color: Colors.white),
-                      )
-                    : Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.file_upload_outlined,
-                                  size: 14, color: fg),
-                              const SizedBox(width: 3),
-                              Text('Import',
-                                  style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                      color: fg)),
-                            ],
-                          ),
-                        ),
-                      ),
-              ),
-            ],
+          onTap: _importIcons,
+          child: Center(
+            child: Icon(
+              Icons.add_photo_alternate_outlined,
+              size: 20,
+              color: fg,
+            ),
           ),
         ),
       ),
     );
   }
 
-  /// The icon grid: [AppConstants.iconGridColumns] blocks per row, and the
-  /// Import block (1 x 2) right after the last icon.
+  /// The icon grid: built-in icons, imported icons, then the import block.
   Widget _iconGrid(Color fg) {
     const columns = AppConstants.iconGridColumns;
     const gap = AppConstants.iconGridGap;
-    final entries = _CategoryIcons.all.entries.toList();
     return LayoutBuilder(
       builder: (context, c) {
         final size = (c.maxWidth - gap * (columns - 1)) / columns;
@@ -1189,14 +1314,14 @@ class _NameDialogState extends State<_NameDialog> {
           spacing: gap,
           runSpacing: gap,
           children: [
-            for (final e in entries) _iconTile(e.key, e.value, fg, size),
+            for (final key in _CategoryIcons.available)
+              _iconTile(key, fg, size),
             _importTile(fg, size),
           ],
         );
       },
     );
   }
-  
 
   /// Opens the same color picker as Settings > General Color.
   Future<void> _pickColor() async {
@@ -1242,7 +1367,8 @@ class _NameDialogState extends State<_NameDialog> {
                       height: 32,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: c ??
+                        color:
+                            c ??
                             fg.withValues(alpha: AppConstants.iconTileAlpha),
                         border: Border.all(
                           color: fg.withValues(alpha: AppConstants.borderAlpha),
@@ -1286,9 +1412,9 @@ class _NameDialogState extends State<_NameDialog> {
     final popupTheme = _popupTheme(context);
 
     OutlineInputBorder border(Color color, double width) => OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppConstants.radiusSm),
-          borderSide: BorderSide(color: color, width: width),
-        );
+      borderRadius: BorderRadius.circular(AppConstants.radiusSm),
+      borderSide: BorderSide(color: color, width: width),
+    );
 
     return _accentDialog(
       context,
@@ -1312,9 +1438,14 @@ class _NameDialogState extends State<_NameDialog> {
                 floatingLabelStyle: TextStyle(color: fg),
                 errorText: _errorText,
                 isDense: true,
-                border: border(fg.withValues(alpha: AppConstants.borderAlpha), 1),
-                enabledBorder:
-                    border(fg.withValues(alpha: AppConstants.borderAlpha), 1),
+                border: border(
+                  fg.withValues(alpha: AppConstants.borderAlpha),
+                  1,
+                ),
+                enabledBorder: border(
+                  fg.withValues(alpha: AppConstants.borderAlpha),
+                  1,
+                ),
                 focusedBorder: border(fg, 2),
               ),
               onChanged: (_) {
@@ -1332,10 +1463,8 @@ class _NameDialogState extends State<_NameDialog> {
             ),
             const SizedBox(height: AppConstants.spaceSm),
             _iconGrid(fg),
-            if (_iconError != null) ...[
-              const SizedBox(height: AppConstants.spaceXs),
+            if (_iconError != null)
               Text(_iconError!, style: TextStyle(fontSize: 13, color: fg)),
-            ],
             if (widget.showColor) ...[
               const SizedBox(height: AppConstants.spaceMd),
               Text(
