@@ -210,7 +210,7 @@ Future<bool> _confirmDeleteDialog(
   final accent = AppTheme.accentOf(context);
   final fg = accent.foreground;
   final bg = accent.background;
-  final red = Colors.red.shade600;
+  final red = AppSettings.instance.deleteColor;
 
   final ok = await showDialog<bool>(
     context: context,
@@ -768,7 +768,7 @@ class _CategoryGroupCard extends StatelessWidget {
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: AppConstants.spaceLg),
         decoration: BoxDecoration(
-          color: Colors.red,
+          color: AppSettings.instance.deleteColor,
           borderRadius: BorderRadius.circular(AppConstants.categoryBarRadius),
         ),
         child: Icon(Icons.delete_outline, color: fg),

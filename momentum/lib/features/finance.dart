@@ -1545,7 +1545,7 @@ Future<bool> _confirmDeleteAccount(
   final accent = AppTheme.accentOf(context);
   final fg = accent.foreground;
   final bg = accent.background;
-  final red = Colors.red.shade600;
+  final red = AppSettings.instance.deleteColor;
 
   final ok = await showDialog<bool>(
     context: context,
@@ -1644,12 +1644,14 @@ Future<bool> _confirmDeleteAccount(
                     children: [
                       Expanded(
                         child: OutlinedButton(
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size.fromHeight(48),
-                            shape: const StadiumBorder(),
-                            foregroundColor: fg,
-                            side: BorderSide(color: fg.withValues(alpha: 0.5)),
-                          ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppSettings.instance.deleteColor,
+                              side: BorderSide(
+                                color: AppSettings.instance.deleteColor,
+                                width: 1.5,
+                              ),
+                              shape: const StadiumBorder(),
+                            ),
                           onPressed: () => Navigator.of(ctx).pop(false),
                           child: const Text(
                             'Cancel',
@@ -3692,7 +3694,7 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
           alignment: Alignment.centerRight,
           padding: const EdgeInsets.only(right: AppConstants.spaceLg),
           decoration: BoxDecoration(
-            color: Colors.red,
+            color: AppSettings.instance.deleteColor,
             borderRadius: BorderRadius.circular(16),
           ),
           child: const Icon(Icons.delete_outline, color: Colors.white),
@@ -4231,7 +4233,7 @@ class _HistoryPanelState extends State<_HistoryPanel> {
       alignment: Alignment.centerRight,
       padding: const EdgeInsets.only(right: AppConstants.spaceLg),
       decoration: BoxDecoration(
-        color: Colors.red,
+        color: AppSettings.instance.deleteColor,
         borderRadius: BorderRadius.circular(radius),
       ),
       child: const Icon(Icons.delete_outline, color: Colors.white),
@@ -4245,7 +4247,7 @@ class _HistoryPanelState extends State<_HistoryPanel> {
       context: context,
       barrierColor: AppConstants.popupBarrier,
       builder: (ctx) => AlertDialog(
-        backgroundColor: Colors.red,
+        backgroundColor: AppSettings.instance.deleteColor,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppConstants.popupRadius),
@@ -4268,7 +4270,7 @@ class _HistoryPanelState extends State<_HistoryPanel> {
           FilledButton(
             style: FilledButton.styleFrom(
               backgroundColor: Colors.white,
-              foregroundColor: Colors.red,
+              foregroundColor: AppSettings.instance.deleteColor,
             ),
             onPressed: () => Navigator.of(ctx).pop(true),
             child: const Text('Delete'),
@@ -5770,7 +5772,7 @@ class _ReceiptDialogState extends State<_ReceiptDialog> {
                             Center(
                               child: FilledButton.icon(
                                 style: FilledButton.styleFrom(
-                                  backgroundColor: const Color(0xFF1B6B3A),
+                                  backgroundColor: AppSettings.instance.doneColor,
                                   foregroundColor: Colors.white,
                                   minimumSize: const Size(0, 46),
                                   padding: const EdgeInsets.symmetric(

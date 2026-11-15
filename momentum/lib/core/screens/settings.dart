@@ -135,6 +135,35 @@ enum TransactionColorType {
   );
 }
 
+/// The action colors that can be changed in Theme > Specific Color >
+/// Delete and Done Colors. Each one has its own saved key and default.
+enum ActionColorType {
+  delete(
+    'Delete',
+    Icons.delete_outline,
+    AppConstants.prefDeleteColor,
+    AppConstants.deleteColor,
+  ),
+  done(
+    'Done',
+    Icons.check_circle_outline,
+    AppConstants.prefDoneColor,
+    AppConstants.doneColor,
+  );
+
+  final String label;
+  final IconData icon;
+  final String prefKey;
+  final Color defaultColor;
+
+  const ActionColorType(
+    this.label,
+    this.icon,
+    this.prefKey,
+    this.defaultColor,
+  );
+}
+
 /// App-wide user settings. The root MaterialApp listens to this, so any
 /// change applies to every screen, dialog and route immediately.
 class AppSettings extends ChangeNotifier {
@@ -253,11 +282,17 @@ class AppSettings extends ChangeNotifier {
     for (final type in TransactionColorType.values) {
       final c = colorOf(type.prefKey);
       if (c != null) _transactionColors[type] = c;
+    }    _actionColors.clear();
+    for (final type in ActionColorType.values) {
+      final c = colorOf(type.prefKey);
+      if (c != null) _actionColors[type] = c;
     }
-
+    
     _fontStyle = AppFonts.byLabel(_store[AppConstants.prefFontStyle]);
     _boldText = _store[AppConstants.prefBoldText] == 'true';
     notifyListeners();
+
+    
   }
 
   // ---- Theme ----
@@ -324,6 +359,22 @@ class AppSettings extends ChangeNotifier {
   void setTransactionColor(TransactionColorType type, Color color) {
     if (transactionColor(type) == color) return;
     _transactionColors[type] = color;
+    _save(type.prefKey, color.toARGB32().toString());
+    notifyListeners();
+  }
+
+  // ---- Specific colors: actions (Delete / Done) ----
+  final Map<ActionColorType, Color> _actionColors = {};
+
+  Color actionColor(ActionColorType type) =>
+      _actionColors[type] ?? type.defaultColor;
+
+  Color get deleteColor => actionColor(ActionColorType.delete);
+  Color get doneColor => actionColor(ActionColorType.done);
+
+  void setActionColor(ActionColorType type, Color color) {
+    if (actionColor(type) == color) return;
+    _actionColors[type] = color;
     _save(type.prefKey, color.toARGB32().toString());
     notifyListeners();
   }
@@ -997,6 +1048,38 @@ class _SpecificColorDialog extends StatelessWidget {
                         settings: settings,
                       ),
                     ),
+                  ),
+                  Padding(
+                  padding: const EdgeInsets.only(
+                    top: AppConstants.spaceSm,
+                    bottom: AppConstants.spaceSm,
+                  ),
+                  child: Text(
+                    'Confirmation Colors',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: fgSoft,
+                    ),
+                  ),
+                ),
+                for (final type in ActionColorType.values)
+                  _ColorBar(
+                    label: type.label,
+                    icon: type.icon,
+                    color: settings.actionColor(type),
+                    onTap: () async {
+                      final picked = await showDialog<Color>(
+                        context: context,
+                        barrierColor: AppConstants.popupBarrier,
+                        builder: (_) => ColorPickerDialog(
+                          title: type.label,
+                          icon: type.icon,
+                          initial: settings.actionColor(type),
+                        ),
+                      );
+                      if (picked != null) settings.setActionColor(type, picked);
+                    },
                   ),
               ],
             ),
