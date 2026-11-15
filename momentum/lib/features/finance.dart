@@ -31,11 +31,11 @@ class AccountTheme {
       color == null && pattern == null && imagePath == null && corner == null;
 
   String encode() => jsonEncode({
-        'color': color,
-        'pattern': pattern,
-        'image': imagePath,
-        'corner': corner,
-      });
+    'color': color,
+    'pattern': pattern,
+    'image': imagePath,
+    'corner': corner,
+  });
 
   factory AccountTheme.decode(String? raw) {
     if (raw == null) return none;
@@ -106,6 +106,62 @@ class _AccountThemes extends ChangeNotifier {
   }
 }
 
+/// Reserved ids in _accountThemes (real accounts always have ids > 0).
+const int _financeThemeId = -1; // Finance screen background
+const int _totalThemeId = -2; // Total Balance header card
+const int _historyThemeId = -3; // History pop-up header
+const int _analyticsThemeId = -4; // Analytics pop-up header
+
+/// Opens a theme sheet for the Finance screen or the Total Balance card.
+/// Every change is applied and saved right away.
+Future<void> _editSpecialTheme(
+  BuildContext context,
+  int id, {
+  required String title,
+  String colorLabel = 'Account Color',
+  bool showColor = true,
+  bool showCorner = true,
+  bool bottomOnlyCorner = false,
+}) {
+  HapticFeedback.mediumImpact();
+  return _showAccountThemeSheet(
+    context,
+    initial: _accountThemes.of(id),
+    title: title,
+    colorLabel: colorLabel,
+    showColor: showColor,
+    showCorner: showCorner,
+    bottomOnlyCorner: bottomOnlyCorner,
+    confirm: true,
+    onChanged: (next) {
+      final old = _accountThemes.of(id).imagePath;
+      if (old != null && old != next.imagePath) _deleteThemeImage(old);
+      _accountThemes.set(id, next);
+    },
+  );
+}
+
+ShapeBorder _bottomOnly(ShapeBorder shape) {
+  BorderRadius only(BorderRadiusGeometry geometry) {
+    final radius = geometry.resolve(TextDirection.ltr);
+    return BorderRadius.only(
+      bottomLeft: radius.bottomLeft,
+      bottomRight: radius.bottomRight,
+    );
+  }
+
+  if (shape is RoundedRectangleBorder) {
+    return RoundedRectangleBorder(borderRadius: only(shape.borderRadius));
+  }
+  if (shape is BeveledRectangleBorder) {
+    return BeveledRectangleBorder(borderRadius: only(shape.borderRadius));
+  }
+  if (shape is ContinuousRectangleBorder) {
+    return ContinuousRectangleBorder(borderRadius: only(shape.borderRadius));
+  }
+  return shape;
+}
+
 final _accountThemes = _AccountThemes();
 
 /// Background of the list area under an account's header: a bit darker
@@ -131,23 +187,32 @@ const List<String> _patternNames = [
 
 /// Corner styles of the account card. 'Rounded' is the default (null).
 const List<String> _cornerNames = [
-  'Rounded', 'Soft', 'Sharp', 'Square', 'Pill', 'Beveled',
-  'Squircle', 'Leaf', 'Reverse leaf', 'Top round', 'Bottom round',
+  'Rounded',
+  'Soft',
+  'Sharp',
+  'Square',
+  'Pill',
+  'Beveled',
+  'Squircle',
+  'Leaf',
+  'Reverse leaf',
+  'Top round',
+  'Bottom round',
 ];
 
 IconData _cornerIcon(String name) => switch (name) {
-      'Soft' => Icons.crop_din,
-      'Sharp' => Icons.crop_square,
-      'Square' => Icons.square_outlined,
-      'Pill' => Icons.crop_16_9,
-      'Beveled' => Icons.hexagon_outlined,
-      'Squircle' => Icons.rounded_corner,
-      'Leaf' => Icons.eco_outlined,
-      'Reverse leaf' => Icons.spa_outlined,
-      'Top round' => Icons.vertical_align_top,
-      'Bottom round' => Icons.vertical_align_bottom,
-      _ => Icons.rounded_corner,
-    };
+  'Soft' => Icons.crop_din,
+  'Sharp' => Icons.crop_square,
+  'Square' => Icons.square_outlined,
+  'Pill' => Icons.crop_16_9,
+  'Beveled' => Icons.hexagon_outlined,
+  'Squircle' => Icons.rounded_corner,
+  'Leaf' => Icons.eco_outlined,
+  'Reverse leaf' => Icons.spa_outlined,
+  'Top round' => Icons.vertical_align_top,
+  'Bottom round' => Icons.vertical_align_bottom,
+  _ => Icons.rounded_corner,
+};
 
 /// The shape of the card. [u] = card width / cardSampleWidth.
 ShapeBorder _cardShape(String? corner, double u) {
@@ -163,35 +228,45 @@ ShapeBorder _cardShape(String? corner, double u) {
     case 'Pill':
       return r(BorderRadius.circular(130 * u));
     case 'Beveled':
-      return BeveledRectangleBorder(borderRadius: BorderRadius.circular(40 * u));
+      return BeveledRectangleBorder(
+        borderRadius: BorderRadius.circular(40 * u),
+      );
     case 'Squircle':
       return ContinuousRectangleBorder(
         borderRadius: BorderRadius.circular(90 * u),
       );
     case 'Leaf':
-      return r(BorderRadius.only(
-        topLeft: Radius.circular(90 * u),
-        bottomRight: Radius.circular(90 * u),
-        topRight: Radius.circular(10 * u),
-        bottomLeft: Radius.circular(10 * u),
-      ));
+      return r(
+        BorderRadius.only(
+          topLeft: Radius.circular(90 * u),
+          bottomRight: Radius.circular(90 * u),
+          topRight: Radius.circular(10 * u),
+          bottomLeft: Radius.circular(10 * u),
+        ),
+      );
     case 'Reverse leaf':
-      return r(BorderRadius.only(
-        topRight: Radius.circular(90 * u),
-        bottomLeft: Radius.circular(90 * u),
-        topLeft: Radius.circular(10 * u),
-        bottomRight: Radius.circular(10 * u),
-      ));
+      return r(
+        BorderRadius.only(
+          topRight: Radius.circular(90 * u),
+          bottomLeft: Radius.circular(90 * u),
+          topLeft: Radius.circular(10 * u),
+          bottomRight: Radius.circular(10 * u),
+        ),
+      );
     case 'Top round':
-      return r(BorderRadius.vertical(
-        top: Radius.circular(80 * u),
-        bottom: Radius.circular(10 * u),
-      ));
+      return r(
+        BorderRadius.vertical(
+          top: Radius.circular(80 * u),
+          bottom: Radius.circular(10 * u),
+        ),
+      );
     case 'Bottom round':
-      return r(BorderRadius.vertical(
-        top: Radius.circular(10 * u),
-        bottom: Radius.circular(80 * u),
-      ));
+      return r(
+        BorderRadius.vertical(
+          top: Radius.circular(10 * u),
+          bottom: Radius.circular(80 * u),
+        ),
+      );
     default:
       return r(BorderRadius.circular(40 * u));
   }
@@ -246,6 +321,38 @@ List<Widget> _cardBackdrop(_CardLook look) => [
       ),
     ),
 ];
+
+Widget _themedHeader(
+  BuildContext context, {
+  required int id,
+  required String title,
+  required _CardLook look,
+  required List<Widget> children,
+}) {
+  return GestureDetector(
+    behavior: HitTestBehavior.translucent,
+    onLongPress: () => _editSpecialTheme(
+      context,
+      id,
+      title: title,
+      colorLabel: 'Header Color',
+      showCorner: false,
+    ),
+    child: Container(
+      width: double.infinity,
+      color: look.bg,
+      child: Stack(
+        children: [
+          ..._cardBackdrop(look),
+          SizedBox(
+            width: double.infinity,
+            child: Column(mainAxisSize: MainAxisSize.min, children: children),
+          ),
+        ],
+      ),
+    ),
+  );
+}
 
 class _PatternPainter extends CustomPainter {
   final String pattern;
@@ -455,7 +562,11 @@ Widget _iconWidget(
     );
     // Keep the picture centered in the same box a glyph would use.
     return framed
-        ? SizedBox(width: size, height: size, child: Center(child: picture))
+        ? SizedBox(
+            width: size,
+            height: size,
+            child: Center(child: picture),
+          )
         : picture;
   }
   return Icon(fallback, size: size, color: color);
@@ -706,6 +817,14 @@ class _FinanceScreenState extends State<FinanceScreen> {
     setState(() => _rearranging = true);
   }
 
+  void _editFinanceTheme() => _editSpecialTheme(
+    context,
+    _financeThemeId,
+    title: 'Finance Theme',
+    colorLabel: 'Finance Color',
+    showCorner: false,
+  );
+
   /// Moves one account type to a new place and saves the order.
   void _reorderTypes(
     List<List<_AccountCardData>> groups,
@@ -885,87 +1004,146 @@ class _FinanceScreenState extends State<FinanceScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: _accountThemes,
+    builder: (context, _) => _buildScreen(context),
+  );
+
+  Widget _buildScreen(BuildContext context) {
     final groups = _groups;
+    final bgTheme = _accountThemes.of(_financeThemeId);
+    final bgColor = bgTheme.color == null ? null : Color(bgTheme.color!);
+    final bgImage = bgTheme.imagePath;
+    final hasImage = bgImage != null && File(bgImage).existsSync();
+    final Color? contentFg = hasImage
+        ? Colors.white
+        : (bgColor != null ? AppTheme.onColor(bgColor) : null);
+    final baseTheme = Theme.of(context);
+    final theme = contentFg == null
+        ? baseTheme
+        : baseTheme.copyWith(
+            textTheme: baseTheme.textTheme.apply(
+              bodyColor: contentFg,
+              displayColor: contentFg,
+            ),
+          );
 
     // The Glyph color from Settings > Theme > General Color
     // (fonts, icons and buttons).
-    final glyphColor = AppTheme.accentOf(context).foreground;
+    final glyphColor = contentFg ?? AppTheme.accentOf(context).foreground;
 
     // Column: the top part stays fixed, only the Expanded part scrolls.
     // Nothing is padded at the top so the card still starts behind the
     // status bar and the transparent app bar.
-    return Column(
+    return Stack(
       children: [
-        // ----- Fixed part -----
-        TotalBalanceCard(summary: _summary, hidden: _hideAmounts),
-        if (_error != null)
-          Padding(
-            padding: const EdgeInsets.all(AppConstants.spaceMd),
-            child: Text(
-              _error!,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.error,
+        if (bgColor != null) Positioned.fill(child: ColoredBox(color: bgColor)),
+        if (hasImage) ...[
+          Positioned.fill(
+            child: Image.file(
+              File(bgImage),
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => const SizedBox.shrink(),
+            ),
+          ),
+          Positioned.fill(
+            child: ColoredBox(color: Colors.black.withValues(alpha: 0.35)),
+          ),
+        ] else if (bgTheme.pattern != null)
+          Positioned.fill(
+            child: CustomPaint(
+              painter: _PatternPainter(
+                bgTheme.pattern!,
+                (contentFg ?? theme.colorScheme.onSurface).withValues(
+                  alpha: 0.08,
+                ),
               ),
             ),
           ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppConstants.spaceMd + AppConstants.spaceXs,
-            AppConstants.spaceMd,
-            AppConstants.spaceSm,
-            0,
-          ),
-          child: Row(
+        // ----- Fixed part -----
+        Theme(
+          data: theme,
+          child: Column(
             children: [
-              Text(
-                'My Accounts',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
+              TotalBalanceCard(summary: _summary, hidden: _hideAmounts),
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.all(AppConstants.spaceMd),
+                  child: Text(
+                    _error!,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.error,
+                    ),
+                  ),
+                ),
+              GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onLongPress: _editFinanceTheme,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppConstants.spaceMd + AppConstants.spaceXs,
+                    AppConstants.spaceMd,
+                    AppConstants.spaceSm,
+                    0,
+                  ),
+                  child: Row(
+                    children: [
+                      Text(
+                        'My Accounts',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        color: glyphColor,
+                        icon: const Icon(Icons.add),
+                        tooltip: 'Add Account',
+                        onPressed: _addAccount,
+                      ),
+                      // Eye button. Open eye = amounts shown, closed = hidden.
+                      IconButton(
+                        color: glyphColor,
+                        icon: Icon(
+                          _hideAmounts
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                        ),
+                        tooltip: _hideAmounts ? 'Show amounts' : 'Hide amounts',
+                        onPressed: () =>
+                            setState(() => _hideAmounts = !_hideAmounts),
+                      ),
+                      // Tap = card / list view, long press = reorder types.
+                      _viewButton(),
+                    ],
+                  ),
                 ),
               ),
-              const Spacer(),
-              IconButton(
-                color: glyphColor,
-                icon: const Icon(Icons.add),
-                tooltip: 'Add Account',
-                onPressed: _addAccount,
-              ),
-              // Eye button. Open eye = amounts shown, closed = hidden.
-              IconButton(
-                color: glyphColor,
-                icon: Icon(
-                  _hideAmounts
-                      ? Icons.visibility_off_outlined
-                      : Icons.visibility_outlined,
+              // ----- Scrolling part: starts right below the My Accounts row -----
+              Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onLongPress: _editFinanceTheme,
+                  child: _rearranging
+                      ? _rearrangeList(context, groups)
+                      : ListView(
+                          padding: EdgeInsets.zero,
+                          children: [
+                            // One section per account type.
+                            for (final group in groups)
+                              _AccountTypeSection(
+                                accounts: group,
+                                hidden: _hideAmounts,
+                                listView: _listView,
+                              ),
+                            // Room for the floating + button.
+                            SizedBox(height: _addButtonClearanceOf(context)),
+                          ],
+                        ),
                 ),
-                tooltip: _hideAmounts ? 'Show amounts' : 'Hide amounts',
-                onPressed: () => setState(() => _hideAmounts = !_hideAmounts),
               ),
-              // Tap = card / list view, long press = reorder types.
-              _viewButton(),
             ],
           ),
-        ),
-        // ----- Scrolling part: starts right below the My Accounts row -----
-        Expanded(
-          child: _rearranging
-              ? _rearrangeList(context, groups)
-              : ListView(
-                  padding: EdgeInsets.zero,
-                  children: [
-                    // One section per account type.
-                    for (final group in groups)
-                      _AccountTypeSection(
-                        accounts: group,
-                        hidden: _hideAmounts,
-                        listView: _listView,
-                      ),
-                    // Room for the floating + button.
-                    SizedBox(height: _addButtonClearanceOf(context)),
-                  ],
-                ),
         ),
       ],
     );
@@ -1345,7 +1523,8 @@ class _AddAccountSheetState extends State<_AddAccountSheet> {
                   value.icon,
                   fallback: iconFor(value),
                   size: 24,
-                  color: fg, framed: true
+                  color: fg,
+                  framed: true,
                 ),
           suffix: Icon(Icons.expand_more, color: fg),
         ),
@@ -1823,24 +2002,51 @@ Future<void> _showAccountThemeSheet(
   BuildContext context, {
   required AccountTheme initial,
   required ValueChanged<AccountTheme> onChanged,
+  String title = 'Account Theme',
+  String colorLabel = 'Account Color',
+  bool showColor = true,
+  bool showCorner = true,
+  bool bottomOnlyCorner = false,
+  bool confirm = false,
 }) {
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
-    backgroundColor: Colors.transparent, // the sheet paints its own color
+    backgroundColor: Colors.transparent,
     barrierColor: AppConstants.popupBarrier,
-    builder: (_) => _AccountThemeSheet(initial: initial, onChanged: onChanged),
+    builder: (_) => _AccountThemeSheet(
+      initial: initial,
+      onChanged: onChanged,
+      title: title,
+      colorLabel: colorLabel,
+      showColor: showColor,
+      showCorner: showCorner,
+      bottomOnlyCorner: bottomOnlyCorner,
+      confirm: confirm,
+    ),
   );
 }
 
-/// Account Theme bottom sheet: Account Color + Card Theme (pattern / camera /
-/// gallery). Every change is sent to [onChanged] right away; the account
-/// popup's Save button is what keeps it.
 class _AccountThemeSheet extends StatefulWidget {
   final AccountTheme initial;
   final ValueChanged<AccountTheme> onChanged;
-  const _AccountThemeSheet({required this.initial, required this.onChanged});
+  final String title;
+  final String colorLabel;
+  final bool showColor;
+  final bool showCorner;
+  final bool bottomOnlyCorner;
+  final bool confirm;
+  const _AccountThemeSheet({
+    required this.initial,
+    required this.onChanged,
+    this.title = 'Account Theme',
+    this.colorLabel = 'Account Color',
+    this.showColor = true,
+    this.showCorner = true,
+    this.bottomOnlyCorner = false,
+    this.confirm = false,
+  });
 
   @override
   State<_AccountThemeSheet> createState() => _AccountThemeSheetState();
@@ -1852,15 +2058,46 @@ class _AccountThemeSheetState extends State<_AccountThemeSheet> {
   late String? _image = widget.initial.imagePath;
   late String? _corner = widget.initial.corner;
   String? _error;
+  final List<String> _staged = [];
+  bool _applied = false;
 
-  void _emit() => widget.onChanged(
-      AccountTheme(
-        color: _color,
-        pattern: _pattern,
-        imagePath: _image,
-        corner: _corner,
-      ),
-    );
+  @override
+  void dispose() {
+    if (widget.confirm && !_applied) {
+      for (final path in _staged) {
+        _deleteThemeImage(path);
+      }
+    }
+    super.dispose();
+  }
+
+  AccountTheme get _current => AccountTheme(
+    color: _color,
+    pattern: _pattern,
+    imagePath: _image,
+    corner: _corner,
+  );
+
+  String get _colorLabel => widget.confirm ? 'Color' : widget.colorLabel;
+  String get _themeLabel => widget.confirm ? 'Theme' : 'Card Theme';
+  String get _cornerLabel => widget.confirm ? 'Corner' : 'Card Corner';
+
+  void _emit() {
+    if (!widget.confirm) widget.onChanged(_current);
+  }
+
+  void _dropStaged(String? path) {
+    if (widget.confirm && path != null && _staged.remove(path)) {
+      _deleteThemeImage(path);
+    }
+  }
+
+  void _apply() {
+    _applied = true;
+    widget.onChanged(_current);
+    Navigator.of(context).pop();
+  }
+
   /// Same colors as the account popup behind this sheet.
   (Color, Color) _colors() {
     final accent = AppTheme.accentOf(context);
@@ -1870,24 +2107,24 @@ class _AccountThemeSheetState extends State<_AccountThemeSheet> {
   }
 
   Future<void> _pickCorner() async {
-  final (bg, fg) = _colors();
-  final current = _corner ?? 'Rounded';
-  final picked = await _pickItem(
-    context,
-    title: 'Card Corner',
-    background: bg,
-    foreground: fg,
-    selected: CategoryItem(_cornerNames.indexOf(current), current),
-    items: [
-      for (var i = 0; i < _cornerNames.length; i++)
-        CategoryItem(i, _cornerNames[i]),
-    ],
-    iconFor: (item) => _cornerIcon(item.name),
-  );
-  if (picked == null || !mounted) return;
-  setState(() => _corner = picked.name == 'Rounded' ? null : picked.name);
-  _emit();
-}
+    final (bg, fg) = _colors();
+    final current = _corner ?? 'Rounded';
+    final picked = await _pickItem(
+      context,
+      title: _cornerLabel,
+      background: bg,
+      foreground: fg,
+      selected: CategoryItem(_cornerNames.indexOf(current), current),
+      items: [
+        for (var i = 0; i < _cornerNames.length; i++)
+          CategoryItem(i, _cornerNames[i]),
+      ],
+      iconFor: (item) => _cornerIcon(item.name),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _corner = picked.name == 'Rounded' ? null : picked.name);
+    _emit();
+  }
 
   Future<void> _pickColor() async {
     final accent = AppTheme.accentOf(context);
@@ -1895,7 +2132,7 @@ class _AccountThemeSheetState extends State<_AccountThemeSheet> {
       context: context,
       barrierColor: AppConstants.popupBarrier,
       builder: (_) => ColorPickerDialog(
-        title: 'Account Color',
+        title: _colorLabel,
         icon: Icons.palette_outlined,
         initial: _color != null ? Color(_color!) : accent.background,
       ),
@@ -1910,7 +2147,7 @@ class _AccountThemeSheetState extends State<_AccountThemeSheet> {
     final (bg, fg) = _colors();
     final choice = await _pickItem(
       context,
-      title: 'Card Theme',
+      title: _themeLabel,
       background: bg,
       foreground: fg,
       items: const [
@@ -1942,6 +2179,7 @@ class _AccountThemeSheetState extends State<_AccountThemeSheet> {
           iconFor: (_) => Icons.grid_on,
         );
         if (picked == null || !mounted) return;
+        _dropStaged(_image);
         setState(() {
           _pattern = _patternNames[picked.id];
           _image = null;
@@ -1949,6 +2187,7 @@ class _AccountThemeSheetState extends State<_AccountThemeSheet> {
         });
         _emit();
       case 3:
+        _dropStaged(_image);
         setState(() {
           _pattern = null;
           _image = null;
@@ -1967,6 +2206,8 @@ class _AccountThemeSheetState extends State<_AccountThemeSheet> {
             _deleteThemeImage(saved); // sheet closed while picking
             return;
           }
+          _staged.add(saved);
+          _dropStaged(_image);
           setState(() {
             _image = saved;
             _pattern = null;
@@ -1999,41 +2240,44 @@ class _AccountThemeSheetState extends State<_AccountThemeSheet> {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppConstants.spaceMd,
-            vertical: AppConstants.spaceSmMd,
-          ),
-          child: Row(
-            children: [
-              Icon(icon, color: fg, size: 22),
-              const SizedBox(width: AppConstants.spaceSmMd),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: fg,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 64),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppConstants.spaceMd,
+              vertical: AppConstants.spaceSm,
+            ),
+            child: Row(
+              children: [
+                Icon(icon, color: fg, size: 22),
+                const SizedBox(width: AppConstants.spaceSmMd),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: fg,
+                        ),
                       ),
-                    ),
-                    Text(
-                      value,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: fg.withValues(alpha: AppConstants.mutedAlpha),
+                      Text(
+                        value,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: fg.withValues(alpha: AppConstants.mutedAlpha),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              trailing,
-            ],
+                trailing,
+              ],
+            ),
           ),
         ),
       ),
@@ -2043,6 +2287,77 @@ class _AccountThemeSheetState extends State<_AccountThemeSheet> {
   @override
   Widget build(BuildContext context) {
     final (bg, fg) = _colors();
+    const gap = SizedBox(height: AppConstants.spaceSm);
+    final rows = <Widget>[
+      if (widget.showColor)
+        _row(
+          fg: fg,
+          icon: Icons.palette_outlined,
+          label: _colorLabel,
+          value: _color == null ? 'Default' : 'Custom',
+          onTap: _pickColor,
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_color != null)
+                InkResponse(
+                  onTap: () {
+                    setState(() => _color = null);
+                    _emit();
+                  },
+                  radius: 18,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Icon(Icons.close, size: 18, color: fg),
+                  ),
+                ),
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: _color != null ? Color(_color!) : bg,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: fg.withValues(alpha: AppConstants.borderAlpha),
+                    width: 1.5,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      _row(
+        fg: fg,
+        icon: Icons.style_outlined,
+        label: _themeLabel,
+        value: _cardThemeText,
+        onTap: _pickCardTheme,
+        trailing: Icon(
+          Icons.chevron_right,
+          color: fg.withValues(alpha: AppConstants.mutedAlpha),
+        ),
+      ),
+      if (widget.showCorner)
+        _row(
+          fg: fg,
+          icon: Icons.rounded_corner,
+          label: _cornerLabel,
+          value: _corner ?? 'Rounded',
+          onTap: _pickCorner,
+          trailing: Container(
+            width: 48,
+            height: 30,
+            decoration: ShapeDecoration(
+              color: fg.withValues(alpha: AppConstants.borderAlpha),
+              shape: widget.bottomOnlyCorner
+                  ? _bottomOnly(
+                      _cardShape(_corner, 48 / AppConstants.cardSampleWidth),
+                    )
+                  : _cardShape(_corner, 48 / AppConstants.cardSampleWidth),
+            ),
+          ),
+        ),
+    ];
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
@@ -2074,87 +2389,53 @@ class _AccountThemeSheetState extends State<_AccountThemeSheet> {
             ),
             const SizedBox(height: AppConstants.spaceLg),
             Text(
-              'Account Theme',
+              widget.title,
               style: Theme.of(context).textTheme.titleLarge
                   ?.copyWith(fontWeight: FontWeight.w700, color: fg),
             ),
             const SizedBox(height: AppConstants.spaceMd),
-            // Account color
-            _row(
-              fg: fg,
-              icon: Icons.palette_outlined,
-              label: 'Account Color',
-              value: _color == null ? 'Default' : 'Custom',
-              onTap: _pickColor,
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
+            for (var i = 0; i < rows.length; i++) ...[if (i > 0) gap, rows[i]],
+            if (_error != null) ...[
+              gap,
+              Text(_error!, style: TextStyle(fontSize: 13, color: fg)),
+            ],
+            if (widget.confirm) ...[
+              const SizedBox(height: AppConstants.spaceMd),
+              Row(
                 children: [
-                  if (_color != null)
-                    InkResponse(
-                      onTap: () {
-                        setState(() => _color = null);
-                        _emit();
-                      },
-                      radius: 18,
-                      child: Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: Icon(Icons.close, size: 18, color: fg),
+                  Expanded(
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                        shape: const StadiumBorder(),
+                        foregroundColor: fg,
+                        side: BorderSide(color: fg.withValues(alpha: 0.5)),
+                      ),
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text(
+                        'Cancel',
+                        style: TextStyle(fontWeight: FontWeight.w700),
                       ),
                     ),
-                  Container(
-                    width: 28,
-                    height: 28,
-                    decoration: BoxDecoration(
-                      color: _color != null ? Color(_color!) : bg,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: fg.withValues(alpha: AppConstants.borderAlpha),
-                        width: 1.5,
+                  ),
+                  const SizedBox(width: _sheetGap),
+                  Expanded(
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                        shape: const StadiumBorder(),
+                        backgroundColor: fg,
+                        foregroundColor: bg,
+                      ),
+                      onPressed: _apply,
+                      child: const Text(
+                        'Apply',
+                        style: TextStyle(fontWeight: FontWeight.w700),
                       ),
                     ),
                   ),
                 ],
               ),
-            ),
-            const SizedBox(height: AppConstants.spaceSm),
-
-            // Card theme (pattern / camera / gallery / none)  <- was missing
-            _row(
-              fg: fg,
-              icon: Icons.style_outlined,
-              label: 'Card Theme',
-              value: _cardThemeText,
-              onTap: _pickCardTheme,
-              trailing: Icon(
-                Icons.chevron_right,
-                color: fg.withValues(alpha: AppConstants.mutedAlpha),
-              ),
-            ),
-            const SizedBox(height: AppConstants.spaceSm),
-
-            // Card corner
-            _row(
-              fg: fg,
-              icon: Icons.rounded_corner,
-              label: 'Card Corner',
-              value: _corner ?? 'Rounded',
-              onTap: _pickCorner,
-              trailing: Container(
-                width: 48,
-                height: 30,
-                decoration: ShapeDecoration(
-                  color: fg.withValues(alpha: AppConstants.borderAlpha),
-                  shape: _cardShape(
-                    _corner,
-                    48 / AppConstants.cardSampleWidth,
-                  ),
-                ),
-              ),
-            ),
-
-            if (_error != null) ...[
-              const SizedBox(height: AppConstants.spaceSm),
-              Text(_error!, style: TextStyle(fontSize: 13, color: fg)),
             ],
           ],
         ),
@@ -2921,15 +3202,15 @@ class TotalBalanceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: AppSettings.instance,
+      listenable: Listenable.merge([AppSettings.instance, _accountThemes]),
       builder: (context, _) => _buildCard(context),
     );
   }
 
   Widget _buildCard(BuildContext context) {
     final theme = Theme.of(context);
-    final accent = AppTheme.accentOf(context);
-    final fg = accent.foreground;
+    final look = _CardLook.of(context, _accountThemes.of(_totalThemeId));
+    final fg = look.fg;
     final muted = fg.withValues(alpha: AppConstants.mutedAlpha);
 
     // Colors picked in Settings > Theme > Specific Color
@@ -2954,19 +3235,25 @@ class TotalBalanceCard extends StatelessWidget {
       fontWeight: FontWeight.w600,
     );
 
-    final card = Container(
-      width: double.infinity,
+    final ShapeBorder shape = look.corner == null
+        ? const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(
+              bottom: Radius.circular(AppConstants.totalCardRadius),
+            ),
+          )
+        : _bottomOnly(
+            _cardShape(
+              look.corner,
+              MediaQuery.sizeOf(context).width / AppConstants.cardSampleWidth,
+            ),
+          );
+
+    final content = Padding(
       padding: EdgeInsets.fromLTRB(
         AppConstants.totalCardSideMargin,
         topInset + AppConstants.totalCardTopMargin,
         AppConstants.totalCardSideMargin,
         AppConstants.totalCardBottomMargin,
-      ),
-      decoration: BoxDecoration(
-        color: accent.background,
-        borderRadius: const BorderRadius.vertical(
-          bottom: Radius.circular(AppConstants.totalCardRadius),
-        ),
       ),
       child: Column(
         // Shrinks to the content when the ratio is off.
@@ -3057,9 +3344,25 @@ class TotalBalanceCard extends StatelessWidget {
       ),
     );
 
-    return AppConstants.totalCardUseRatio
-        ? AspectRatio(aspectRatio: AppConstants.cardRatio, child: card)
-        : card;
+    final card = Container(
+      width: double.infinity,
+      clipBehavior: Clip.antiAlias,
+      decoration: ShapeDecoration(color: look.bg, shape: shape),
+      child: Stack(children: [..._cardBackdrop(look), content]),
+    );
+
+    return GestureDetector(
+      onLongPress: () => _editSpecialTheme(
+        context,
+        _totalThemeId,
+        title: 'Total Balance Theme',
+        colorLabel: 'Total Balance Color',
+        bottomOnlyCorner: true,
+      ),
+      child: AppConstants.totalCardUseRatio
+          ? AspectRatio(aspectRatio: AppConstants.cardRatio, child: card)
+          : card,
+    );
   }
 }
 
@@ -3183,6 +3486,7 @@ Future<void> _showCategoryView(
   required _HistoryRange range,
   _AccountCardData? account,
   bool hidden = false,
+  Color? baseColor,
 }) {
   return _openViewSheet(
     context,
@@ -3191,6 +3495,7 @@ Future<void> _showCategoryView(
       category: category,
       hidden: hidden,
       range: range,
+      baseColor: baseColor,
     ),
   );
 }
@@ -3214,12 +3519,14 @@ class _AccountViewSheet extends StatefulWidget {
   final bool hidden;
   final bool analytics;
   final _HistoryRange? range;
+  final Color? baseColor;
   const _AccountViewSheet({
     this.account,
     this.category,
     required this.hidden,
     this.analytics = false,
     this.range,
+    this.baseColor,
   });
 
   @override
@@ -3251,7 +3558,8 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
   Color _bgColor(BuildContext context) {
     final a = _account;
     final t = a == null ? null : _accountThemes.of(a.id).color;
-    return t != null ? Color(t) : AppTheme.accentOf(context).background;
+    if (t != null) return Color(t);
+    return widget.baseColor ?? AppTheme.accentOf(context).background;
   }
 
   @override
@@ -4179,11 +4487,14 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
                       Expanded(
                         child: ColoredBox(
                           color: _contentTone(bg),
-                          child: ListView(
-                            padding: EdgeInsets.only(
-                              bottom: bottomInset + AppConstants.spaceMd,
+                          child: _ChartSurface(
+                            color: _contentTone(bg),
+                            child: ListView(
+                              padding: EdgeInsets.only(
+                                bottom: bottomInset + AppConstants.spaceMd,
+                              ),
+                              children: children,
                             ),
-                            children: children,
                           ),
                         ),
                       ),
@@ -4552,10 +4863,16 @@ class _HistoryPanelState extends State<_HistoryPanel> {
   }
 
   Future<void> _pickRange() async {
+    final t = _accountThemes.of(_historyThemeId);
+    final accent = AppTheme.accentOf(context);
+    final bg = t.color != null ? Color(t.color!) : accent.background;
+    final fg = t.color != null ? AppTheme.onColor(bg) : accent.foreground;
+
     final picked = await showDialog<_HistoryRange>(
       context: context,
       barrierColor: AppConstants.popupBarrier,
-      builder: (_) => _RangeDialog(initial: _range),
+      builder: (_) =>
+          _RangeDialog(initial: _range, background: bg, foreground: fg),
     );
     if (picked == null || !mounted) return;
     setState(() => _range = picked);
@@ -4794,7 +5111,6 @@ class _HistoryPanelState extends State<_HistoryPanel> {
   Widget _entryRow(HistoryEntry e, Color fg) {
     final s = AppSettings.instance;
     final theme = Theme.of(context);
-    final accent = AppTheme.accentOf(context);
     final k = _fontScale(context).clamp(0.8, 1.3).toDouble();
     final isTransfer = e.type == 'transfer';
     final color = isTransfer
@@ -4807,7 +5123,7 @@ class _HistoryPanelState extends State<_HistoryPanel> {
 
     // Same size and shape as the reminder card.
     final card = Material(
-      color: _lighter(accent.background),
+      color: _lighter(_base),
       borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -5158,122 +5474,142 @@ class _HistoryPanelState extends State<_HistoryPanel> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: _accountThemes,
+    builder: (context, _) => _buildPanel(context),
+  );
+
+  Color get _base {
+    final color = _accountThemes.of(_historyThemeId).color;
+    return color != null ? Color(color) : AppTheme.accentOf(context).background;
+  }
+
+  Widget _buildPanel(BuildContext context) {
     final theme = Theme.of(context);
     final accent = AppTheme.accentOf(context);
-    final fg = accent.foreground;
     final s = AppSettings.instance;
+    final t = _accountThemes.of(_historyThemeId);
+    final look = _CardLook.of(context, t);
+    final fg = look.fg;
+    final base = _base;
+    final bodyFg = t.color != null ? AppTheme.onColor(base) : accent.foreground;
     final left = _income - _expense;
     final scale = _fontScale(context).clamp(0.9, 1.3).toDouble();
 
     return Material(
-      color: accent.background,
+      color: base,
       borderRadius: const BorderRadius.vertical(bottom: Radius.circular(28)),
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
-          SizedBox(height: MediaQuery.viewPaddingOf(context).top),
-          // Title + date filter button
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppConstants.spaceMd + AppConstants.spaceXs,
-              AppConstants.spaceMd,
-              AppConstants.spaceSm,
-              0,
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 40 * scale,
-                  height: 40 * scale,
-                  decoration: BoxDecoration(
-                    color: fg.withValues(alpha: AppConstants.tintAlpha),
-                    borderRadius: BorderRadius.circular(AppConstants.radiusMd),
-                  ),
-                  child: Icon(Icons.receipt_long_outlined, color: fg),
-                ),
-                const SizedBox(width: AppConstants.spaceMd),
-                Expanded(
-                  child: Text(
-                    'History',
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: fg,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(Icons.filter_list, color: fg),
-                  tooltip: 'Filter by date',
-                  onPressed: _pickRange,
-                ),
-              ],
-            ),
-          ),
-          // < date >
-          Row(
+          _themedHeader(
+            context,
+            id: _historyThemeId,
+            title: 'History Header Theme',
+            look: look,
             children: [
-              SizedBox(
-                width: 48,
-                height: 48,
-                child: _range.canStep
-                    ? IconButton(
-                        icon: Icon(Icons.chevron_left, color: fg),
-                        onPressed: () => _shift(-1),
-                      )
-                    : null,
-              ),
-              Expanded(
-                child: Center(
-                  child: Text(
-                    _range.label,
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: fg,
+              SizedBox(height: MediaQuery.viewPaddingOf(context).top),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppConstants.spaceMd + AppConstants.spaceXs,
+                  AppConstants.spaceMd,
+                  AppConstants.spaceSm,
+                  0,
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40 * scale,
+                      height: 40 * scale,
+                      decoration: BoxDecoration(
+                        color: fg.withValues(alpha: AppConstants.tintAlpha),
+                        borderRadius: BorderRadius.circular(
+                          AppConstants.radiusMd,
+                        ),
+                      ),
+                      child: Icon(Icons.receipt_long_outlined, color: fg),
                     ),
-                  ),
+                    const SizedBox(width: AppConstants.spaceMd),
+                    Expanded(
+                      child: Text(
+                        'History',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: fg,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.filter_list, color: fg),
+                      tooltip: 'Filter by date',
+                      onPressed: _pickRange,
+                    ),
+                  ],
                 ),
               ),
-              SizedBox(
-                width: 48,
-                height: 48,
-                child: _range.canStep
-                    ? IconButton(
-                        icon: Icon(Icons.chevron_right, color: fg),
-                        onPressed: () => _shift(1),
-                      )
-                    : null,
+              Row(
+                children: [
+                  SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: _range.canStep
+                        ? IconButton(
+                            icon: Icon(Icons.chevron_left, color: fg),
+                            onPressed: () => _shift(-1),
+                          )
+                        : null,
+                  ),
+                  Expanded(
+                    child: Center(
+                      child: Text(
+                        _range.label,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: fg,
+                        ),
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: _range.canStep
+                        ? IconButton(
+                            icon: Icon(Icons.chevron_right, color: fg),
+                            onPressed: () => _shift(1),
+                          )
+                        : null,
+                  ),
+                ],
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppConstants.spaceMd,
+                  AppConstants.spaceSm,
+                  AppConstants.spaceMd,
+                  AppConstants.spaceMd,
+                ),
+                child: Row(
+                  children: [
+                    _stat(Icons.arrow_upward, s.incomeColor, _income, 'income'),
+                    _stat(
+                      Icons.arrow_downward,
+                      s.expenseColor,
+                      _expense,
+                      'expense',
+                    ),
+                    _stat(
+                      Icons.account_balance_wallet_outlined,
+                      left >= 0 ? s.incomeColor : s.expenseColor,
+                      left,
+                      null,
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
-          // Income | Expense | What's left
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppConstants.spaceMd,
-              AppConstants.spaceSm,
-              AppConstants.spaceMd,
-              AppConstants.spaceMd,
-            ),
-            child: Row(
-              children: [
-                _stat(Icons.arrow_upward, s.incomeColor, _income, 'income'),
-                _stat(
-                  Icons.arrow_downward,
-                  s.expenseColor,
-                  _expense,
-                  'expense',
-                ),
-                _stat(
-                  Icons.account_balance_wallet_outlined,
-                  left >= 0 ? s.incomeColor : s.expenseColor,
-                  left,
-                  null,
-                ),
-              ],
-            ),
-          ),
-          // Line the list scrolls under
           Divider(height: 1, thickness: 2, color: fg.withValues(alpha: 0.3)),
           if (_error != null)
             Padding(
@@ -5285,14 +5621,13 @@ class _HistoryPanelState extends State<_HistoryPanel> {
             ),
           Expanded(
             child: ColoredBox(
-              color: _lighter(accent.background),
+              color: _lighter(base),
               child: ListView(
                 padding: const EdgeInsets.only(bottom: AppConstants.spaceMd),
-                children: _listChildren(fg),
+                children: _listChildren(bodyFg),
               ),
             ),
           ),
-          // Handle: tap or swipe up to close
           GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () => Navigator.of(context).pop(),
@@ -5300,7 +5635,7 @@ class _HistoryPanelState extends State<_HistoryPanel> {
               if ((d.primaryVelocity ?? 0) < 0) Navigator.of(context).pop();
             },
             child: ColoredBox(
-              color: _lighter(accent.background),
+              color: _lighter(base),
               child: SizedBox(
                 height: 28,
                 width: double.infinity,
@@ -5309,7 +5644,7 @@ class _HistoryPanelState extends State<_HistoryPanel> {
                     width: 40,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: fg.withValues(alpha: AppConstants.borderAlpha),
+                      color: bodyFg.withValues(alpha: AppConstants.borderAlpha),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -5401,10 +5736,16 @@ class _AnalyticsPanelState extends State<_AnalyticsPanel> {
   }
 
   Future<void> _pickRange() async {
+    final t = _accountThemes.of(_analyticsThemeId);
+    final accent = AppTheme.accentOf(context);
+    final bg = t.color != null ? Color(t.color!) : accent.background;
+    final fg = t.color != null ? AppTheme.onColor(bg) : accent.foreground;
+
     final picked = await showDialog<_HistoryRange>(
       context: context,
       barrierColor: AppConstants.popupBarrier,
-      builder: (_) => _RangeDialog(initial: _range),
+      builder: (_) =>
+          _RangeDialog(initial: _range, background: bg, foreground: fg),
     );
     if (picked == null || !mounted) return;
     setState(() => _range = picked);
@@ -5471,170 +5812,202 @@ class _AnalyticsPanelState extends State<_AnalyticsPanel> {
   }
 
   /// Category pressed in the income / expense graphs.
-  void _openCategory(_CatSlice c) => _showCategoryView(
-    context,
-    category: _CategoryRef(c.id, c.name, c.icon, c.color, _view),
-    range: _range,
-  );
+  void _openCategory(_CatSlice c) {
+    final col = _accountThemes.of(_analyticsThemeId).color;
+    _showCategoryView(
+      context,
+      category: _CategoryRef(c.id, c.name, c.icon, c.color, _view),
+      range: _range,
+      baseColor: col == null ? null : Color(col),
+    );
+  }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: _accountThemes,
+    builder: (context, _) => _buildPanel(context),
+  );
+
+  Color get _base {
+    final color = _accountThemes.of(_analyticsThemeId).color;
+    return color != null ? Color(color) : AppTheme.accentOf(context).background;
+  }
+
+  Widget _buildPanel(BuildContext context) {
     final theme = Theme.of(context);
     final accent = AppTheme.accentOf(context);
-    final fg = accent.foreground;
+    final t = _accountThemes.of(_analyticsThemeId);
+    final look = _CardLook.of(context, t);
+    final fg = look.fg;
+    final base = _base;
+    final bodyFg = t.color != null ? AppTheme.onColor(base) : accent.foreground;
     final s = AppSettings.instance;
     final left = _income - _expense;
     final scale = _fontScale(context).clamp(0.9, 1.3).toDouble();
 
     return Material(
-      color: accent.background,
+      color: base,
       borderRadius: const BorderRadius.vertical(bottom: Radius.circular(28)),
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
-          SizedBox(height: MediaQuery.viewPaddingOf(context).top),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppConstants.spaceMd + AppConstants.spaceXs,
-              AppConstants.spaceMd,
-              AppConstants.spaceSm,
-              0,
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 40 * scale,
-                  height: 40 * scale,
-                  decoration: BoxDecoration(
-                    color: fg.withValues(alpha: AppConstants.tintAlpha),
-                    borderRadius: BorderRadius.circular(AppConstants.radiusMd),
-                  ),
-                  child: Icon(Icons.insights_outlined, color: fg),
+          _themedHeader(
+            context,
+            id: _analyticsThemeId,
+            title: 'Analytics Header Theme',
+            look: look,
+            children: [
+              SizedBox(height: MediaQuery.viewPaddingOf(context).top),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppConstants.spaceMd + AppConstants.spaceXs,
+                  AppConstants.spaceMd,
+                  AppConstants.spaceSm,
+                  0,
                 ),
-                const SizedBox(width: AppConstants.spaceMd),
-                // Pressing the title returns to the default graphs.
-                Expanded(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => setState(() => _view = 'all'),
-                    child: Text(
-                      'Analytics',
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: fg,
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40 * scale,
+                      height: 40 * scale,
+                      decoration: BoxDecoration(
+                        color: fg.withValues(alpha: AppConstants.tintAlpha),
+                        borderRadius: BorderRadius.circular(
+                          AppConstants.radiusMd,
+                        ),
+                      ),
+                      child: Icon(Icons.insights_outlined, color: fg),
+                    ),
+                    const SizedBox(width: AppConstants.spaceMd),
+                    // Pressing the title returns to the default graphs.
+                    Expanded(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => setState(() => _view = 'all'),
+                        child: Text(
+                          'Analytics',
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: fg,
+                          ),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.filter_list, color: fg),
+                      tooltip: 'Filter by date',
+                      onPressed: _pickRange,
+                    ),
+                  ],
+                ),
+              ),
+              Row(
+                children: [
+                  SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: _range.canStep
+                        ? IconButton(
+                            icon: Icon(Icons.chevron_left, color: fg),
+                            onPressed: () => _shift(-1),
+                          )
+                        : null,
+                  ),
+                  Expanded(
+                    child: Center(
+                      child: Text(
+                        _range.label,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: fg,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                IconButton(
-                  icon: Icon(Icons.filter_list, color: fg),
-                  tooltip: 'Filter by date',
-                  onPressed: _pickRange,
-                ),
-              ],
-            ),
-          ),
-          Row(
-            children: [
-              SizedBox(
-                width: 48,
-                height: 48,
-                child: _range.canStep
-                    ? IconButton(
-                        icon: Icon(Icons.chevron_left, color: fg),
-                        onPressed: () => _shift(-1),
-                      )
-                    : null,
-              ),
-              Expanded(
-                child: Center(
-                  child: Text(
-                    _range.label,
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: fg,
-                    ),
+                  SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: _range.canStep
+                        ? IconButton(
+                            icon: Icon(Icons.chevron_right, color: fg),
+                            onPressed: () => _shift(1),
+                          )
+                        : null,
                   ),
-                ),
+                ],
               ),
-              SizedBox(
-                width: 48,
-                height: 48,
-                child: _range.canStep
-                    ? IconButton(
-                        icon: Icon(Icons.chevron_right, color: fg),
-                        onPressed: () => _shift(1),
-                      )
-                    : null,
+              // Income | Expense | Net
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppConstants.spaceMd,
+                  AppConstants.spaceSm,
+                  AppConstants.spaceMd,
+                  AppConstants.spaceMd,
+                ),
+                child: Row(
+                  children: [
+                    _stat(Icons.arrow_upward, s.incomeColor, _income, 'income'),
+                    _stat(
+                      Icons.arrow_downward,
+                      s.expenseColor,
+                      _expense,
+                      'expense',
+                    ),
+                    _stat(
+                      Icons.account_balance_wallet_outlined,
+                      left >= 0 ? s.incomeColor : s.expenseColor,
+                      left,
+                      'net',
+                    ),
+                  ],
+                ),
               ),
             ],
-          ),
-          // Income | Expense | Net
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppConstants.spaceMd,
-              AppConstants.spaceSm,
-              AppConstants.spaceMd,
-              AppConstants.spaceMd,
-            ),
-            child: Row(
-              children: [
-                _stat(Icons.arrow_upward, s.incomeColor, _income, 'income'),
-                _stat(
-                  Icons.arrow_downward,
-                  s.expenseColor,
-                  _expense,
-                  'expense',
-                ),
-                _stat(
-                  Icons.account_balance_wallet_outlined,
-                  left >= 0 ? s.incomeColor : s.expenseColor,
-                  left,
-                  'net',
-                ),
-              ],
-            ),
           ),
           Divider(height: 1, thickness: 2, color: fg.withValues(alpha: 0.3)),
           Expanded(
             child: ColoredBox(
-              color: _lighter(accent.background),
-              child: ListView(
-                padding: const EdgeInsets.only(bottom: AppConstants.spaceMd),
-                children: [
-                  if (_view == 'all')
-                    _AnalyticsDefault(
-                      stats: _accountStats(_accounts, _entries),
-                      typeOrder: _typeOrder,
-                      entries: _entries,
-                      reminders: _reminders,
-                      range: _range,
-                      fg: fg,
-                      onOpen: (v) => setState(() => _view = v),
-                    )
-                  else if (_view == 'net')
-                    _AccountsOverview(
-                      stats: _accountStats(_accounts, _entries),
-                      typeOrder: _typeOrder,
-                      fg: fg,
-                      onOpen: (a) => _showAccountView(
-                        context,
-                        a,
-                        hidden: false,
-                        analytics: true,
+              color: _lighter(base),
+              child: _ChartSurface(
+                color: _lighter(base),
+                child: ListView(
+                  padding: const EdgeInsets.only(bottom: AppConstants.spaceMd),
+                  children: [
+                    if (_view == 'all')
+                      _AnalyticsDefault(
+                        stats: _accountStats(_accounts, _entries),
+                        typeOrder: _typeOrder,
+                        entries: _entries,
+                        reminders: _reminders,
                         range: _range,
+                        fg: bodyFg,
+                        onOpen: (v) => setState(() => _view = v),
+                      )
+                    else if (_view == 'net')
+                      _AccountsOverview(
+                        stats: _accountStats(_accounts, _entries),
+                        typeOrder: _typeOrder,
+                        fg: bodyFg,
+                        base: base,
+                        onOpen: (a) => _showAccountView(
+                          context,
+                          a,
+                          hidden: false,
+                          analytics: true,
+                          range: _range,
+                        ),
+                      )
+                    else
+                      _KindCharts(
+                        entries: _entries,
+                        kind: _view,
+                        range: _range,
+                        fg: bodyFg,
+                        onOpenCategory: _openCategory,
                       ),
-                    )
-                  else
-                    _KindCharts(
-                      entries: _entries,
-                      kind: _view,
-                      range: _range,
-                      fg: fg,
-                      onOpenCategory: _openCategory,
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -5645,7 +6018,7 @@ class _AnalyticsPanelState extends State<_AnalyticsPanel> {
               if ((d.primaryVelocity ?? 0) < 0) Navigator.of(context).pop();
             },
             child: ColoredBox(
-              color: _lighter(accent.background),
+              color: _lighter(base),
               child: SizedBox(
                 height: 28,
                 width: double.infinity,
@@ -5654,7 +6027,7 @@ class _AnalyticsPanelState extends State<_AnalyticsPanel> {
                     width: 40,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: fg.withValues(alpha: AppConstants.borderAlpha),
+                      color: bodyFg.withValues(alpha: AppConstants.borderAlpha),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -7422,7 +7795,8 @@ class _TransactionSheetState extends State<_TransactionSheet> {
               value.icon,
               fallback: _accountIcon(value),
               size: 24,
-              color: fg, framed: true
+              color: fg,
+              framed: true,
             ),
       onTap: () => _pickAccount(isTo: isTo),
     );
@@ -7443,7 +7817,8 @@ class _TransactionSheetState extends State<_TransactionSheet> {
               value.icon,
               fallback: _iconForCategory(value.icon),
               size: 24,
-              color: fg, framed: true
+              color: fg,
+              framed: true,
             ),
       onTap: _pickCategory,
     );
@@ -8605,11 +8980,13 @@ class _AccountsOverview extends StatelessWidget {
   final List<_AccountStat> stats;
   final List<int> typeOrder;
   final Color fg;
+  final Color base;
   final ValueChanged<_AccountCardData> onOpen;
   const _AccountsOverview({
     required this.stats,
     required this.typeOrder,
     required this.fg,
+    required this.base,
     required this.onOpen,
   });
 
@@ -8638,7 +9015,7 @@ class _AccountsOverview extends StatelessWidget {
         vertical: 3,
       ),
       child: Material(
-        color: _lighter(AppTheme.accentOf(context).background, 0.08),
+        color: _lighter(base, 0.08),
         borderRadius: BorderRadius.circular(16),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -9427,10 +9804,10 @@ class _TxLineChartState extends State<_TxLineChart> {
   @override
   Widget build(BuildContext context) {
     final fg = widget.fg;
-    final border = Color.alphaBlend(
-      fg.withValues(alpha: 0.06),
-      _lighter(AppTheme.accentOf(context).background),
-    );
+    final surface =
+        _ChartSurface.maybeOf(context) ??
+        _lighter(AppTheme.accentOf(context).background);
+    final border = Color.alphaBlend(fg.withValues(alpha: 0.06), surface);
     final selIdx = _selected;
     final sel = selIdx == null
         ? null
@@ -9793,6 +10170,19 @@ class _DayLink extends ChangeNotifier {
     _day = d;
     notifyListeners();
   }
+}
+
+/// The surface a chart sits on. The pressed-node bubble border is blended
+/// from it, so the bubble matches the panel color.
+class _ChartSurface extends InheritedWidget {
+  final Color color;
+  const _ChartSurface({required this.color, required super.child});
+
+  static Color? maybeOf(BuildContext c) =>
+      c.dependOnInheritedWidgetOfExactType<_ChartSurface>()?.color;
+
+  @override
+  bool updateShouldNotify(_ChartSurface o) => o.color != color;
 }
 
 /// Owns one [_DayLink] for the graphs built inside it.
@@ -10238,10 +10628,10 @@ class _TxCountGraphState extends State<_TxCountGraph> {
   @override
   Widget build(BuildContext context) {
     final fg = widget.fg;
-    final border = Color.alphaBlend(
-      fg.withValues(alpha: 0.06),
-      _lighter(AppTheme.accentOf(context).background),
-    );
+    final surface =
+        _ChartSurface.maybeOf(context) ??
+        _lighter(AppTheme.accentOf(context).background);
+    final border = Color.alphaBlend(fg.withValues(alpha: 0.06), surface);
     final muted = fg.withValues(alpha: AppConstants.mutedAlpha);
     final kind = widget.kind;
     final today = _dateOnly(DateTime.now());
