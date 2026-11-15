@@ -5608,7 +5608,7 @@ class _ReceiptDialogState extends State<_ReceiptDialog> {
                             height: 68,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: data.color.withValues(alpha: 0.3),
+                              color: header, // same as the top section's background
                               border: Border.all(color: bright, width: 3),
                             ),
                             child: Icon(data.icon, size: 32, color: bright),
