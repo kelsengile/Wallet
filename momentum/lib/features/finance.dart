@@ -11573,3 +11573,90 @@ class _KindCharts extends StatelessWidget {
     );
   }
 }
+
+// ------------------------------------------------------------------
+// Public helpers used by the Search and Trash screens
+// ------------------------------------------------------------------
+
+/// A category icon (glyph or imported picture).
+Widget categoryIconWidget(
+  String? saved, {
+  required double size,
+  required Color color,
+}) => _iconWidget(
+  saved,
+  fallback: _iconForCategory(saved),
+  size: size,
+  color: color,
+);
+
+/// An account type icon (glyph or imported picture).
+Widget accountTypeIconWidget(
+  String typeName,
+  String? saved, {
+  required double size,
+  required Color color,
+}) => _iconWidget(
+  saved,
+  fallback: _iconForType(typeName, saved),
+  size: size,
+  color: color,
+);
+
+/// Opens the receipt of a transaction.
+Future<void> showTransactionReceipt(BuildContext context, HistoryEntry first) {
+  var current = first;
+  return _showReceipt(
+    context,
+    _entryReceiptData(first),
+    reload: () async {
+      final all = await DatabaseHelper.instance.getHistory();
+      for (final x in all) {
+        if (x.id == first.id) {
+          current = x;
+          return _entryReceiptData(x);
+        }
+      }
+      return null;
+    },
+    onEdit: () =>
+        showTransactionSheet(context, _typeOf(first.type), entry: current),
+  );
+}
+
+/// Opens the edit pop-up of a reminder.
+Future<void> showReminderEditor(BuildContext context, ReminderItem reminder) {
+  return showTransactionSheet(
+    context,
+    TransactionColorType.reminder,
+    reminder: reminder,
+  );
+}
+
+/// Opens the account pop-up (card on top, history below).
+Future<void> showAccountById(
+  BuildContext context,
+  int id, {
+  bool hidden = false,
+}) async {
+  final account = await _queryAccount(id);
+  if (account == null || !context.mounted) return;
+  await _showAccountView(context, account, hidden: hidden);
+}
+
+/// Opens the category pop-up with all of its transactions.
+/// [kind] is 'income' or 'expense'.
+Future<void> showCategoryTransactions(
+  BuildContext context, {
+  required int id,
+  required String name,
+  required String? icon,
+  required int? color,
+  required String kind,
+}) {
+  return _showCategoryView(
+    context,
+    category: _CategoryRef(id, name, icon, _categoryColor(color, 0), kind),
+    range: _HistoryRange.of(_Period.all, DateTime.now()),
+  );
+}

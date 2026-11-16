@@ -16,6 +16,7 @@ import 'core/screens/search.dart';
 import 'core/screens/settings.dart';
 import 'core/themes.dart';
 import 'database/database.dart';
+import 'database/helper.dart';
 import 'features/finance.dart';
 import 'features/health.dart';
 import 'features/schedule.dart';
@@ -30,6 +31,12 @@ Future<void> main() async {
   ]);
 
   await AppSettings.instance.load(); // restore saved theme, font + text size
+
+  // Month-end clean up: removes anything deleted in an earlier month.
+  try {
+    await DatabaseHelper.instance.purgeExpiredTrash();
+  } catch (_) {}
+
   runApp(const MomentumApp());
 }
 
