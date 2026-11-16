@@ -824,7 +824,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
       // until a range was picked, same as the Analytics pop-up).
       final range =
           _analyticsRange.value ??
-          _HistoryRange.of(_Period.month, DateTime.now());
+          _HistoryRange.of(_Period.month, Utils.now());
       final from = range.from;
       final until = range.until;
       var income = 0.0;
@@ -1183,7 +1183,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                   child: Row(
                     children: [
                       Text(
-                        'My Accounts',
+                        'My Accounts'.tr,
                         style: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w600,
                         ),
@@ -3656,7 +3656,7 @@ class TotalBalanceCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Total Balance',
+                'Total Balance'.tr,
                 style: theme.textTheme.bodyMedium?.copyWith(color: muted),
               ),
               Text(
@@ -3929,7 +3929,7 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
   late _HistoryRange _range =
       widget.range ??
       _lastAccountRange ??
-      _HistoryRange.of(_Period.month, DateTime.now());
+      _HistoryRange.of(_Period.month, Utils.now());
   List<HistoryEntry> _entries = const [];
   List<ReminderItem> _reminders = const [];
   double? _budget; // category pop-up (expense): budget in pesos
@@ -4423,7 +4423,7 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
         child: Row(
           children: [
             Text(
-              (_analytics && !_catMode) ? 'Analytics' : 'History',
+              (_analytics && !_catMode) ? 'Analytics'.tr : 'History'.tr,
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w800,
                 color: fg,
@@ -5149,8 +5149,7 @@ class _HistoryPanelState extends State<_HistoryPanel> {
   @override
   void initState() {
     super.initState();
-    _range =
-        _lastHistoryRange ?? _HistoryRange.of(_Period.month, DateTime.now());
+    _range = _lastHistoryRange ?? _HistoryRange.of(_Period.month, Utils.now());
     _load();
     _db.changes.addListener(_load);
   }
@@ -5383,7 +5382,7 @@ class _HistoryPanelState extends State<_HistoryPanel> {
   _ReceiptData _entryReceipt(HistoryEntry e) => _entryReceiptData(e);
 
   bool _isOverdue(DateTime due) {
-    final n = DateTime.now();
+    final n = Utils.now();
     return DateTime(
       due.year,
       due.month,
@@ -5960,7 +5959,7 @@ class _HistoryPanelState extends State<_HistoryPanel> {
                     const SizedBox(width: AppConstants.spaceMd),
                     Expanded(
                       child: Text(
-                        'History',
+                        'History'.tr,
                         style: theme.textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.w700,
                           color: fg,
@@ -6139,7 +6138,7 @@ class _AnalyticsPanelState extends State<_AnalyticsPanel> {
     super.initState();
     _range =
         _analyticsRange.value ??
-        _HistoryRange.of(_Period.month, DateTime.now());
+        _HistoryRange.of(_Period.month, Utils.now());
     _load();
     _db.changes.addListener(_load);
   }
@@ -6313,7 +6312,7 @@ class _AnalyticsPanelState extends State<_AnalyticsPanel> {
                         behavior: HitTestBehavior.opaque,
                         onTap: () => setState(() => _view = 'all'),
                         child: Text(
-                          'Analytics',
+                          'Analytics'.tr,
                           style: theme.textTheme.titleLarge?.copyWith(
                             fontWeight: FontWeight.w700,
                             color: fg,
@@ -6970,7 +6969,7 @@ class _RangeDialogState extends State<_RangeDialog> {
   void initState() {
     super.initState();
     final i = widget.initial;
-    final n = DateTime.now();
+    final n = Utils.now();
     _period = i.period;
     _picked = i.isAll ? DateTime(n.year, n.month, n.day) : i.start;
     if (i.period == _Period.custom) {
@@ -7125,7 +7124,7 @@ class _RangeDialogState extends State<_RangeDialog> {
   Widget _dayCell(int day, int days, Color fg) {
     if (day < 1 || day > days) return const SizedBox(height: 38);
     final date = DateTime(_view.year, _view.month, day);
-    final today = _dateOnly(DateTime.now());
+    final today = _dateOnly(Utils.now());
     final isToday = date == today;
     var inRange = false;
     var strong = false;
@@ -7275,7 +7274,7 @@ class _RangeDialogState extends State<_RangeDialog> {
   Widget _body(Color fg) {
     switch (_period) {
       case _Period.month:
-        final now = DateTime.now();
+        final now = Utils.now();
         return _grid(
           12,
           (i) => _gridCell(
@@ -7287,7 +7286,7 @@ class _RangeDialogState extends State<_RangeDialog> {
           ),
         );
       case _Period.year:
-        final now = DateTime.now();
+        final now = Utils.now();
         return _grid(
           10,
           (i) => _gridCell(
@@ -7744,7 +7743,7 @@ class _TransactionSheetState extends State<_TransactionSheet> {
   void initState() {
     super.initState();
     if (!_isReminder) {
-      final n = DateTime.now();
+      final n = Utils.now();
       _date = DateTime(n.year, n.month, n.day, n.hour, n.minute); // prefilled
     }
     // Edit mode: start with the saved values.
@@ -8029,7 +8028,7 @@ class _TransactionSheetState extends State<_TransactionSheet> {
   Future<void> _pickDate(Color color) async {
     final picked = await _showDateTimeDialog(
       context,
-      initial: _date ?? DateTime.now(),
+      initial: _date ?? Utils.now(),
       color: color,
     );
     if (picked != null) setState(() => _date = picked);
@@ -11062,7 +11061,7 @@ class _TxCountGraphState extends State<_TxCountGraph> {
     final border = Color.alphaBlend(fg.withValues(alpha: 0.06), surface);
     final muted = fg.withValues(alpha: AppConstants.mutedAlpha);
     final kind = widget.kind;
-    final today = _dateOnly(DateTime.now());
+    final today = _dateOnly(Utils.now());
 
     // Everything that counts: (day, kind).
     final items = <(DateTime, String)>[];
@@ -11657,6 +11656,6 @@ Future<void> showCategoryTransactions(
   return _showCategoryView(
     context,
     category: _CategoryRef(id, name, icon, _categoryColor(color, 0), kind),
-    range: _HistoryRange.of(_Period.all, DateTime.now()),
+    range: _HistoryRange.of(_Period.all, Utils.now()),
   );
 }
