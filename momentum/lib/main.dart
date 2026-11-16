@@ -19,7 +19,6 @@ import 'database/database.dart';
 import 'features/finance.dart';
 import 'features/health.dart';
 import 'features/schedule.dart';
-import 'services/analytics.dart';
 import 'services/notification.dart';
 
 Future<void> main() async {
@@ -238,7 +237,6 @@ class _HomeShellState extends State<HomeShell>
 
   // Shown in its own "Tools" section below Profile / Notifications.
   static const _toolsItem = <_DrawerItem>[
-    _DrawerItem('Analytics', Icons.analytics_outlined, AnalyticsScreen()),
     _DrawerItem('Calculator', Icons.calculate_outlined, CalculatorScreen()),
     _DrawerItem('Converter', Icons.compare_arrows_outlined, ConverterScreen()),
   ];
