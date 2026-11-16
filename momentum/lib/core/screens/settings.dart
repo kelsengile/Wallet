@@ -1,12 +1,20 @@
+import 'dart:convert';
+import 'dart:math' show Random;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/scheduler.dart' show timeDilation;
+import 'package:local_auth/local_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:crypto/crypto.dart';
 
+import '../../database/helper.dart';
 import '../constants.dart';
+import '../failures.dart';
 import '../font.dart';
 import '../themes.dart';
-import '../../database/helper.dart';
+import '../utils.dart';
+import '../../services/exchange.dart';
 
 /// Colors a pop-up: [background] behind, [foreground] for text, buttons,
 /// sliders and switches. Built on top of [base].
@@ -164,6 +172,514 @@ enum ActionColorType {
   );
 }
 
+// ------------------------------------------------------------------
+// Security
+// ------------------------------------------------------------------
+
+/// Touch ID / Face ID use the phone's biometrics. PIN is Momentum's own PIN.
+/// PIN is last so it is listed under the biometric methods.
+enum SecurityMethod {
+  touch('Touch ID', Icons.fingerprint),
+  face('Face ID', Icons.face_outlined),
+  pin('PIN', Icons.pin_outlined);
+
+  final String label;
+  final IconData icon;
+  const SecurityMethod(this.label, this.icon);
+}
+
+class AppSecurity {
+  AppSecurity._();
+  static final LocalAuthentication _auth = LocalAuthentication();
+
+  /// Biometric methods this phone really has (PIN is always available).
+  static Future<List<SecurityMethod>> available() async {
+    try {
+      if (!await _auth.isDeviceSupported()) return const [];
+      final types = await _auth.getAvailableBiometrics();
+      final face = types.contains(BiometricType.face);
+      final finger =
+          types.contains(BiometricType.fingerprint) ||
+          (!face &&
+              (types.contains(BiometricType.strong) ||
+                  types.contains(BiometricType.weak)));
+      return [
+        if (finger) SecurityMethod.touch,
+        if (face) SecurityMethod.face,
+      ];
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// [biometricOnly] false also accepts the phone's own screen lock.
+  static Future<bool> authenticate(
+    String reason, {
+    bool biometricOnly = true,
+  }) async {
+    try {
+      return await _auth.authenticate(
+        localizedReason: reason,
+        options: AuthenticationOptions(
+          biometricOnly: biometricOnly,
+          stickyAuth: true,
+        ),
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // ---- App PIN (salted hash, kept in SharedPreferences, not in backups) ----
+
+  static String _hash(String pin, String salt) =>
+      sha256.convert(utf8.encode('$salt:$pin')).toString();
+
+  static Future<void> setPin(String pin) async {
+    final prefs = await SharedPreferences.getInstance();
+    final random = Random.secure();
+    final salt = base64Url.encode(
+      List<int>.generate(16, (_) => random.nextInt(256)),
+    );
+    await prefs.setString(AppConstants.prefSecurityPinSalt, salt);
+    await prefs.setString(AppConstants.prefSecurityPinHash, _hash(pin, salt));
+    await prefs.setInt(AppConstants.prefSecurityPinLength, pin.length);
+  }
+
+  /// null = unknown (a PIN saved by an older version).
+  static Future<int?> pinLength() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getInt(AppConstants.prefSecurityPinLength);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<bool> verifyPin(String pin) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final salt = prefs.getString(AppConstants.prefSecurityPinSalt);
+      final hash = prefs.getString(AppConstants.prefSecurityPinHash);
+      if (salt == null || hash == null) return false;
+      return _hash(pin, salt) == hash;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> clearPin() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(AppConstants.prefSecurityPinSalt);
+      await prefs.remove(AppConstants.prefSecurityPinHash);
+      await prefs.remove(AppConstants.prefSecurityPinLength);
+    } catch (_) {}
+  }
+}
+
+/// Marks every widget dirty so all text, currency signs and times redraw
+/// right after a localization change (no state is lost).
+void _rebuildEverything() {
+  void mark(Element element) {
+    element.markNeedsBuild();
+    element.visitChildren(mark);
+  }
+
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.rootElement?.visitChildren(mark);
+  });
+  WidgetsBinding.instance.scheduleFrame();
+}
+
+/// Wraps the whole app (see main.dart). Shows the lock screen on start and
+/// when the app comes back after [AppConstants.lockAfterBackground].
+class AppLockGate extends StatefulWidget {
+  final Widget child;
+  const AppLockGate({super.key, required this.child});
+
+  @override
+  State<AppLockGate> createState() => _AppLockGateState();
+}
+
+class _AppLockGateState extends State<AppLockGate> with WidgetsBindingObserver {
+  final _settings = AppSettings.instance;
+  bool _locked = false;
+  bool _busy = false;
+  bool _failed = false;
+  DateTime? _leftAt;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _settings.addListener(_onSettings);
+    if (_settings.securityEnabled) {
+      _locked = true;
+    }
+  }
+
+  @override
+  void dispose() {
+    _settings.removeListener(_onSettings);
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  void _onSettings() {
+    if (!_settings.securityEnabled && _locked && mounted) {
+      setState(() => _locked = false);
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!_settings.securityEnabled || _busy) return;
+    if (state == AppLifecycleState.paused) {
+      _leftAt = DateTime.now();
+    } else if (state == AppLifecycleState.resumed) {
+      final left = _leftAt;
+      _leftAt = null;
+      if (!_locked &&
+          left != null &&
+          DateTime.now().difference(left) >= AppConstants.lockAfterBackground) {
+        setState(() => _locked = true);
+      }
+    }
+  }
+
+  /// Biometric methods that are turned on (the PIN is always typed).
+  List<SecurityMethod> get _methods {
+    final on = _settings.securityMethods;
+    return [
+      for (final m in SecurityMethod.values)
+        if (m != SecurityMethod.pin && on.contains(m)) m,
+    ];
+  }
+
+  SecurityMethod get _primary {
+    final on = _settings.securityMethods;
+    if (on.contains(SecurityMethod.face)) return SecurityMethod.face;
+    if (on.contains(SecurityMethod.touch)) return SecurityMethod.touch;
+    return SecurityMethod.pin;
+  }
+
+  Future<void> _unlock([SecurityMethod? method]) async {
+    if (_busy || !mounted) return;
+    final m = method ?? _primary;
+    if (m == SecurityMethod.pin) return; // the PIN is typed on the lock screen
+    _busy = true;
+    final ok = await AppSecurity.authenticate('Unlock Momentum'.tr);
+    _busy = false;
+    if (!mounted) return;
+    setState(() {
+      _failed = !ok;
+      if (ok) {
+        _locked = false;
+        _leftAt = null;
+      }
+    });
+  }
+
+  Future<bool> _submitPin(String pin) async {
+    final ok = await AppSecurity.verifyPin(pin);
+    if (ok && mounted) {
+      setState(() {
+        _locked = false;
+        _failed = false;
+        _leftAt = null;
+      });
+    }
+    return ok;
+  }
+
+  /// Safety net: the phone's own screen lock removes the PIN and the app
+  /// lock, so a forgotten PIN never locks the person out for good.
+  Future<void> _forgotPin() async {
+    if (_busy || !mounted) return;
+    _busy = true;
+    final ok = await AppSecurity.authenticate(
+      'Verify it\'s you to reset your PIN.',
+      biometricOnly: false,
+    );
+    _busy = false;
+    if (!ok || !mounted) return;
+    await AppSecurity.clearPin();
+    await _settings.setSecurity(enabled: false, methods: {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: !_locked,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          widget.child,
+          if (_locked)
+            Positioned.fill(
+              child: _LockScreen(
+                methods: _methods,
+                failed: _failed,
+                onBiometric: _unlock,
+                onPin: _submitPin,
+                onForgot: _forgotPin,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LockScreen extends StatefulWidget {
+  final List<SecurityMethod> methods; // biometric methods that are on
+  final bool failed; // kept for the gate; the screen just says "Enter PIN"
+  final ValueChanged<SecurityMethod> onBiometric;
+  final Future<bool> Function(String pin) onPin;
+  final VoidCallback onForgot;
+  const _LockScreen({
+    required this.methods,
+    required this.failed,
+    required this.onBiometric,
+    required this.onPin,
+    required this.onForgot,
+  });
+
+  @override
+  State<_LockScreen> createState() => _LockScreenState();
+}
+
+class _LockScreenState extends State<_LockScreen> {
+  static const double _key = 72;
+  static const double _gap = 16;
+
+  String _pin = '';
+  int? _length; // saved PIN length (null = unknown)
+  String? _error;
+  int _attempts = 0;
+  DateTime? _until;
+  bool _checking = false;
+
+  @override
+  void initState() {
+    super.initState();
+    AppSecurity.pinLength().then((v) {
+      if (mounted) setState(() => _length = v);
+    });
+  }
+
+  int get _slots => _length ?? AppConstants.pinMaxLength;
+
+  SecurityMethod? get _biometric {
+    if (widget.methods.contains(SecurityMethod.face)) return SecurityMethod.face;
+    if (widget.methods.contains(SecurityMethod.touch)) {
+      return SecurityMethod.touch;
+    }
+    return null;
+  }
+
+  bool get _lockedOut =>
+      _until != null && _until!.isAfter(DateTime.now());
+
+  void _digit(String d) {
+    if (_checking || _pin.length >= AppConstants.pinMaxLength) return;
+    if (_lockedOut) {
+      final wait = _until!.difference(DateTime.now()).inSeconds + 1;
+      setState(() => _error = 'Too many tries. Wait ${wait}s.');
+      return;
+    }
+    setState(() {
+      _pin += d;
+      _error = null;
+    });
+    final len = _pin.length;
+    final target = _length;
+    final shouldCheck = target != null
+        ? len == target
+        : len >= AppConstants.pinMinLength;
+    if (shouldCheck) {
+      // Unknown length: only a full-length miss counts as a wrong try.
+      _check(silent: target == null && len < AppConstants.pinMaxLength);
+    }
+  }
+
+  Future<void> _check({required bool silent}) async {
+    _checking = true;
+    final ok = await widget.onPin(_pin);
+    _checking = false;
+    if (!mounted || ok || silent) return;
+    _attempts++;
+    setState(() {
+      _pin = '';
+      if (_attempts % 5 == 0) {
+        _until = DateTime.now().add(const Duration(seconds: 30));
+        _error = 'Too many tries. Wait 30s.';
+      } else {
+        _error = 'Wrong PIN. Try again.';
+      }
+    });
+  }
+
+  void _delete() {
+    if (_pin.isEmpty || _checking) return;
+    setState(() {
+      _pin = _pin.substring(0, _pin.length - 1);
+      _error = null;
+    });
+  }
+
+  void _clear() {
+    if (_checking) return;
+    setState(() {
+      _pin = '';
+      _error = null;
+    });
+  }
+
+  Widget _dots(Color fg) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        for (var i = 0; i < _slots; i++)
+          Container(
+            width: 14,
+            height: 14,
+            margin: const EdgeInsets.symmetric(horizontal: 6),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: i < _pin.length ? fg : Colors.transparent,
+              border: Border.all(
+                color: fg.withValues(alpha: AppConstants.borderAlpha),
+                width: 1.5,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _numKey(String d, Color bg, Color fg) => _round(
+    bg: bg,
+    onTap: () => _digit(d),
+    child: Text(
+      d,
+      style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600, color: fg),
+    ),
+  );
+
+  Widget _round({
+    required Color bg,
+    required VoidCallback onTap,
+    VoidCallback? onLongPress,
+    required Widget child,
+  }) {
+    return SizedBox(
+      width: _key,
+      height: _key,
+      child: Material(
+        color: bg,
+        shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          onLongPress: onLongPress,
+          child: Center(child: child),
+        ),
+      ),
+    );
+  }
+
+  Widget _row(List<Widget> keys) => Padding(
+    padding: const EdgeInsets.only(bottom: _gap),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < keys.length; i++) ...[
+          if (i > 0) const SizedBox(width: _gap + 8),
+          keys[i],
+        ],
+      ],
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final accent = AppTheme.accentOf(context);
+    final fg = theme.colorScheme.onSurface;
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final keyBg = accent.background;
+    final keyFg = accent.foreground;
+    final bio = _biometric;
+
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(AppConstants.spaceLg),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    color: accent.background,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.lock_outline, size: 34, color: keyFg),
+                ),
+                const SizedBox(height: AppConstants.spaceMd),
+                Text(
+                  'Momentum is locked'.tr,
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: AppConstants.spaceXs),
+                Text(
+                  _error ?? 'Enter PIN',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium?.copyWith(color: muted),
+                ),
+                const SizedBox(height: AppConstants.spaceMd),
+                _dots(fg),
+                const SizedBox(height: AppConstants.spaceLg),
+                _row([for (final d in ['1', '2', '3']) _numKey(d, keyBg, keyFg)]),
+                _row([for (final d in ['4', '5', '6']) _numKey(d, keyBg, keyFg)]),
+                _row([for (final d in ['7', '8', '9']) _numKey(d, keyBg, keyFg)]),
+                _row([
+                  // Fingerprint / face key (empty when no biometric is on)
+                  bio == null
+                      ? const SizedBox(width: _key, height: _key)
+                      : _round(
+                          bg: Colors.transparent,
+                          onTap: () => widget.onBiometric(bio),
+                          child: Icon(bio.icon, size: 32, color: fg),
+                        ),
+                  _numKey('0', keyBg, keyFg),
+                  // Delete: tap = one digit, hold = clear all
+                  _round(
+                    bg: Colors.transparent,
+                    onTap: _delete,
+                    onLongPress: _clear,
+                    child: Icon(Icons.backspace_outlined, size: 28, color: fg),
+                  ),
+                ]),
+                TextButton(
+                  onPressed: widget.onForgot,
+                  child: const Text('Forgot PIN?'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// App-wide user settings. The root MaterialApp listens to this, so any
 /// change applies to every screen, dialog and route immediately.
 class AppSettings extends ChangeNotifier {
@@ -290,9 +806,99 @@ class AppSettings extends ChangeNotifier {
     
     _fontStyle = AppFonts.byLabel(_store[AppConstants.prefFontStyle]);
     _boldText = _store[AppConstants.prefBoldText] == 'true';
+    _currency = AppConstants.currencyByCode(_store[AppConstants.prefCurrency]);
+    AppConstants.currencySymbol = _currency.symbol;
+    _location = AppConstants.locationById(_store[AppConstants.prefLocation]);
+    AppConstants.locationOffsetMinutes = _location.utcMinutes;
+    _language = AppConstants.languageByCode(_store[AppConstants.prefLanguage]);
+    AppConstants.languageCode = _language.code;
+    await _loadSecurity();
     notifyListeners();
+    _rebuildEverything();
+  }
 
-    
+  // ---- Localization ----
+  AppCurrency _currency = AppConstants.currencies.first;
+  AppCurrency get currency => _currency;
+
+  AppLocation _location = AppConstants.locations.first;
+  AppLocation get location => _location;
+
+  AppLanguage _language = AppConstants.languages.first;
+  AppLanguage get language => _language;
+
+  void setCurrency(AppCurrency c) {
+    if (c.code == _currency.code) return;
+    _currency = c;
+    AppConstants.currencySymbol = c.symbol;
+    _save(AppConstants.prefCurrency, c.code);
+    notifyListeners();
+    _rebuildEverything();
+  }
+
+  void setLocation(AppLocation l) {
+    if (l.id == _location.id) return;
+    _location = l;
+    AppConstants.locationOffsetMinutes = l.utcMinutes;
+    _save(AppConstants.prefLocation, l.id);
+    notifyListeners();
+    _rebuildEverything();
+  }
+
+  void setLanguage(AppLanguage l) {
+    if (l.code == _language.code) return;
+    _language = l;
+    AppConstants.languageCode = l.code;
+    _save(AppConstants.prefLanguage, l.code);
+    notifyListeners();
+    _rebuildEverything();
+  }
+
+  // ---- Security (kept in SharedPreferences, not in backups) ----
+  bool _securityEnabled = false;
+  Set<SecurityMethod> _securityMethods = {};
+  bool get securityEnabled => _securityEnabled;
+  Set<SecurityMethod> get securityMethods => _securityMethods;
+
+  Future<void> _loadSecurity() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _securityEnabled = prefs.getBool(AppConstants.prefSecurityOn) ?? false;
+      final names =
+          prefs.getStringList(AppConstants.prefSecurityMethods) ??
+              const <String>[];
+      _securityMethods = {
+        for (final m in SecurityMethod.values)
+          if (m != SecurityMethod.pin && names.contains(m.name)) m,
+      };
+      // Security turned on by an older version has no app PIN yet.
+      // Switch it off once so nobody is locked out.
+      if (_securityEnabled &&
+          !prefs.containsKey(AppConstants.prefSecurityPinHash)) {
+        _securityEnabled = false;
+        _securityMethods = {};
+        await prefs.setBool(AppConstants.prefSecurityOn, false);
+      }
+    } catch (_) {
+      _securityEnabled = false;
+      _securityMethods = {};
+    }
+  }
+
+  Future<void> setSecurity({
+    required bool enabled,
+    required Set<SecurityMethod> methods,
+  }) async {
+    _securityEnabled = enabled;
+    _securityMethods = methods;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(AppConstants.prefSecurityOn, enabled);
+      await prefs.setStringList(AppConstants.prefSecurityMethods, [
+        for (final m in methods) m.name,
+      ]);
+    } catch (_) {}
   }
 
   // ---- Theme ----
@@ -463,12 +1069,12 @@ class SettingsScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Row(
+        title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.settings_outlined),
-            SizedBox(width: AppConstants.spaceSm),
-            Text('Settings'),
+            const Icon(Icons.settings_outlined),
+            const SizedBox(width: AppConstants.spaceSm),
+            Text('Settings'.tr),
           ],
         ),
       ),
@@ -478,7 +1084,7 @@ class SettingsScreen extends StatelessWidget {
           return ListView(
             padding: const EdgeInsets.only(bottom: AppConstants.spaceLg),
             children: [
-              const _SectionHeader('Appearance'),
+              _SectionHeader('Appearance'),
               _SettingGroup(
                 children: [
                   _buildThemeTile(context, settings),
@@ -487,41 +1093,17 @@ class SettingsScreen extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: AppConstants.spaceSm),
-              const _SectionHeader('Localization'),
-              const _SettingGroup(
+              _SectionHeader('Localization'),
+              _SettingGroup(
                 children: [
-                  _PlaceholderToggle(
-                    icon: Icons.attach_money,
-                    title: 'Currency',
-                  ),
-                  _PlaceholderToggle(
-                    icon: Icons.location_on_outlined,
-                    title: 'Location',
-                  ),
-                  _PlaceholderToggle(
-                    icon: Icons.language,
-                    title: 'Language',
-                  ),
+                  _buildCurrencyTile(context, settings),
+                  _buildLocationTile(context, settings),
+                  _buildLanguageTile(context, settings),
                 ],
               ),
               const SizedBox(height: AppConstants.spaceSm),
-              const _SectionHeader('Security'),
-              const _SettingGroup(
-                children: [
-                  _PlaceholderToggle(
-                    icon: Icons.pin_outlined,
-                    title: 'PIN',
-                  ),
-                  _PlaceholderToggle(
-                    icon: Icons.fingerprint,
-                    title: 'Touch ID',
-                  ),
-                  _PlaceholderToggle(
-                    icon: Icons.face_outlined,
-                    title: 'Face ID',
-                  ),
-                ],
-              ),
+              _SectionHeader('Security'),
+              _SecuritySection(settings: settings),
             ],
           );
         },
@@ -534,7 +1116,7 @@ class SettingsScreen extends StatelessWidget {
   Widget _buildThemeTile(BuildContext context, AppSettings settings) {
     return ListTile(
       leading: const Icon(Icons.palette_outlined),
-      title: const Text('Theme'),
+      title: Text('Theme'.tr),
       subtitle: Text(_themeLabel(context, settings)),
       trailing: _ThemeSwatch(Theme.of(context).colorScheme.surface),
       onTap: () => _showThemeConfig(context, settings),
@@ -565,7 +1147,7 @@ class SettingsScreen extends StatelessWidget {
   Widget _buildFontTile(BuildContext context, AppSettings settings) {
     return ListTile(
       leading: const Icon(Icons.text_fields),
-      title: const Text('Font'),
+      title: Text('Font'.tr),
       subtitle: Text(_fontSummary(settings)),
       trailing: const Icon(Icons.chevron_right),
       onTap: () => _showFontConfig(context, settings),
@@ -579,6 +1161,40 @@ class SettingsScreen extends StatelessWidget {
       builder: (_) => _FontConfigDialog(settings: settings),
     );
   }
+
+  // ---------- Localization ----------
+
+  Widget _buildCurrencyTile(BuildContext context, AppSettings settings) {
+    final c = settings.currency;
+    return ListTile(
+      leading: const Icon(Icons.attach_money),
+      title: Text('Currency'.tr),
+      subtitle: Text('${c.code} (${c.symbol}) · ${c.name}'),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => _showCurrencyFlow(context, settings),
+    );
+  }
+
+  Widget _buildLocationTile(BuildContext context, AppSettings settings) {
+    final l = settings.location;
+    return ListTile(
+      leading: const Icon(Icons.location_on_outlined),
+      title: Text('Location'.tr),
+      subtitle: Text('${l.name} · ${_utcLabel(l.utcMinutes)}'),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => _showLocationFlow(context, settings),
+    );
+  }
+
+  Widget _buildLanguageTile(BuildContext context, AppSettings settings) {
+    return ListTile(
+      leading: const Icon(Icons.language),
+      title: Text('Language'.tr),
+      subtitle: Text(settings.language.native),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => _showLanguageFlow(context, settings),
+    );
+  }
 }
 
 // ---------- Animation ----------
@@ -586,7 +1202,7 @@ class SettingsScreen extends StatelessWidget {
 Widget _buildAnimationTile(BuildContext context, AppSettings settings) {
   return ListTile(
     leading: const Icon(Icons.speed),
-    title: const Text('Animation'),
+    title: Text('Animation'.tr),
     subtitle: Text(settings.animEnabled ? settings.animSpeedLabel : 'Off'),
     trailing: const Icon(Icons.chevron_right),
     onTap: () => showDialog<void>(
@@ -596,6 +1212,669 @@ Widget _buildAnimationTile(BuildContext context, AppSettings settings) {
     ),
   );
 }
+
+// ------------------------------------------------------------------
+// Security section
+// ------------------------------------------------------------------
+
+/// App Security switch first. Only after it is on do the methods appear,
+/// and only the ones this phone actually has.
+class _SecuritySection extends StatefulWidget {
+  final AppSettings settings;
+  const _SecuritySection({required this.settings});
+
+  @override
+  State<_SecuritySection> createState() => _SecuritySectionState();
+}
+
+class _SecuritySectionState extends State<_SecuritySection> {
+  List<SecurityMethod> _available = const []; // biometrics on this phone
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _check();
+  }
+
+  Future<void> _check() async {
+    final found = await AppSecurity.available();
+    if (!mounted) return;
+    setState(() => _available = found);
+  }
+
+  void _say(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<String?> _askPin(_PinMode mode) => showDialog<String>(
+    context: context,
+    barrierColor: AppConstants.popupBarrier,
+    builder: (_) => _PinDialog(mode: mode),
+  );
+
+  Future<void> _toggleMaster(bool on) async {
+    final s = widget.settings;
+    setState(() => _busy = true);
+    try {
+      if (on) {
+        final pin = await _askPin(_PinMode.create);
+        if (pin == null) return;
+        await AppSecurity.setPin(pin);
+        await s.setSecurity(enabled: true, methods: {});
+      } else {
+        final pin = await _askPin(_PinMode.verify);
+        if (pin == null) return;
+        await s.setSecurity(enabled: false, methods: {});
+        await AppSecurity.clearPin();
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _toggleMethod(SecurityMethod m, bool on) async {
+    final s = widget.settings;
+    setState(() => _busy = true);
+    try {
+      if (on) {
+        final ok = await AppSecurity.authenticate(
+          'Confirm ${m.label} to turn it on.',
+        );
+        if (!ok) {
+          _say('Couldn\'t verify ${m.label}.');
+          return;
+        }
+      }
+      final next = {...s.securityMethods};
+      if (on) {
+        next.add(m);
+      } else {
+        next.remove(m);
+      }
+      await s.setSecurity(enabled: true, methods: next);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _changePin() async {
+    final pin = await _askPin(_PinMode.change);
+    if (pin == null) return;
+    await AppSecurity.setPin(pin);
+    _say('PIN changed.');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.settings;
+    return ListenableBuilder(
+      listenable: s,
+      builder: (context, _) {
+        final enabled = s.securityEnabled;
+        final children = <Widget>[
+          SwitchListTile(
+            secondary: const Icon(Icons.lock_outline),
+            title: Text('App Security'.tr),
+            subtitle: Text(enabled ? 'On' : 'Off'),
+            value: enabled,
+            onChanged: _busy ? null : _toggleMaster,
+          ),
+        ];
+        var noDivider = const <int>{};
+        if (enabled) {
+          for (final m in _available) {
+            children.add(
+              SwitchListTile(
+                secondary: Icon(m.icon),
+                title: Text(m.label.tr),
+                value: s.securityMethods.contains(m),
+                onChanged: _busy ? null : (v) => _toggleMethod(m, v),
+              ),
+            );
+          }
+          // PIN sits under Touch ID with no divider between them.
+          if (_available.isNotEmpty) noDivider = {children.length};
+          children.add(
+            ListTile(
+              leading: Icon(SecurityMethod.pin.icon),
+              title: Text(SecurityMethod.pin.label.tr),
+              subtitle: const Text('Tap to change your PIN'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _busy ? null : _changePin,
+            ),
+          );
+        }
+        return _SettingGroup(noDividerAt: noDivider, children: children);
+      },
+    );
+  }
+}
+
+enum _PinMode { create, change, verify }
+
+/// Create a PIN, change it (asks for the current one first), or just
+/// confirm the current one. Pops the PIN that was typed (the new one for
+/// create / change), or null when cancelled.
+class _PinDialog extends StatefulWidget {
+  final _PinMode mode;
+  const _PinDialog({required this.mode});
+
+  @override
+  State<_PinDialog> createState() => _PinDialogState();
+}
+
+class _PinDialogState extends State<_PinDialog> {
+  final _current = TextEditingController();
+  final _next = TextEditingController();
+  final _again = TextEditingController();
+  String? _error;
+  bool _checking = false;
+
+  bool get _askCurrent => widget.mode != _PinMode.create;
+  bool get _askNew => widget.mode != _PinMode.verify;
+
+  @override
+  void dispose() {
+    _current.dispose();
+    _next.dispose();
+    _again.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_checking) return;
+    if (_askCurrent) {
+      setState(() => _checking = true);
+      final ok = await AppSecurity.verifyPin(_current.text);
+      if (!mounted) return;
+      setState(() => _checking = false);
+      if (!ok) {
+        setState(() => _error = 'That PIN is wrong.');
+        return;
+      }
+    }
+    if (_askNew) {
+      if (_next.text.length < AppConstants.pinMinLength) {
+        setState(
+          () => _error =
+              'Use ${AppConstants.pinMinLength} to '
+              '${AppConstants.pinMaxLength} digits.',
+        );
+        return;
+      }
+      if (_next.text != _again.text) {
+        setState(() => _error = 'The PINs don\'t match.');
+        return;
+      }
+    }
+    Navigator.of(context).pop(_askNew ? _next.text : _current.text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final title = switch (widget.mode) {
+      _PinMode.create => 'Create PIN',
+      _PinMode.change => 'Change PIN',
+      _PinMode.verify => 'Enter PIN',
+    };
+
+    return _accentDialog(
+      context,
+      title: title,
+      icon: Icons.pin_outlined,
+      content: Builder(
+        builder: (context) {
+          final fg = Theme.of(context).colorScheme.onSurface;
+
+          Widget field(
+            TextEditingController c,
+            String label, {
+            required bool last,
+          }) => Padding(
+            padding: const EdgeInsets.only(bottom: AppConstants.spaceSmMd),
+            child: TextField(
+              controller: c,
+              obscureText: true,
+              cursorColor: fg,
+              style: TextStyle(color: fg),
+              keyboardType: TextInputType.number,
+              textInputAction: last ? TextInputAction.done : TextInputAction.next,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(AppConstants.pinMaxLength),
+              ],
+              onChanged: (_) {
+                if (_error != null) setState(() => _error = null);
+              },
+              onSubmitted: last ? (_) => _submit() : null,
+              decoration: InputDecoration(
+                labelText: label,
+                isDense: true,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppConstants.radiusSm),
+                ),
+              ),
+            ),
+          );
+
+          return SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: AppConstants.spaceXs),
+                if (_askCurrent)
+                  field(
+                    _current,
+                    _askNew ? 'Current PIN' : 'PIN',
+                    last: !_askNew,
+                  ),
+                if (_askNew) ...[
+                  field(_next, 'New PIN', last: false),
+                  field(_again, 'Confirm new PIN', last: true),
+                ],
+                if (_error != null)
+                  Text(
+                    _error!,
+                    style: TextStyle(fontWeight: FontWeight.w600, color: fg),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text('Cancel'.tr),
+        ),
+        FilledButton(
+          onPressed: _checking ? null : _submit,
+          child: Text(widget.mode == _PinMode.verify ? 'Confirm' : 'Save'),
+        ),
+      ],
+    );
+  }
+}
+
+// ------------------------------------------------------------------
+// Localization pop-ups
+// ------------------------------------------------------------------
+
+String _utcLabel(int minutes) {
+  final sign = minutes < 0 ? '-' : '+';
+  final a = minutes.abs();
+  final h = a ~/ 60;
+  final m = a % 60;
+  return 'UTC$sign$h${m == 0 ? '' : ':${m.toString().padLeft(2, '0')}'}';
+}
+
+String _clockAt(int minutes) {
+  final t = DateTime.now().toUtc().add(Duration(minutes: minutes));
+  final h = t.hour % 12 == 0 ? 12 : t.hour % 12;
+  final m = t.minute.toString().padLeft(2, '0');
+  return '${Utils.formatDate(t)} · $h:$m ${t.hour >= 12 ? 'PM' : 'AM'}';
+}
+
+Future<void> _showCurrencyFlow(BuildContext context, AppSettings s) async {
+  final from = s.currency;
+  final index = await showDialog<int>(
+    context: context,
+    barrierColor: AppConstants.popupBarrier,
+    builder: (_) => _ChoiceDialog(
+      title: 'Currency'.tr,
+      icon: Icons.attach_money,
+      initial: AppConstants.currencies.indexWhere((c) => c.code == from.code),
+      items: [
+        for (final c in AppConstants.currencies)
+          ('${c.code} (${c.symbol})', c.name),
+      ],
+    ),
+  );
+  if (index == null || !context.mounted) return;
+  final to = AppConstants.currencies[index];
+  if (to.code == from.code) return;
+
+  final choice = await showDialog<_ConvertChoice>(
+    context: context,
+    barrierColor: AppConstants.popupBarrier,
+    builder: (_) => _ConvertDialog(from: from, to: to),
+  );
+  if (choice == null) return;
+
+  if (choice.convert) {
+    try {
+      await DatabaseHelper.instance.convertAmounts(choice.rate);
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text(
+                error is Failure ? error.message : 'Something went wrong.',
+              ),
+            ),
+          );
+      }
+      return;
+    }
+  }
+  s.setCurrency(to);
+}
+
+Future<void> _showLocationFlow(BuildContext context, AppSettings s) async {
+  final index = await showDialog<int>(
+    context: context,
+    barrierColor: AppConstants.popupBarrier,
+    builder: (_) => _ChoiceDialog(
+      title: 'Location'.tr,
+      icon: Icons.location_on_outlined,
+      initial: AppConstants.locations.indexWhere((l) => l.id == s.location.id),
+      items: [
+        for (final l in AppConstants.locations) (l.name, _utcLabel(l.utcMinutes)),
+      ],
+      note: (i) => 'Time there now: ${_clockAt(AppConstants.locations[i].utcMinutes)}',
+    ),
+  );
+  if (index == null) return;
+  s.setLocation(AppConstants.locations[index]);
+}
+
+Future<void> _showLanguageFlow(BuildContext context, AppSettings s) async {
+  final index = await showDialog<int>(
+    context: context,
+    barrierColor: AppConstants.popupBarrier,
+    builder: (_) => _ChoiceDialog(
+      title: 'Language'.tr,
+      icon: Icons.language,
+      initial: AppConstants.languages.indexWhere((l) => l.code == s.language.code),
+      items: [for (final l in AppConstants.languages) (l.native, l.name)],
+    ),
+  );
+  if (index == null) return;
+  s.setLanguage(AppConstants.languages[index]);
+}
+
+/// Pop-up with a list to pick from. Pops the picked index on Apply.
+class _ChoiceDialog extends StatefulWidget {
+  final String title;
+  final IconData icon;
+  final List<(String, String?)> items;
+  final int initial;
+  final String Function(int index)? note;
+  const _ChoiceDialog({
+    required this.title,
+    required this.icon,
+    required this.items,
+    required this.initial,
+    this.note,
+  });
+
+  @override
+  State<_ChoiceDialog> createState() => _ChoiceDialogState();
+}
+
+class _ChoiceDialogState extends State<_ChoiceDialog> {
+  late int _sel = widget.initial < 0 ? 0 : widget.initial;
+  late final ScrollController _scroll = ScrollController(
+    initialScrollOffset: ((_sel - 2) * 72.0).clamp(0.0, double.infinity),
+  );
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _accentDialog(
+      context,
+      title: widget.title,
+      icon: widget.icon,
+      content: Builder(
+        builder: (context) {
+          final soft = Theme.of(context).colorScheme.onSurfaceVariant;
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (widget.note != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppConstants.spaceSm),
+                  child: Text(
+                    widget.note!(_sel),
+                    style: TextStyle(fontSize: 13, color: soft),
+                  ),
+                ),
+              Flexible(
+                child: ListView.builder(
+                  controller: _scroll,
+                  shrinkWrap: true,
+                  itemCount: widget.items.length,
+                  itemBuilder: (context, i) {
+                    final item = widget.items[i];
+                    final selected = i == _sel;
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: AppConstants.spaceMd,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(
+                          AppConstants.radiusMd,
+                        ),
+                      ),
+                      title: Text(item.$1),
+                      subtitle: item.$2 == null ? null : Text(item.$2!),
+                      trailing: selected ? const Icon(Icons.check) : null,
+                      selected: selected,
+                      onTap: () => setState(() => _sel = i),
+                    );
+                  },
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text('Cancel'.tr),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(_sel),
+          child: Text('Apply'.tr),
+        ),
+      ],
+    );
+  }
+}
+
+class _ConvertChoice {
+  final bool convert;
+  final double rate;
+  const _ConvertChoice(this.convert, this.rate);
+}
+
+/// Asks whether the saved amounts should be converted to the new currency
+/// (with an editable rate), or only the currency sign should change.
+class _ConvertDialog extends StatefulWidget {
+  final AppCurrency from;
+  final AppCurrency to;
+  const _ConvertDialog({required this.from, required this.to});
+
+  @override
+  State<_ConvertDialog> createState() => _ConvertDialogState();
+}
+
+class _ConvertDialogState extends State<_ConvertDialog> {
+  late final TextEditingController _rate = TextEditingController(
+    text: _fmt(widget.to.perUsd / widget.from.perUsd), // offline fallback
+  );
+  bool _loadingRate = true;
+  bool _live = false;
+  bool _edited = false; // the user typed a rate: never overwrite it
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchLive();
+  }
+
+  @override
+  void dispose() {
+    _rate.dispose();
+    super.dispose();
+  }
+
+  Future<void> _fetchLive() async {
+    final ok = await ExchangeRates.instance.refresh();
+    if (!mounted) return;
+    final live =
+        ok ? ExchangeRates.instance.rate(widget.from.code, widget.to.code) : null;
+    setState(() {
+      _loadingRate = false;
+      if (live != null) {
+        _live = true;
+        if (!_edited) _rate.text = _fmt(live);
+      }
+    });
+  }
+
+  /// Keeps small rates (like VND -> USD) from rounding to 0.
+  String _fmt(double v) {
+    var t = v >= 100 ? v.toStringAsFixed(2) : v.toStringAsPrecision(6);
+    if (t.contains('.') && !t.contains('e')) {
+      t = t.replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
+    }
+    return t;
+  }
+
+  String _updatedText() {
+    final t = ExchangeRates.instance.updatedAt?.toLocal();
+    if (t == null) return '';
+    final h = t.hour % 12 == 0 ? 12 : t.hour % 12;
+    final m = t.minute.toString().padLeft(2, '0');
+    return '${Utils.formatDate(t)} · $h:$m ${t.hour >= 12 ? 'PM' : 'AM'}';
+  }
+
+  double? get _value {
+    final v = double.tryParse(_rate.text.trim());
+    return (v != null && v.isFinite && v > 0 && v < 1e7) ? v : null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final from = widget.from;
+    final to = widget.to;
+    final rate = _value;
+
+    return _accentDialog(
+      context,
+      title: 'Convert your amounts?'.tr,
+      icon: Icons.currency_exchange,
+      content: Builder(
+        builder: (context) {
+          final soft = Theme.of(context).colorScheme.onSurfaceVariant;
+          final fg = Theme.of(context).colorScheme.onSurface;
+          final status = _loadingRate
+              ? 'Getting the latest rate…'
+              : _live
+                  ? 'Live rate · updated ${_updatedText()}'
+                  : 'Couldn\'t get a live rate, so this one is approximate. '
+                      'Check your connection or edit it.';
+          return SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Your saved amounts are in ${from.code}. Convert all '
+                  'accounts, transactions, reminders and budgets to '
+                  '${to.code}, or only change the sign and keep the '
+                  'numbers as they are?',
+                  style: TextStyle(fontSize: 14, height: 1.4, color: soft),
+                ),
+                const SizedBox(height: AppConstants.spaceMd),
+                Row(
+                  children: [
+                    Text('1 ${from.code} =', style: TextStyle(color: fg)),
+                    const SizedBox(width: AppConstants.spaceSm),
+                    Expanded(
+                      child: TextField(
+                        controller: _rate,
+                        cursorColor: fg,
+                        style: TextStyle(color: fg),
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                        ],
+                        onChanged: (_) => setState(() => _edited = true),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          errorText: rate == null ? 'Invalid' : null,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(
+                              AppConstants.radiusSm,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: AppConstants.spaceSm),
+                    Text(to.code, style: TextStyle(color: fg)),
+                  ],
+                ),
+                const SizedBox(height: AppConstants.spaceSm),
+                Text(
+                  rate == null
+                      ? ''
+                      : '${Utils.formatCurrency(1000, symbol: from.symbol)} '
+                            '≈ ${Utils.formatCurrency(1000 * rate, symbol: to.symbol)}',
+                  style: TextStyle(fontWeight: FontWeight.w700, color: fg),
+                ),
+                const SizedBox(height: AppConstants.spaceSm),
+                Text(status, style: TextStyle(fontSize: 12, color: soft)),
+                const SizedBox(height: 4),
+                Text(
+                  'Converting cannot be undone, except by converting back.',
+                  style: TextStyle(fontSize: 12, color: soft),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text('Cancel'.tr),
+        ),
+        TextButton(
+          onPressed: () =>
+              Navigator.of(context).pop(const _ConvertChoice(false, 1)),
+          child: Text('Keep amounts'.tr),
+        ),
+        FilledButton(
+          onPressed: (rate == null || _loadingRate)
+              ? null
+              : () => Navigator.of(context).pop(_ConvertChoice(true, rate)),
+          child: Text('Convert'.tr),
+        ),
+      ],
+    );
+  }
+}
+
+// ---------- Animation ----------
 
 /// Small colored circle shown next to the current theme.
 class _ThemeSwatch extends StatelessWidget {
@@ -624,7 +1903,10 @@ class _ThemeSwatch extends StatelessWidget {
 /// Accent color, and the text/icons inside use the accent's readable color.
 class _SettingGroup extends StatelessWidget {
   final List<Widget> children;
-  const _SettingGroup({required this.children});
+
+  /// Indexes of children that get no divider above them.
+  final Set<int> noDividerAt;
+  const _SettingGroup({required this.children, this.noDividerAt = const {}});
 
   @override
   Widget build(BuildContext context) {
@@ -636,8 +1918,6 @@ class _SettingGroup extends StatelessWidget {
       AppConstants.dividerBlend,
     )!;
 
-    // Tiles inside the group read their colors from the theme, so point
-    // them at the accent's readable color.
     final groupTheme = theme.copyWith(
       colorScheme: theme.colorScheme.copyWith(
         onSurface: accent.foreground,
@@ -660,11 +1940,11 @@ class _SettingGroup extends StatelessWidget {
         child: Material(
           color: accent.background,
           borderRadius: BorderRadius.circular(AppConstants.radiusMd),
-          clipBehavior: Clip.antiAlias, // keeps tap ripples inside the curves
+          clipBehavior: Clip.antiAlias,
           child: Column(
             children: [
               for (var i = 0; i < children.length; i++) ...[
-                if (i > 0)
+                if (i > 0 && !noDividerAt.contains(i))
                   Divider(
                     height: 1,
                     thickness: 1,
@@ -678,31 +1958,6 @@ class _SettingGroup extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// Placeholder setting: a switch that flips visually but does nothing yet.
-/// Replace with a real setting (stored in AppSettings) when it's wired up.
-class _PlaceholderToggle extends StatefulWidget {
-  final IconData icon;
-  final String title;
-  const _PlaceholderToggle({required this.icon, required this.title});
-
-  @override
-  State<_PlaceholderToggle> createState() => _PlaceholderToggleState();
-}
-
-class _PlaceholderToggleState extends State<_PlaceholderToggle> {
-  bool _value = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return SwitchListTile(
-      secondary: Icon(widget.icon),
-      title: Text(widget.title),
-      value: _value,
-      onChanged: (v) => setState(() => _value = v),
     );
   }
 }
@@ -722,7 +1977,7 @@ class _SectionHeader extends StatelessWidget {
         AppConstants.spaceSm + AppConstants.spaceXs, // more space underneath
       ),
       child: Text(
-        title,
+        title.tr,
         style: theme.textTheme.titleMedium?.copyWith(
           fontWeight: FontWeight.w600,
           // Follows the theme's text color, so it adapts to custom colors.

@@ -63,6 +63,7 @@ class DatabaseStats {
 enum TrashKind { account, transaction }
 
 /// One row of the Trash screen.
+/// One row of the Trash screen.
 class TrashItem {
   final TrashKind kind;
   final int id;
@@ -70,12 +71,38 @@ class TrashItem {
   final String subtitle;
   final DateTime? deletedAt;
 
+  /// Transactions: income | expense | transfer. Accounts: null.
+  final String? txType;
+
+  /// Accounts: the account type name (used for its icon).
+  final String? typeName;
+
+  /// Transactions: category name. Accounts: account category name.
+  final String? categoryName;
+
+  /// Saved icon key (category icon, or account type icon for accounts).
+  final String? iconKey;
+
+  /// Transactions: amount. Accounts: balance. In pesos.
+  final double? amount;
+  final String? accountName;
+  final String? toAccountName;
+  final String? note;
+
   const TrashItem({
     required this.kind,
     required this.id,
     required this.title,
     required this.subtitle,
     required this.deletedAt,
+    this.txType,
+    this.typeName,
+    this.categoryName,
+    this.iconKey,
+    this.amount,
+    this.accountName,
+    this.toAccountName,
+    this.note,
   });
 }
 
@@ -216,6 +243,9 @@ class DatabaseHelper {
     AppConstants.prefBoldText,
     AppConstants.prefAnimEnabled,
     AppConstants.prefAnimSpeed,
+    AppConstants.prefCurrency,
+    AppConstants.prefLocation,
+    AppConstants.prefLanguage,
   ];
 
   Future<void> _clearDesignPrefs() async {
@@ -1368,15 +1398,24 @@ class DatabaseHelper {
     return _guard(() async {
       final db = await database;
 
-      final accountRows = await db.query(
-        'accounts',
-        columns: ['id', 'name', 'deleted_at'],
-        where: 'deleted_at IS NOT NULL',
-      );
+      final accountRows = await db.rawQuery('''
+        SELECT a.id, a.name, a.deleted_at,
+               t.name AS type_name, t.icon AS type_icon,
+               c.name AS category_name,
+               b.balance AS balance
+        FROM accounts a
+        JOIN account_types t ON t.id = a.type_id
+        JOIN account_categories c ON c.id = a.category_id
+        LEFT JOIN account_balances b ON b.account_id = a.id
+        WHERE a.deleted_at IS NOT NULL
+      ''');
       final transactionRows = await db.rawQuery('''
         SELECT t.id, t.type, t.amount, t.note, t.title, t.deleted_at,
-               c.name AS category_name
+               c.name AS category_name, c.icon AS category_icon,
+               a.name AS account_name, b.name AS to_account_name
         FROM transactions t
+        JOIN accounts a ON a.id = t.account_id
+        LEFT JOIN accounts b ON b.id = t.to_account_id
         LEFT JOIN categories c ON c.id = t.category_id
         WHERE t.deleted_at IS NOT NULL
       ''');
@@ -1389,6 +1428,12 @@ class DatabaseHelper {
             title: row['name'] as String,
             subtitle: 'Account',
             deletedAt: DateTime.tryParse('${row['deleted_at']}'),
+            typeName: row['type_name'] as String?,
+            categoryName: row['category_name'] as String?,
+            iconKey: row['type_icon'] as String?,
+            amount:
+                ((row['balance'] as num?) ?? 0).toInt() /
+                AppConstants.centavosPerPeso,
           ),
         for (final row in transactionRows)
           TrashItem(
@@ -1400,6 +1445,14 @@ class DatabaseHelper {
                 _capitalize(row['type'] as String),
             subtitle: _transactionSubtitle(row),
             deletedAt: DateTime.tryParse('${row['deleted_at']}'),
+            txType: row['type'] as String,
+            categoryName: row['category_name'] as String?,
+            iconKey: row['category_icon'] as String?,
+            amount:
+                (row['amount'] as num).toInt() / AppConstants.centavosPerPeso,
+            accountName: row['account_name'] as String?,
+            toAccountName: row['to_account_name'] as String?,
+            note: row['note'] as String?,
           ),
       ];
 
@@ -1557,6 +1610,99 @@ class DatabaseHelper {
         await txn.delete('accounts', where: 'deleted_at IS NOT NULL');
       });
       await _deleteImageFiles(images);
+      notifyChanged();
+    });
+  }
+
+    /// Permanently removes everything that was deleted in an EARLIER month
+  /// (so the trash is cleaned at the end of every month). Returns how many
+  /// rows were removed. Called when the app starts and when Trash opens.
+  Future<int> purgeExpiredTrash() {
+    return _guard(() async {
+      final db = await database;
+      final now = DateTime.now();
+      final cutoff = DateTime(now.year, now.month).toIso8601String();
+      final images = <Object?>[];
+      var removed = 0;
+
+      await db.transaction((txn) async {
+        // Old trashed accounts go with all of their transactions.
+        final accounts = await txn.query(
+          'accounts',
+          columns: ['id'],
+          where: 'deleted_at IS NOT NULL AND deleted_at < ?',
+          whereArgs: [cutoff],
+        );
+        for (final row in accounts) {
+          final id = (row['id'] as num).toInt();
+          final rows = await txn.query(
+            'transactions',
+            columns: ['image_path'],
+            where: 'account_id = ? OR to_account_id = ?',
+            whereArgs: [id, id],
+          );
+          images.addAll(rows.map((r) => r['image_path']));
+          await txn.delete(
+            'transactions',
+            where: 'account_id = ? OR to_account_id = ?',
+            whereArgs: [id, id],
+          );
+          await txn.delete('accounts', where: 'id = ?', whereArgs: [id]);
+          removed++;
+        }
+
+        // Old trashed transactions.
+        final txRows = await txn.query(
+          'transactions',
+          columns: ['image_path'],
+          where: 'deleted_at IS NOT NULL AND deleted_at < ?',
+          whereArgs: [cutoff],
+        );
+        images.addAll(txRows.map((r) => r['image_path']));
+        removed += await txn.delete(
+          'transactions',
+          where: 'deleted_at IS NOT NULL AND deleted_at < ?',
+          whereArgs: [cutoff],
+        );
+      });
+
+      await _deleteImageFiles(images);
+      if (removed > 0) notifyChanged();
+      return removed;
+    });
+  }
+
+  /// Multiplies every saved amount by [rate] (old currency -> new currency):
+  /// account starting balances, transactions, reminders and budgets.
+  Future<void> convertAmounts(double rate) {
+    return _guard(() async {
+      if (!rate.isFinite || rate <= 0 || rate > 1e7) {
+        throw const ValidationFailure('Enter a valid exchange rate.');
+      }
+      final db = await database;
+      await db.transaction((txn) async {
+        await txn.rawUpdate(
+          'UPDATE accounts SET initial_balance = '
+          'CAST(ROUND(initial_balance * ?) AS INTEGER)',
+          [rate],
+        );
+        await txn.rawUpdate(
+          'UPDATE transactions SET amount = '
+          'MAX(1, CAST(ROUND(amount * ?) AS INTEGER))',
+          [rate],
+        );
+        await txn.rawUpdate(
+          'UPDATE reminders SET amount = '
+          'MAX(1, CAST(ROUND(amount * ?) AS INTEGER))',
+          [rate],
+        );
+        await txn.rawUpdate(
+          'UPDATE categories SET budget = '
+          'MAX(1, CAST(ROUND(budget * ?) AS INTEGER)) '
+          'WHERE budget IS NOT NULL',
+          [rate],
+        );
+      });
       notifyChanged();
     });
   }

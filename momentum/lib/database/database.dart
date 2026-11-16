@@ -89,11 +89,27 @@ class _DatabaseScreenState extends State<DatabaseScreen> {
   }
 
   Future<void> _import() async {
-    final ok = await _confirm(
+    final ok = await showConfirmDialog(
+      context,
+      icon: Icons.download_outlined,
       title: 'Import data',
-      message: 'This replaces ALL current data with the data in the file '
-          'you choose. Export first if you want to keep what you have now.',
+      message: 'Choose a Momentum backup file to restore.',
+      points: const [
+        ConfirmPoint(
+          Icons.swap_horiz,
+          'Replaces everything currently in the app: accounts, transactions, categories and settings.',
+        ),
+        ConfirmPoint(
+          Icons.upload_file_outlined,
+          'Export first if you want to keep what you have now.',
+        ),
+        ConfirmPoint(
+          Icons.data_object,
+          'Only Momentum backup files (.json) are accepted.',
+        ),
+      ],
       confirmLabel: 'Choose file',
+      confirmIcon: Icons.folder_open_outlined,
     );
     if (!ok) return;
 
@@ -127,13 +143,46 @@ class _DatabaseScreenState extends State<DatabaseScreen> {
   }
 
   Future<void> _reset() async {
-    final ok = await _confirm(
+    DatabaseStats stats;
+    try {
+      stats = await _db.getStats();
+    } catch (_) {
+      stats = DatabaseStats.empty;
+    }
+    if (!mounted) return;
+
+    final ok = await showConfirmDialog(
+      context,
+      destructive: true,
+      icon: Icons.delete_forever,
       title: 'Clear all data',
-      message: 'This permanently deletes every account, transaction and '
-          'category (including the trash) and resets the database to its '
-          'original configuration and puts all colors and themes back to '
-          'default. This can\'t be undone.',
+      message:
+          'This permanently deletes everything and returns Momentum to a '
+          'fresh install.',
+      points: [
+        ConfirmPoint(
+          Icons.account_balance_wallet_outlined,
+          '${stats.accounts} accounts and ${stats.transactions} transactions',
+        ),
+        ConfirmPoint(
+          Icons.notifications_outlined,
+          '${stats.reminders} reminders',
+        ),
+        const ConfirmPoint(
+          Icons.category_outlined,
+          'Custom categories, icons and the trash bin',
+        ),
+        const ConfirmPoint(
+          Icons.palette_outlined,
+          'Colors, theme and fonts go back to default',
+        ),
+        const ConfirmPoint(
+          Icons.warning_amber_rounded,
+          'This can\'t be undone.',
+        ),
+      ],
       confirmLabel: 'Clear & reset',
+      confirmIcon: Icons.delete_forever,
     );
     if (!ok) return;
 
@@ -142,59 +191,6 @@ class _DatabaseScreenState extends State<DatabaseScreen> {
       await AppSettings.instance.load();
       _say('Database reset to its original configuration.');
     });
-  }
-
-  /// Pop-up in the same accent design as the Settings pop-ups.
-  Future<bool> _confirm({
-    required String title,
-    required String message,
-    required String confirmLabel,
-  }) async {
-    final result = await showDialog<bool>(
-      context: context,
-      barrierColor: AppConstants.popupBarrier,
-      builder: (context) {
-        final base = Theme.of(context);
-        final accent = AppTheme.accentOf(context);
-        final fg = accent.foreground;
-        final bg = accent.background;
-        return Theme(
-          data: base.copyWith(
-            colorScheme: base.colorScheme.copyWith(
-              primary: fg,
-              onPrimary: bg,
-              onSurface: fg,
-              onSurfaceVariant:
-                  fg.withValues(alpha: AppConstants.mutedAlpha),
-            ),
-          ),
-          child: AlertDialog(
-            backgroundColor: bg,
-            surfaceTintColor: Colors.transparent,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppConstants.popupRadius),
-            ),
-            insetPadding: AppConstants.popupInsetPadding,
-            titlePadding: AppConstants.popupTitlePadding,
-            contentPadding: AppConstants.popupContentPadding,
-            actionsPadding: AppConstants.popupActionsPadding,
-            title: Text(title),
-            content: Text(message),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                child: Text(confirmLabel),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-    return result ?? false;
   }
 
   // ---------- Screen ----------
@@ -330,8 +326,17 @@ children: [
                 _SettingGroup(
                   children: [
                     ListTile(
-                      leading: const Icon(Icons.restart_alt),
-                      title: const Text('Clear all data & reset'),
+                      leading: Icon(
+                        Icons.delete_forever,
+                        color: AppSettings.instance.deleteColor,
+                      ),
+                      title: Text(
+                        'Clear all data & reset',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: AppSettings.instance.deleteColor,
+                        ),
+                      ),
                       subtitle: const Text(
                         'Back to the original configuration',
                       ),

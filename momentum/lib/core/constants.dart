@@ -1,5 +1,219 @@
 import 'package:flutter/material.dart';
 
+/// A currency the app can show.
+class AppCurrency {
+  final String code;
+  final String symbol;
+  final String name;
+
+  /// Approximate units per 1 US dollar. Only a starting point for the
+  /// convert pop-up, where the user can edit the rate.
+  final double perUsd;
+  const AppCurrency(this.code, this.symbol, this.name, this.perUsd);
+}
+
+/// A place whose clock the app follows (standard time, no daylight saving).
+class AppLocation {
+  final String id;
+  final String name;
+  final int utcMinutes;
+  const AppLocation(this.id, this.name, this.utcMinutes);
+}
+
+class AppLanguage {
+  final String code;
+  final String name;
+  final String native;
+  const AppLanguage(this.code, this.name, this.native);
+}
+
+/// Translations. The key is the English text. A missing entry shows English.
+/// To translate more text: write 'Text'.tr in the screen, add a line here.
+class AppStrings {
+  AppStrings._();
+
+  static String of(String key) {
+    if (AppConstants.languageCode == 'en') return key;
+    return _table[AppConstants.languageCode]?[key] ?? key;
+  }
+
+  static const Map<String, Map<String, String>> _table = {
+    'fil': {
+      'Settings': 'Mga Setting', 'Appearance': 'Hitsura',
+      'Localization': 'Lokalisasyon', 'Security': 'Seguridad',
+      'Theme': 'Tema', 'Font': 'Font', 'Animation': 'Animasyon',
+      'Currency': 'Salapi', 'Location': 'Lokasyon', 'Language': 'Wika',
+      'Close': 'Isara', 'Cancel': 'Kanselahin', 'Apply': 'Ilapat',
+      'Convert': 'I-convert', 'Keep amounts': 'Panatilihin ang halaga',
+      'Convert your amounts?': 'I-convert ang mga halaga?',
+      'Profile': 'Profile', 'Notifications': 'Mga Abiso',
+      'Tools': 'Mga Kasangkapan', 'Calculator': 'Calculator',
+      'Converter': 'Converter', 'Pages': 'Mga Pahina',
+      'Finance': 'Pananalapi', 'Schedule': 'Iskedyul', 'Health': 'Kalusugan',
+      'Preferences': 'Mga Kagustuhan', 'Categories': 'Mga Kategorya',
+      'Database': 'Database', 'Help & Support': 'Tulong at Suporta',
+      'FAQ': 'Mga Madalas Itanong', 'Rate': 'I-rate', 'Feedback': 'Puna',
+      'About': 'Tungkol', 'Version': 'Bersyon',
+      'Search Momentum': 'Hanapin sa Momentum', 'Income': 'Kita',
+      'Expense': 'Gastos', 'Transfer': 'Paglipat', 'Reminder': 'Paalala',
+      'My Accounts': 'Aking mga Account', 'Total Balance': 'Kabuuang Balanse',
+      'History': 'Kasaysayan', 'Analytics': 'Analytics',
+      'App Security': 'Seguridad ng App', 'Unlock': 'I-unlock',
+      'Momentum is locked': 'Naka-lock ang Momentum',
+      'Unlock Momentum': 'I-unlock ang Momentum',
+    },
+    'es': {
+      'Settings': 'Ajustes', 'Appearance': 'Apariencia',
+      'Localization': 'Localización', 'Security': 'Seguridad',
+      'Theme': 'Tema', 'Font': 'Fuente', 'Animation': 'Animación',
+      'Currency': 'Moneda', 'Location': 'Ubicación', 'Language': 'Idioma',
+      'Close': 'Cerrar', 'Cancel': 'Cancelar', 'Apply': 'Aplicar',
+      'Convert': 'Convertir', 'Keep amounts': 'Mantener importes',
+      'Convert your amounts?': '¿Convertir tus importes?',
+      'Profile': 'Perfil', 'Notifications': 'Notificaciones',
+      'Tools': 'Herramientas', 'Calculator': 'Calculadora',
+      'Converter': 'Conversor', 'Pages': 'Páginas',
+      'Finance': 'Finanzas', 'Schedule': 'Agenda', 'Health': 'Salud',
+      'Preferences': 'Preferencias', 'Categories': 'Categorías',
+      'Database': 'Base de datos', 'Help & Support': 'Ayuda y soporte',
+      'FAQ': 'Preguntas frecuentes', 'Rate': 'Valorar',
+      'Feedback': 'Comentarios', 'About': 'Acerca de', 'Version': 'Versión',
+      'Search Momentum': 'Buscar en Momentum', 'Income': 'Ingresos',
+      'Expense': 'Gastos', 'Transfer': 'Transferencia',
+      'Reminder': 'Recordatorio', 'My Accounts': 'Mis cuentas',
+      'Total Balance': 'Saldo total', 'History': 'Historial',
+      'Analytics': 'Analíticas', 'App Security': 'Seguridad de la app',
+      'Unlock': 'Desbloquear', 'Momentum is locked': 'Momentum está bloqueado',
+      'Unlock Momentum': 'Desbloquear Momentum',
+    },
+    'fr': {
+      'Settings': 'Paramètres', 'Appearance': 'Apparence',
+      'Localization': 'Localisation', 'Security': 'Sécurité',
+      'Theme': 'Thème', 'Font': 'Police', 'Animation': 'Animation',
+      'Currency': 'Devise', 'Location': 'Emplacement', 'Language': 'Langue',
+      'Close': 'Fermer', 'Cancel': 'Annuler', 'Apply': 'Appliquer',
+      'Convert': 'Convertir', 'Keep amounts': 'Garder les montants',
+      'Convert your amounts?': 'Convertir vos montants ?',
+      'Profile': 'Profil', 'Notifications': 'Notifications',
+      'Tools': 'Outils', 'Calculator': 'Calculatrice',
+      'Converter': 'Convertisseur', 'Pages': 'Pages',
+      'Finance': 'Finances', 'Schedule': 'Agenda', 'Health': 'Santé',
+      'Preferences': 'Préférences', 'Categories': 'Catégories',
+      'Database': 'Base de données', 'Help & Support': 'Aide et assistance',
+      'FAQ': 'FAQ', 'Rate': 'Noter', 'Feedback': 'Retour',
+      'About': 'À propos', 'Version': 'Version',
+      'Search Momentum': 'Rechercher dans Momentum', 'Income': 'Revenus',
+      'Expense': 'Dépenses', 'Transfer': 'Virement', 'Reminder': 'Rappel',
+      'My Accounts': 'Mes comptes', 'Total Balance': 'Solde total',
+      'History': 'Historique', 'Analytics': 'Analyses',
+      'App Security': "Sécurité de l'app", 'Unlock': 'Déverrouiller',
+      'Momentum is locked': 'Momentum est verrouillé',
+      'Unlock Momentum': 'Déverrouiller Momentum',
+    },
+        'zh': {
+      'Settings': '设置', 'Appearance': '外观',
+      'Localization': '本地化', 'Security': '安全',
+      'Theme': '主题', 'Font': '字体', 'Animation': '动画',
+      'Currency': '货币', 'Location': '位置', 'Language': '语言',
+      'Close': '关闭', 'Cancel': '取消', 'Apply': '应用',
+      'Convert': '转换', 'Keep amounts': '保留金额',
+      'Convert your amounts?': '转换您的金额？',
+      'Profile': '个人资料', 'Notifications': '通知',
+      'Tools': '工具', 'Calculator': '计算器',
+      'Converter': '转换器', 'Pages': '页面',
+      'Finance': '财务', 'Schedule': '日程', 'Health': '健康',
+      'Preferences': '偏好设置', 'Categories': '分类',
+      'Database': '数据库', 'Help & Support': '帮助与支持',
+      'FAQ': '常见问题', 'Rate': '评分', 'Feedback': '反馈',
+      'About': '关于', 'Version': '版本',
+      'Search Momentum': '搜索 Momentum', 'Income': '收入',
+      'Expense': '支出', 'Transfer': '转账', 'Reminder': '提醒',
+      'My Accounts': '我的账户', 'Total Balance': '总余额',
+      'History': '历史记录', 'Analytics': '数据分析',
+      'App Security': '应用安全', 'Unlock': '解锁',
+      'Momentum is locked': 'Momentum 已锁定',
+      'Unlock Momentum': '解锁 Momentum',
+    },
+    'hi': {
+      'Settings': 'सेटिंग्स', 'Appearance': 'दिखावट',
+      'Localization': 'स्थानीयकरण', 'Security': 'सुरक्षा',
+      'Theme': 'थीम', 'Font': 'फ़ॉन्ट', 'Animation': 'एनिमेशन',
+      'Currency': 'मुद्रा', 'Location': 'स्थान', 'Language': 'भाषा',
+      'Close': 'बंद करें', 'Cancel': 'रद्द करें', 'Apply': 'लागू करें',
+      'Convert': 'बदलें', 'Keep amounts': 'राशि वैसी रखें',
+      'Convert your amounts?': 'क्या राशि बदलें?',
+      'Profile': 'प्रोफ़ाइल', 'Notifications': 'सूचनाएँ',
+      'Tools': 'उपकरण', 'Calculator': 'कैलकुलेटर',
+      'Converter': 'कन्वर्टर', 'Pages': 'पेज',
+      'Finance': 'वित्त', 'Schedule': 'कार्यक्रम', 'Health': 'स्वास्थ्य',
+      'Preferences': 'प्राथमिकताएँ', 'Categories': 'श्रेणियाँ',
+      'Database': 'डेटाबेस', 'Help & Support': 'सहायता और समर्थन',
+      'FAQ': 'अक्सर पूछे जाने वाले प्रश्न', 'Rate': 'रेट करें',
+      'Feedback': 'प्रतिक्रिया', 'About': 'परिचय', 'Version': 'संस्करण',
+      'Search Momentum': 'Momentum में खोजें', 'Income': 'आय',
+      'Expense': 'खर्च', 'Transfer': 'ट्रांसफ़र', 'Reminder': 'रिमाइंडर',
+      'My Accounts': 'मेरे खाते', 'Total Balance': 'कुल शेष',
+      'History': 'इतिहास', 'Analytics': 'विश्लेषण',
+      'App Security': 'ऐप सुरक्षा', 'Unlock': 'अनलॉक करें',
+      'Momentum is locked': 'Momentum लॉक है',
+      'Unlock Momentum': 'Momentum अनलॉक करें',
+    },
+    'ar': {
+      'Settings': 'الإعدادات', 'Appearance': 'المظهر',
+      'Localization': 'التوطين', 'Security': 'الأمان',
+      'Theme': 'السمة', 'Font': 'الخط', 'Animation': 'الحركة',
+      'Currency': 'العملة', 'Location': 'الموقع', 'Language': 'اللغة',
+      'Close': 'إغلاق', 'Cancel': 'إلغاء', 'Apply': 'تطبيق',
+      'Convert': 'تحويل', 'Keep amounts': 'الإبقاء على المبالغ',
+      'Convert your amounts?': 'هل تريد تحويل مبالغك؟',
+      'Profile': 'الملف الشخصي', 'Notifications': 'الإشعارات',
+      'Tools': 'الأدوات', 'Calculator': 'الآلة الحاسبة',
+      'Converter': 'المحوّل', 'Pages': 'الصفحات',
+      'Finance': 'المالية', 'Schedule': 'الجدول', 'Health': 'الصحة',
+      'Preferences': 'التفضيلات', 'Categories': 'الفئات',
+      'Database': 'قاعدة البيانات', 'Help & Support': 'المساعدة والدعم',
+      'FAQ': 'الأسئلة الشائعة', 'Rate': 'قيّم', 'Feedback': 'ملاحظات',
+      'About': 'حول', 'Version': 'الإصدار',
+      'Search Momentum': 'البحث في Momentum', 'Income': 'الدخل',
+      'Expense': 'المصروفات', 'Transfer': 'تحويل', 'Reminder': 'تذكير',
+      'My Accounts': 'حساباتي', 'Total Balance': 'الرصيد الإجمالي',
+      'History': 'السجل', 'Analytics': 'التحليلات',
+      'App Security': 'أمان التطبيق', 'Unlock': 'فتح القفل',
+      'Momentum is locked': 'Momentum مقفل',
+      'Unlock Momentum': 'فتح قفل Momentum',
+    },
+    'pt': {
+      'Settings': 'Configurações', 'Appearance': 'Aparência',
+      'Localization': 'Localização', 'Security': 'Segurança',
+      'Theme': 'Tema', 'Font': 'Fonte', 'Animation': 'Animação',
+      'Currency': 'Moeda', 'Location': 'Local', 'Language': 'Idioma',
+      'Close': 'Fechar', 'Cancel': 'Cancelar', 'Apply': 'Aplicar',
+      'Convert': 'Converter', 'Keep amounts': 'Manter valores',
+      'Convert your amounts?': 'Converter seus valores?',
+      'Profile': 'Perfil', 'Notifications': 'Notificações',
+      'Tools': 'Ferramentas', 'Calculator': 'Calculadora',
+      'Converter': 'Conversor', 'Pages': 'Páginas',
+      'Finance': 'Finanças', 'Schedule': 'Agenda', 'Health': 'Saúde',
+      'Preferences': 'Preferências', 'Categories': 'Categorias',
+      'Database': 'Banco de dados', 'Help & Support': 'Ajuda e suporte',
+      'FAQ': 'Perguntas frequentes', 'Rate': 'Avaliar',
+      'Feedback': 'Feedback', 'About': 'Sobre', 'Version': 'Versão',
+      'Search Momentum': 'Buscar no Momentum', 'Income': 'Receitas',
+      'Expense': 'Despesas', 'Transfer': 'Transferência',
+      'Reminder': 'Lembrete', 'My Accounts': 'Minhas contas',
+      'Total Balance': 'Saldo total', 'History': 'Histórico',
+      'Analytics': 'Análises', 'App Security': 'Segurança do app',
+      'Unlock': 'Desbloquear', 'Momentum is locked': 'O Momentum está bloqueado',
+      'Unlock Momentum': 'Desbloquear o Momentum',
+    },
+  };
+}
+
+/// 'Settings'.tr -> the text in the chosen language.
+extension TranslateText on String {
+  String get tr => AppStrings.of(this);
+}
+
 /// App-wide constants. Every fixed value that is shared between files
 /// (or is a tuning knob for a screen) lives here.
 class AppConstants {
@@ -20,10 +234,11 @@ class AppConstants {
   static const int exportFormat = 1;
 
   // ---------- Money ----------
-  static const String currencySymbol = '₱';
+  /// Changed from Settings > Localization > Currency (default: dollar).
+  static String currencySymbol = '\$';
 
   /// Symbol followed by a space, used on the big balance numbers.
-  static const String currencyPrefix = '$currencySymbol ';
+  static String get currencyPrefix => '$currencySymbol ';
 
   /// Money is stored as whole centavos.
   static const int centavosPerPeso = 100;
@@ -33,6 +248,120 @@ class AppConstants {
   // Defaults for the other transaction colors
   static const Color transferColor = Color(0xFF2196F3);
   static const Color reminderColor = Color(0xFFFFA726);
+
+  // ---------- Localization ----------
+  static const String prefCurrency = 'settings.currency';
+  static const String prefLocation = 'settings.location';
+  static const String prefLanguage = 'settings.language';
+
+  // Security is kept in SharedPreferences (not the database) so it is not
+  // written into backup files.
+  static const String prefSecurityOn = 'security.enabled';
+  static const String prefSecurityMethods = 'security.methods';
+
+  static const String prefSecurityPinHash = 'security.pinHash';
+  static const String prefSecurityPinSalt = 'security.pinSalt';
+
+  static const String prefSecurityPinLength = 'security.pinLength';
+
+  static const int pinMinLength = 4;
+  static const int pinMaxLength = 6;
+
+  /// How long the app can stay in the background before it locks again.
+  static const Duration lockAfterBackground = Duration(seconds: 30);
+
+  /// Minutes from UTC of the chosen location (default America Eastern).
+  static int locationOffsetMinutes = -300;
+  static String languageCode = 'en';
+
+  static const List<AppCurrency> currencies = [
+    AppCurrency('USD', '\$', 'US Dollar', 1),
+    AppCurrency('EUR', '€', 'Euro', 0.92),
+    AppCurrency('GBP', '£', 'British Pound', 0.79),
+    AppCurrency('JPY', '¥', 'Japanese Yen', 150),
+    AppCurrency('PHP', '₱', 'Philippine Peso', 57),
+    AppCurrency('INR', '₹', 'Indian Rupee', 85),
+    AppCurrency('CNY', 'CN¥', 'Chinese Yuan', 7.2),
+    AppCurrency('KRW', '₩', 'South Korean Won', 1400),
+    AppCurrency('AUD', 'A\$', 'Australian Dollar', 1.55),
+    AppCurrency('CAD', 'C\$', 'Canadian Dollar', 1.38),
+    AppCurrency('CHF', 'CHF', 'Swiss Franc', 0.88),
+    AppCurrency('SGD', 'S\$', 'Singapore Dollar', 1.34),
+    AppCurrency('HKD', 'HK\$', 'Hong Kong Dollar', 7.8),
+    AppCurrency('NZD', 'NZ\$', 'New Zealand Dollar', 1.65),
+    AppCurrency('MXN', 'MX\$', 'Mexican Peso', 18.5),
+    AppCurrency('BRL', 'R\$', 'Brazilian Real', 5.5),
+    AppCurrency('AED', 'AED', 'UAE Dirham', 3.67),
+    AppCurrency('SAR', 'SAR', 'Saudi Riyal', 3.75),
+    AppCurrency('ZAR', 'R', 'South African Rand', 18),
+    AppCurrency('NGN', '₦', 'Nigerian Naira', 1550),
+    AppCurrency('EGP', 'E£', 'Egyptian Pound', 49),
+    AppCurrency('TRY', '₺', 'Turkish Lira', 38),
+    AppCurrency('RUB', '₽', 'Russian Ruble', 90),
+    AppCurrency('IDR', 'Rp', 'Indonesian Rupiah', 16000),
+    AppCurrency('THB', '฿', 'Thai Baht', 35),
+    AppCurrency('MYR', 'RM', 'Malaysian Ringgit', 4.4),
+    AppCurrency('VND', '₫', 'Vietnamese Dong', 25000),
+  ];
+
+  static AppCurrency currencyByCode(String? code) => currencies.firstWhere(
+    (c) => c.code == code,
+    orElse: () => currencies.first,
+  );
+
+  /// The first one is the default (America).
+  static const List<AppLocation> locations = [
+    AppLocation('us_east', 'America (Eastern)', -300),
+    AppLocation('us_central', 'America (Central)', -360),
+    AppLocation('us_mountain', 'America (Mountain)', -420),
+    AppLocation('us_pacific', 'America (Pacific)', -480),
+    AppLocation('canada', 'Canada (Toronto)', -300),
+    AppLocation('mexico', 'Mexico (Mexico City)', -360),
+    AppLocation('brazil', 'Brazil (São Paulo)', -180),
+    AppLocation('uk', 'United Kingdom', 0),
+    AppLocation('france', 'France', 60),
+    AppLocation('germany', 'Germany', 60),
+    AppLocation('spain', 'Spain', 60),
+    AppLocation('italy', 'Italy', 60),
+    AppLocation('nigeria', 'Nigeria', 60),
+    AppLocation('southafrica', 'South Africa', 120),
+    AppLocation('egypt', 'Egypt', 120),
+    AppLocation('turkey', 'Turkey', 180),
+    AppLocation('saudi', 'Saudi Arabia', 180),
+    AppLocation('russia', 'Russia (Moscow)', 180),
+    AppLocation('uae', 'United Arab Emirates', 240),
+    AppLocation('india', 'India', 330),
+    AppLocation('thailand', 'Thailand', 420),
+    AppLocation('indonesia', 'Indonesia (Jakarta)', 420),
+    AppLocation('china', 'China', 480),
+    AppLocation('singapore', 'Singapore', 480),
+    AppLocation('philippines', 'Philippines', 480),
+    AppLocation('japan', 'Japan', 540),
+    AppLocation('korea', 'South Korea', 540),
+    AppLocation('australia', 'Australia (Sydney)', 600),
+    AppLocation('newzealand', 'New Zealand', 720),
+  ];
+
+  static AppLocation locationById(String? id) => locations.firstWhere(
+    (l) => l.id == id,
+    orElse: () => locations.first,
+  );
+
+  static const List<AppLanguage> languages = [
+    AppLanguage('en', 'English', 'English'),
+    AppLanguage('fil', 'Filipino', 'Filipino'),
+    AppLanguage('es', 'Spanish', 'Español'),
+    AppLanguage('fr', 'French', 'Français'),
+    AppLanguage('zh', 'Chinese (Mandarin)', '中文'),
+    AppLanguage('hi', 'Hindi', 'हिन्दी'),
+    AppLanguage('ar', 'Arabic', 'العربية'),
+    AppLanguage('pt', 'Portuguese', 'Português'),
+  ];
+
+  static AppLanguage languageByCode(String? code) => languages.firstWhere(
+    (l) => l.code == code,
+    orElse: () => languages.first,
+  );
 
   // ---------- Spacing scale ----------
   static const double spaceXs = 4;
@@ -141,7 +470,7 @@ class AppConstants {
   static const String prefIncomeColor = 'settings.transactionColor.income';
   static const String prefExpenseColor = 'settings.transactionColor.expense';
   static const String prefTransferColor = 'settings.transactionColor.transfer';
-    // Defaults for the action colors (Delete / Done)
+  // Defaults for the action colors (Delete / Done)
   static const Color deleteColor = Color(0xFFE53935); // Colors.red.shade600
   static const Color doneColor = Color(0xFF1B6B3A);
   // Key text kept from the old "notification" name so saved colors survive.
