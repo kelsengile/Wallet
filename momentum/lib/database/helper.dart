@@ -243,6 +243,9 @@ class DatabaseHelper {
     AppConstants.prefBoldText,
     AppConstants.prefAnimEnabled,
     AppConstants.prefAnimSpeed,
+    AppConstants.prefCurrency,
+    AppConstants.prefLocation,
+    AppConstants.prefLanguage,
   ];
 
   Future<void> _clearDesignPrefs() async {
@@ -1666,6 +1669,41 @@ class DatabaseHelper {
       await _deleteImageFiles(images);
       if (removed > 0) notifyChanged();
       return removed;
+    });
+  }
+
+  /// Multiplies every saved amount by [rate] (old currency -> new currency):
+  /// account starting balances, transactions, reminders and budgets.
+  Future<void> convertAmounts(double rate) {
+    return _guard(() async {
+      if (!rate.isFinite || rate <= 0 || rate > 1e7) {
+        throw const ValidationFailure('Enter a valid exchange rate.');
+      }
+      final db = await database;
+      await db.transaction((txn) async {
+        await txn.rawUpdate(
+          'UPDATE accounts SET initial_balance = '
+          'CAST(ROUND(initial_balance * ?) AS INTEGER)',
+          [rate],
+        );
+        await txn.rawUpdate(
+          'UPDATE transactions SET amount = '
+          'MAX(1, CAST(ROUND(amount * ?) AS INTEGER))',
+          [rate],
+        );
+        await txn.rawUpdate(
+          'UPDATE reminders SET amount = '
+          'MAX(1, CAST(ROUND(amount * ?) AS INTEGER))',
+          [rate],
+        );
+        await txn.rawUpdate(
+          'UPDATE categories SET budget = '
+          'MAX(1, CAST(ROUND(budget * ?) AS INTEGER)) '
+          'WHERE budget IS NOT NULL',
+          [rate],
+        );
+      });
+      notifyChanged();
     });
   }
 
