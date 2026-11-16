@@ -10317,7 +10317,7 @@ class _TxLineChartState extends State<_TxLineChart> {
           const SizedBox(height: AppConstants.spaceSm),
           Text(
             sel == null
-                ? 'Tap a point to see its amount'
+                ? ''
                 : (sel.categoryName == null
                       ? sel.title
                       : '${sel.title}  •  ${sel.categoryName}'),
