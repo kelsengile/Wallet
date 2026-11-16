@@ -85,17 +85,15 @@ class MomentumApp extends StatelessWidget {
             final systemScale =
                 mq.textScaler.scale(AppConstants.baseFontSize) /
                     AppConstants.baseFontSize;
-            // Turns off every long-press tooltip in the app.
             return TooltipVisibility(
               visible: false,
               child: MediaQuery(
                 data: mq.copyWith(
                   textScaler:
                       TextScaler.linear(systemScale * settings.textScale),
-                  // Bold text: on if either the app setting or system is on.
                   boldText: settings.boldText || mq.boldText,
                 ),
-                child: child!,
+                child: AppLockGate(child: child!),
               ),
             );
           },
@@ -209,9 +207,9 @@ class _HomeShellState extends State<HomeShell>
     super.dispose();
   }
 
-  static const _destinations = <_Destination>[
+  static final _destinations = <_Destination>[
     _Destination(
-      label: 'Finance',
+      label: 'Finance'.tr,
       icon: Icons.account_balance_wallet_outlined,
       selectedIcon: Icons.account_balance_wallet,
       screen: FinanceScreen(),
@@ -219,13 +217,13 @@ class _HomeShellState extends State<HomeShell>
       addActions: _financeAddActions,
     ),
     _Destination(
-      label: 'Schedule',
+      label: 'Schedule'.tr,
       icon: Icons.calendar_today_outlined,
       selectedIcon: Icons.calendar_today,
       screen: ScheduleScreen(),
     ),
     _Destination(
-      label: 'Health',
+      label: 'Health'.tr,
       icon: Icons.health_and_safety_outlined,
       selectedIcon: Icons.health_and_safety,
       screen: HistoryScreen(),
@@ -233,32 +231,32 @@ class _HomeShellState extends State<HomeShell>
   ];
 
   // Pinned right under the "Momentum" text in the drawer.
-  static const _profileItem = <_DrawerItem>[
-    _DrawerItem('Profile', Icons.person_outline, ProfileScreen()),
+  static final _profileItem = <_DrawerItem>[
+    _DrawerItem('Profile'.tr, Icons.person_outline, ProfileScreen()),
     _DrawerItem(
-      'Notifications',
+      'Notifications'.tr,
       Icons.notifications_outlined,
       NotificationScreen(),
     ),
   ];
 
   // Shown in its own "Tools" section below Profile / Notifications.
-  static const _toolsItem = <_DrawerItem>[
-    _DrawerItem('Calculator', Icons.calculate_outlined, CalculatorScreen()),
-    _DrawerItem('Converter', Icons.compare_arrows_outlined, ConverterScreen()),
+  static final _toolsItem = <_DrawerItem>[
+    _DrawerItem('Calculator'.tr, Icons.calculate_outlined, CalculatorScreen()),
+    _DrawerItem('Converter'.tr, Icons.compare_arrows_outlined, ConverterScreen()),
   ];
 
-  static const _sections = <_DrawerSection>[
-    _DrawerSection('Preferences', [
-      _DrawerItem('Settings', Icons.settings_outlined, SettingsScreen()),
-      _DrawerItem('Categories', Icons.category_outlined, CategoriesScreen()),
-      _DrawerItem('Database', Icons.storage_outlined, DatabaseScreen()),
+  static final _sections = <_DrawerSection>[
+    _DrawerSection('Preferences'.tr, [
+      _DrawerItem('Settings'.tr, Icons.settings_outlined, SettingsScreen()),
+      _DrawerItem('Categories'.tr, Icons.category_outlined, CategoriesScreen()),
+      _DrawerItem('Database'.tr, Icons.storage_outlined, DatabaseScreen()),
     ]),
-    _DrawerSection('Help & Support', [
-      _DrawerItem('FAQ', Icons.help_outline, FaqScreen()),
-      _DrawerItem('Rate', Icons.star_outline, RateScreen()),
-      _DrawerItem('Feedback', Icons.feedback_outlined, FeedbackScreen()),
-      _DrawerItem('About', Icons.info_outline, AboutScreen()),
+    _DrawerSection('Help & Support'.tr, [
+      _DrawerItem('FAQ'.tr, Icons.help_outline, FaqScreen()),
+      _DrawerItem('Rate'.tr, Icons.star_outline, RateScreen()),
+      _DrawerItem('Feedback'.tr, Icons.feedback_outlined, FeedbackScreen()),
+      _DrawerItem('About'.tr, Icons.info_outline, AboutScreen()),
     ]),
   ];
 
@@ -479,7 +477,7 @@ class _HomeShellState extends State<HomeShell>
         AppConstants.spaceXs,
       ),
       child: Text(
-        title,
+        title.tr,
         style: theme.textTheme.labelLarge?.copyWith(
           fontWeight: FontWeight.w600,
           color: theme.colorScheme.onSurfaceVariant,
@@ -523,7 +521,7 @@ class _HomeShellState extends State<HomeShell>
       visualDensity: const VisualDensity(vertical: -2),
       minVerticalPadding: 0,
       leading: Icon(icon),
-      title: Text(label),
+      title: Text(label.tr),
       selected: selected,
       onTap: onTap,
     );
@@ -545,7 +543,7 @@ class _HomeShellState extends State<HomeShell>
         borderRadius: BorderRadius.circular(AppConstants.radiusSm),
       ),
       child: Text(
-        'Version: ${AppConstants.appVersion}',
+        '${'Version'.tr}: ${AppConstants.appVersion}',
         textAlign: TextAlign.center,
         style: theme.textTheme.labelMedium?.copyWith(
           fontWeight: FontWeight.w600,
@@ -736,7 +734,7 @@ class _HomeShellState extends State<HomeShell>
               NavigationDestination(
                 icon: Icon(d.icon),
                 selectedIcon: Icon(d.selectedIcon),
-                label: d.label,
+                label: d.label.tr,
               ),
           ],
         ),
