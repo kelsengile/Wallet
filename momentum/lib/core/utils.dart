@@ -9,18 +9,25 @@ class Utils {
     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
   ];
 
-  /// 1234.5 -> "₱1,234.50"
-  static String formatCurrency(
-    double amount, {
-    String symbol = AppConstants.currencySymbol,
-  }) {
+  /// 1234.5 -> "$1,234.50" (uses the currency chosen in Settings).
+  static String formatCurrency(double amount, {String? symbol}) {
+    final sym = symbol ?? AppConstants.currencySymbol;
     final negative = amount < 0;
     final parts = amount.abs().toStringAsFixed(2).split('.');
     final whole = parts[0].replaceAllMapped(
       RegExp(r'\B(?=(\d{3})+(?!\d))'),
       (_) => ',',
     );
-    return '${negative ? '-' : ''}$symbol$whole.${parts[1]}';
+    return '${negative ? '-' : ''}$sym$whole.${parts[1]}';
+  }
+
+  /// The app's current date and time, following Settings > Location.
+  /// Use this instead of DateTime.now() for anything the user sees or saves.
+  static DateTime now() {
+    final t = DateTime.now().toUtc().add(
+      Duration(minutes: AppConstants.locationOffsetMinutes),
+    );
+    return DateTime(t.year, t.month, t.day, t.hour, t.minute, t.second);
   }
 
   /// DateTime -> "Oct 11, 2026"
