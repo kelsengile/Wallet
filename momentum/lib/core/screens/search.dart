@@ -383,7 +383,7 @@ class _SearchScreenState extends State<SearchScreen> {
     if (query.isEmpty) {
       return _message(
         Icons.search,
-        'Search Momentum',
+        'Search Momentum'.tr,
         'Find transactions, reminders, accounts and categories.',
       );
     }
@@ -496,8 +496,8 @@ class _SearchScreenState extends State<SearchScreen> {
           controller: _controller,
           autofocus: true,
           textInputAction: TextInputAction.search,
-          decoration: const InputDecoration(
-            hintText: 'Search Momentum',
+          decoration: InputDecoration(
+            hintText: 'Search Momentum'.tr,
             border: InputBorder.none,
           ),
         ),

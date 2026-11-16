@@ -418,7 +418,7 @@ class _TrashScreenState extends State<TrashScreen> {
 
   String _dayLabel(DateTime? d) {
     if (d == null) return 'Earlier';
-    final now = DateTime.now();
+    final now = Utils.now();
     final today = DateTime.utc(now.year, now.month, now.day);
     final day = DateTime.utc(d.year, d.month, d.day);
     final diff = today.difference(day).inDays;
@@ -599,7 +599,7 @@ class _TrashScreenState extends State<TrashScreen> {
   }
 
   Widget _banner(Color fg, Color bg) {
-    final now = DateTime.now();
+    final now = Utils.now();
     final end = DateTime(now.year, now.month + 1, 0);
     final left = DateTime.utc(end.year, end.month, end.day)
         .difference(DateTime.utc(now.year, now.month, now.day))
