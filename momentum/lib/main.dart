@@ -31,6 +31,7 @@ Future<void> main() async {
   ]);
 
   await AppSettings.instance.load(); // restore saved theme, font + text size
+  await AppProfile.instance.load();
 
   // Month-end clean up: removes anything deleted in an earlier month.
   try {
@@ -230,28 +231,19 @@ class _HomeShellState extends State<HomeShell>
     ),
   ];
 
-  // Pinned right under the "Momentum" text in the drawer.
-  static final _profileItem = <_DrawerItem>[
-    _DrawerItem('Profile'.tr, Icons.person_outline, ProfileScreen()),
-    _DrawerItem(
-      'Notifications'.tr,
-      Icons.notifications_outlined,
-      NotificationScreen(),
-    ),
-  ];
-
   // Shown in its own "Tools" section below Profile / Notifications.
   static final _toolsItem = <_DrawerItem>[
     _DrawerItem('Calculator'.tr, Icons.calculate_outlined, CalculatorScreen()),
     _DrawerItem('Converter'.tr, Icons.compare_arrows_outlined, ConverterScreen()),
   ];
 
-  static final _sections = <_DrawerSection>[
-    _DrawerSection('Preferences'.tr, [
-      _DrawerItem('Settings'.tr, Icons.settings_outlined, SettingsScreen()),
-      _DrawerItem('Categories'.tr, Icons.category_outlined, CategoriesScreen()),
-      _DrawerItem('Database'.tr, Icons.storage_outlined, DatabaseScreen()),
-    ]),
+static final _sections = <_DrawerSection>[
+  _DrawerSection('Preferences'.tr, [
+    _DrawerItem('Settings'.tr, Icons.settings_outlined, SettingsScreen()),
+    _DrawerItem('Categories'.tr, Icons.category_outlined, CategoriesScreen()),
+    _DrawerItem('Database'.tr, Icons.storage_outlined, DatabaseScreen()),
+    _DrawerItem('Notifications'.tr, Icons.notifications_outlined, NotificationScreen()),
+  ]),
     _DrawerSection('Help & Support'.tr, [
       _DrawerItem('FAQ'.tr, Icons.help_outline, FaqScreen()),
       _DrawerItem('Rate'.tr, Icons.star_outline, RateScreen()),
@@ -486,29 +478,6 @@ class _HomeShellState extends State<HomeShell>
     );
   }
 
-  /// Header at the very top of the drawer with the app name (accent color).
-  Widget _buildDrawerHeader(BuildContext context) {
-    final theme = Theme.of(context);
-    final accent = AppTheme.accentOf(context);
-    return Container(
-      width: double.infinity,
-      color: accent.background,
-      padding: EdgeInsets.fromLTRB(
-        AppConstants.spaceLg,
-        MediaQuery.of(context).padding.top + AppConstants.spaceLg,
-        AppConstants.spaceLg,
-        AppConstants.spaceMd,
-      ),
-      child: Text(
-        AppConstants.appName,
-        style: theme.textTheme.headlineSmall?.copyWith(
-          fontWeight: FontWeight.w700,
-          color: accent.foreground,
-        ),
-      ),
-    );
-  }
-
   /// Compact drawer button (tight vertical spacing).
   Widget _buildTile({
     required IconData icon,
@@ -524,6 +493,31 @@ class _HomeShellState extends State<HomeShell>
       title: Text(label.tr),
       selected: selected,
       onTap: onTap,
+    );
+  }
+
+  /// Top of the drawer: just the app name.
+  Widget _buildDrawerHeader(BuildContext context) {
+    final theme = Theme.of(context);
+    final accent = AppTheme.accentOf(context);
+    return Container(
+      width: double.infinity,
+      color: accent.background,
+      padding: EdgeInsets.fromLTRB(
+        AppConstants.spaceLg,
+        MediaQuery.of(context).padding.top + AppConstants.spaceMd,
+        AppConstants.spaceLg,
+        AppConstants.spaceMd,
+      ),
+      child: Text(
+        AppConstants.appName,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.headlineSmall?.copyWith(
+          fontWeight: FontWeight.w700,
+          color: accent.foreground,
+        ),
+      ),
     );
   }
 
@@ -631,11 +625,15 @@ class _HomeShellState extends State<HomeShell>
                   padding: EdgeInsets.zero,
                   children: [
                     const SizedBox(height: AppConstants.drawerTopGap),
-                    for (final item in _profileItem)
+                    _buildSectionHeader(context, 'Pages'),
+                    for (var i = 0; i < _destinations.length; i++)
                       _buildTile(
-                        icon: item.icon,
-                        label: item.label,
-                        onTap: () => _openPage(item.screen),
+                        icon: _destinations[i].icon,
+                        label: _destinations[i].label,
+                        onTap: () {
+                          _select(i);
+                          Navigator.of(context).pop();
+                        },
                       ),
                     const Divider(
                       height: AppConstants.spaceMd,
@@ -648,22 +646,6 @@ class _HomeShellState extends State<HomeShell>
                         icon: item.icon,
                         label: item.label,
                         onTap: () => _openPage(item.screen),
-                      ),
-                    const Divider(
-                      height: AppConstants.spaceMd,
-                      indent: AppConstants.spaceLg,
-                      endIndent: AppConstants.spaceLg,
-                    ),
-                    _buildSectionHeader(context, 'Pages'),
-                    // No active-page highlight: plain icon, no `selected`.
-                    for (var i = 0; i < _destinations.length; i++)
-                      _buildTile(
-                        icon: _destinations[i].icon,
-                        label: _destinations[i].label,
-                        onTap: () {
-                          _select(i);
-                          Navigator.of(context).pop(); // close drawer
-                        },
                       ),
                     for (final section in _sections) ...[
                       const Divider(
@@ -682,6 +664,9 @@ class _HomeShellState extends State<HomeShell>
                     const SizedBox(height: AppConstants.spaceMd),
                   ],
                 ),
+              ),
+              ProfileDrawerTile(
+                onTap: () => _openPage(const ProfileScreen()),
               ),
               _buildVersionFooter(context),
             ],
