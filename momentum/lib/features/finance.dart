@@ -8627,18 +8627,38 @@ Future<DateTime?> _showDateTimeDialog(
   BuildContext context, {
   required DateTime initial,
   required Color color,
+  bool showTime = true,
 }) {
   return showDialog<DateTime>(
     context: context,
     barrierColor: AppConstants.popupBarrier,
-    builder: (_) => _DateTimeDialog(initial: initial, color: color),
+    builder: (_) =>
+        _DateTimeDialog(initial: initial, color: color, showTime: showTime),
   );
 }
+
+/// The Finance calendar pop-up, for other screens (Converter).
+Future<DateTime?> showAppDatePicker(
+  BuildContext context, {
+  required DateTime initial,
+  required Color color,
+  bool showTime = false,
+}) => _showDateTimeDialog(
+  context,
+  initial: initial,
+  color: color,
+  showTime: showTime,
+);
 
 class _DateTimeDialog extends StatefulWidget {
   final DateTime initial;
   final Color color;
-  const _DateTimeDialog({required this.initial, required this.color});
+  final bool showTime;
+  const _DateTimeDialog({
+    required this.initial,
+    required this.color,
+    this.showTime = true,
+  });
 
   @override
   State<_DateTimeDialog> createState() => _DateTimeDialogState();
@@ -8945,8 +8965,10 @@ class _DateTimeDialogState extends State<_DateTimeDialog> {
                     ),
                   ),
                 ),
-                const SizedBox(width: AppConstants.spaceSm),
-                _timeWheel(fg),
+                if (widget.showTime) ...[
+                  const SizedBox(width: AppConstants.spaceSm),
+                  _timeWheel(fg),
+                ],
               ],
             ),
             const SizedBox(height: AppConstants.spaceMd),
@@ -8981,8 +9003,8 @@ class _DateTimeDialogState extends State<_DateTimeDialog> {
                         _selected.year,
                         _selected.month,
                         _selected.day,
-                        _hour,
-                        _minute,
+                        widget.showTime ? _hour : 0,
+                        widget.showTime ? _minute : 0,
                       ),
                     ),
                     child: const Text(

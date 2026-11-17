@@ -7,6 +7,7 @@ import 'package:flutter/scheduler.dart' show timeDilation;
 import 'package:local_auth/local_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:crypto/crypto.dart';
+import 'package:file_picker/file_picker.dart';
 
 import '../../database/helper.dart';
 import '../constants.dart';
@@ -804,6 +805,7 @@ class AppSettings extends ChangeNotifier {
       if (c != null) _actionColors[type] = c;
     }
     
+    await AppFonts.loadImported(_store);
     _fontStyle = AppFonts.byLabel(_store[AppConstants.prefFontStyle]);
     _boldText = _store[AppConstants.prefBoldText] == 'true';
     _currency = AppConstants.currencyByCode(_store[AppConstants.prefCurrency]);
@@ -2122,6 +2124,8 @@ class _FontStyleDialog extends StatefulWidget {
 
 class _FontStyleDialogState extends State<_FontStyleDialog> {
   late AppFont _selected;
+  bool _busy = false;
+  String? _error;
 
   @override
   void initState() {
@@ -2129,46 +2133,148 @@ class _FontStyleDialogState extends State<_FontStyleDialog> {
     _selected = widget.settings.fontStyle;
   }
 
+  /// Pick a .ttf / .otf file and add it to the list.
+  Future<void> _import() async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final picked = await FilePicker.platform.pickFiles(
+        dialogTitle: 'Import font',
+        type: FileType.custom,
+        allowedExtensions: const ['ttf', 'otf'],
+        withData: true,
+      );
+      if (picked == null || picked.files.isEmpty) return; // cancelled
+      final file = picked.files.single;
+      final bytes = file.bytes;
+      if (bytes == null) {
+        if (mounted) setState(() => _error = 'Couldn\'t read that file.');
+        return;
+      }
+      final font = await AppFonts.importFont(file.name, bytes);
+      if (!mounted) return;
+      setState(() => _selected = font); // highlighted; Apply uses it
+    } catch (_) {
+      if (mounted) setState(() => _error = 'That isn\'t a usable font file.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _delete(AppFont font) async {
+    try {
+      // Switch away first so nothing is drawing with the font.
+      if (widget.settings.fontStyle.label == font.label) {
+        widget.settings.setFontStyle(AppFonts.defaultFont);
+      }
+      await AppFonts.removeImported(font);
+      if (!mounted) return;
+      setState(() {
+        if (_selected.label == font.label) _selected = AppFonts.defaultFont;
+        _error = null;
+      });
+      // Redraw the whole app now. The pop-up stays open.
+      _rebuildEverything();
+    } catch (_) {
+      if (mounted) setState(() => _error = 'Couldn\'t remove that font.');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final fonts = AppFonts.all;
     return _accentDialog(
       context,
       title: 'Font Style',
       icon: Icons.font_download_outlined,
-      content: ListView.builder(
-        shrinkWrap: true,
-        itemCount: AppFonts.all.length,
-        itemBuilder: (context, i) {
-          final font = AppFonts.all[i];
-          final selected = font.label == _selected.label;
-          return ListTile(
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: AppConstants.spaceMd,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Flexible(
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: fonts.length,
+              itemBuilder: (context, i) {
+                final font = fonts[i];
+                final selected = font.label == _selected.label;
+                return ListTile(
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: AppConstants.spaceMd,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+                  ),
+                  title: Text(
+                    font.label,
+                    style: TextStyle(fontFamily: font.family),
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (selected) const Icon(Icons.check),
+                      if (font.isImported)
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: () => _delete(font),
+                        ),
+                    ],
+                  ),
+                  selected: selected,
+                  onTap: () => setState(() => _selected = font),
+                );
+              },
             ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+          ),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: AppConstants.spaceSm),
+              child: Text(
+                _error!,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+              ),
             ),
-            title: Text(
-              font.label,
-              style: TextStyle(fontFamily: font.family),
-            ),
-            trailing: selected ? const Icon(Icons.check) : null,
-            selected: selected,
-            onTap: () => setState(() => _selected = font),
-          );
-        },
+        ],
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () {
-            widget.settings.setFontStyle(_selected);
-            Navigator.of(context).pop();
-          },
-          child: const Text('Apply'),
+        // One row: import button pinned to the far left,
+        // Cancel / Apply on the right.
+        SizedBox(
+          width: double.infinity,
+          child: Row(
+            children: [
+              IconButton.filled(
+                tooltip: 'Import font',              
+                onPressed: _busy ? null : _import,
+                icon: _busy
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.file_upload_outlined),
+              ),
+              const Spacer(),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              const SizedBox(width: AppConstants.spaceSm),
+              FilledButton(
+                onPressed: () {
+                  widget.settings.setFontStyle(_selected);
+                  Navigator.of(context).pop();
+                },
+                child: const Text('Apply'),
+              ),
+            ],
+          ),
         ),
       ],
     );

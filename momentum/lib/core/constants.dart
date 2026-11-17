@@ -466,6 +466,9 @@ class AppConstants {
   static const String prefTextSize = 'settings.textSizeIndex';
   static const String prefFontStyle = 'settings.fontStyle';
   static const String prefBoldText = 'settings.boldText';
+
+  static const String prefFontLibrary = 'fonts.library'; // imported fonts
+  static const String fontFolder = 'fonts';
   // Saved transaction colors (Specific Color)
   static const String prefIncomeColor = 'settings.transactionColor.income';
   static const String prefExpenseColor = 'settings.transactionColor.expense';
