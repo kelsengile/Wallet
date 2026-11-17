@@ -20,7 +20,7 @@ import 'database/helper.dart';
 import 'features/finance.dart';
 import 'features/health.dart';
 import 'features/schedule.dart';
-import 'services/notification.dart';
+import 'services/authentication.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -242,7 +242,6 @@ static final _sections = <_DrawerSection>[
     _DrawerItem('Settings'.tr, Icons.settings_outlined, SettingsScreen()),
     _DrawerItem('Categories'.tr, Icons.category_outlined, CategoriesScreen()),
     _DrawerItem('Database'.tr, Icons.storage_outlined, DatabaseScreen()),
-    _DrawerItem('Notifications'.tr, Icons.notifications_outlined, NotificationScreen()),
   ]),
     _DrawerSection('Help & Support'.tr, [
       _DrawerItem('FAQ'.tr, Icons.help_outline, FaqScreen()),
