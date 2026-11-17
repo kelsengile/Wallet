@@ -1757,6 +1757,13 @@ class DatabaseHelper {
           'settings',
           columns: ['value'],
           where: 'name = ?',
+          whereArgs: [AppConstants.prefProfile],
+        ))
+          ..._profilePaths(r['value']),
+        for (final r in await db.query(
+          'settings',
+          columns: ['value'],
+          where: 'name = ?',
           whereArgs: [AppConstants.prefFontLibrary],
         ))
           ..._fontPaths(r['value']),
@@ -1780,6 +1787,11 @@ class DatabaseHelper {
           '$_themePrefix%',
           AppConstants.prefFontLibrary,
         ],
+      );
+      await db.delete(
+        'settings',
+        where: 'name = ?',
+        whereArgs: [AppConstants.prefProfile],
       );
       for (final key in _designPrefs) {
         await db.delete('settings', where: 'name = ?', whereArgs: [key]);
@@ -1968,6 +1980,9 @@ class DatabaseHelper {
               written,
             );
           }
+          if (entry.key == 'settings' && map['name'] == AppConstants.prefProfile) {
+            map['value'] = await _restoreProfile(map['value'], row['profile_base64'], written);
+          }
           rows.add(map);
         }
         data[entry.key] = rows;
@@ -2017,6 +2032,9 @@ class DatabaseHelper {
             t,
             columns: ['icon'],
           )).map((r) => _iconImageOf(r['icon'])),
+        for (final row in await db.query('settings', columns: ['value'],
+            where: 'name = ?', whereArgs: [AppConstants.prefProfile]))
+          ..._profilePaths(row['value']),
       ];
       final keep = <Object?>{
         for (final t in ['transactions', 'reminders'])
@@ -2030,6 +2048,8 @@ class DatabaseHelper {
             ..._fontPaths(row['value']),
         for (final t in _iconTables)
           for (final row in data[t]!) _iconImageOf(row['icon']),
+        for (final row in data['settings']!)
+          if (row['name'] == AppConstants.prefProfile) ..._profilePaths(row['value']),
       };
 
       final hasSettings = tables['settings'] is List;
@@ -2317,6 +2337,18 @@ class DatabaseHelper {
       }
       copy['icons_base64'] = out;
     }
+    if (name == AppConstants.prefProfile) {
+      final out = <Map<String, String>>[];
+      for (final path in _profilePaths(row['value'])) {
+        try {
+          final file = File(path);
+          if (await file.exists()) {
+            out.add({'path': path, 'b64': base64Encode(await file.readAsBytes())});
+          }
+        } catch (_) {}
+      }
+      copy['profile_base64'] = out;
+    }
     return copy;
   }
 
@@ -2340,6 +2372,103 @@ class DatabaseHelper {
         m['image'] = path;
       } catch (_) {
         m['image'] = null;
+      }
+      return jsonEncode(m);
+    } catch (_) {
+      return value;
+    }
+  }
+
+static const _profileImageKeys = ['picture', 'banner', 'idFront', 'idBack'];
+
+  /// Every picture path inside the saved profile value.
+  List<String> _profilePaths(Object? value) {
+    try {
+      final m = jsonDecode('$value');
+      if (m is! Map) return [];
+      final out = <String>[];
+      void add(Object? v) {
+        if (v is String && v.isNotEmpty) out.add(v);
+      }
+      for (final k in _profileImageKeys) {
+        add(m[k]);
+      }
+      final ids = m['ids'];
+      if (ids is List) {
+        for (final e in ids) {
+          if (e is Map) {
+            add(e['front']);
+            add(e['back']);
+          }
+        }
+      }
+      return out;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<Object?> _restoreProfile(
+    Object? value,
+    Object? files,
+    List<String> written,
+  ) async {
+    final b64 = <String, String>{};
+    if (files is List) {
+      for (final f in files) {
+        if (f is Map && f['path'] is String && f['b64'] is String) {
+          b64[f['path'] as String] = f['b64'] as String;
+        }
+      }
+    }
+    final done = <String, String?>{};
+    Future<String?> restore(Object? old) async {
+      if (old is! String || old.isEmpty) return null;
+      if (done.containsKey(old)) return done[old];
+      String? path;
+      final data = b64[old];
+      if (data != null) {
+        try {
+          path = await _writeImage(
+            base64Decode(data),
+            old,
+            folder: AppConstants.profileFolder,
+          );
+          written.add(path);
+        } catch (_) {}
+      }
+      return done[old] = path;
+    }
+
+    try {
+      final m = Map<String, Object?>.from(jsonDecode('$value') as Map);
+      for (final k in _profileImageKeys) {
+        if (m.containsKey(k)) m[k] = await restore(m[k]);
+      }
+      final ids = m['ids'];
+      if (ids is List) {
+        final out = <Map<String, Object?>>[];
+        for (final e in ids) {
+          if (e is! Map) continue;
+          final front = await restore(e['front']);
+          final back = await restore(e['back']);
+          final name = '${e['name'] ?? ''}';
+          final details = '${e['details'] ?? ''}';
+          if (front == null &&
+              back == null &&
+              name.trim().isEmpty &&
+              details.trim().isEmpty) {
+            continue;
+          }
+          out.add({
+            'id': e['id'],
+            'front': front,
+            'back': back,
+            'name': name,
+            'details': details,
+          });
+        }
+        m['ids'] = out;
       }
       return jsonEncode(m);
     } catch (_) {

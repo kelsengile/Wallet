@@ -32,11 +32,140 @@ class AppLanguage {
 class AppStrings {
   AppStrings._();
 
+  static const _langOrder = ['fil', 'es', 'fr', 'zh', 'hi', 'ar', 'pt'];
+
   static String of(String key) {
-    if (AppConstants.languageCode == 'en') return key;
-    return _table[AppConstants.languageCode]?[key] ?? key;
+    final code = AppConstants.languageCode;
+    if (code == 'en') return key;
+    final direct = _table[code]?[key];
+    if (direct != null) return direct;
+    final i = _langOrder.indexOf(code);
+    final row = _more[key];
+    if (i < 0 || row == null || i >= row.length) return key;
+    return row[i];
   }
 
+  // Order: fil, es, fr, zh, hi, ar, pt
+  static const Map<String, List<String>> _more = {
+    // ----- Profile -----
+    'Identification': ['Pagkakakilanlan', 'Identificación', 'Identification', '身份证件', 'पहचान', 'الهوية', 'Identificação'],
+    'Your name': ['Iyong pangalan', 'Tu nombre', 'Votre nom', '你的姓名', 'आपका नाम', 'اسمك', 'Seu nome'],
+    'Tap the pencil at the top to set up your profile.': ['I-tap ang lapis sa itaas para i-set up ang iyong profile.', 'Toca el lápiz de arriba para configurar tu perfil.', 'Touchez le crayon en haut pour configurer votre profil.', '点击顶部的铅笔来设置你的个人资料。', 'अपनी प्रोफ़ाइल सेट करने के लिए ऊपर पेंसिल पर टैप करें।', 'اضغط على القلم في الأعلى لإعداد ملفك الشخصي.', 'Toque no lápis no topo para configurar seu perfil.'],
+    'Edit Profile': ['I-edit ang Profile', 'Editar perfil', 'Modifier le profil', '编辑个人资料', 'प्रोफ़ाइल संपादित करें', 'تعديل الملف الشخصي', 'Editar perfil'],
+    'Name': ['Pangalan', 'Nombre', 'Nom', '姓名', 'नाम', 'الاسم', 'Nome'],
+    'Username': ['Username', 'Nombre de usuario', "Nom d'utilisateur", '用户名', 'उपयोगकर्ता नाम', 'اسم المستخدم', 'Nome de usuário'],
+    'Bio': ['Bio', 'Biografía', 'Bio', '简介', 'परिचय', 'نبذة', 'Bio'],
+    'Save Changes': ['I-save ang mga Pagbabago', 'Guardar cambios', 'Enregistrer', '保存更改', 'बदलाव सहेजें', 'حفظ التغييرات', 'Salvar alterações'],
+    'Banner picture': ['Larawan ng banner', 'Imagen de banner', 'Image de bannière', '横幅图片', 'बैनर चित्र', 'صورة الغلاف', 'Imagem do banner'],
+    'Profile picture': ['Larawan ng profile', 'Foto de perfil', 'Photo de profil', '头像', 'प्रोफ़ाइल चित्र', 'صورة الملف الشخصي', 'Foto de perfil'],
+    'Camera': ['Camera', 'Cámara', 'Appareil photo', '相机', 'कैमरा', 'الكاميرا', 'Câmera'],
+    'Gallery': ['Gallery', 'Galería', 'Galerie', '相册', 'गैलरी', 'المعرض', 'Galeria'],
+    'Remove picture': ['Alisin ang larawan', 'Quitar imagen', "Retirer l'image", '移除图片', 'चित्र हटाएँ', 'إزالة الصورة', 'Remover imagem'],
+    'New ID': ['Bagong ID', 'Nueva identificación', "Nouvelle pièce d'identité", '新证件', 'नई आईडी', 'هوية جديدة', 'Novo documento'],
+    'Edit ID': ['I-edit ang ID', 'Editar identificación', "Modifier la pièce d'identité", '编辑证件', 'आईडी संपादित करें', 'تعديل الهوية', 'Editar documento'],
+    'ID front': ['Harap ng ID', 'Frente del documento', 'Recto de la pièce', '证件正面', 'आईडी का अगला भाग', 'وجه الهوية', 'Frente do documento'],
+    'ID back': ['Likod ng ID', 'Reverso del documento', 'Verso de la pièce', '证件背面', 'आईडी का पिछला भाग', 'ظهر الهوية', 'Verso do documento'],
+    'Front': ['Harap', 'Frente', 'Recto', '正面', 'आगे', 'الأمام', 'Frente'],
+    'Back': ['Likod', 'Reverso', 'Verso', '背面', 'पीछे', 'الخلف', 'Verso'],
+    'Details': ['Mga detalye', 'Detalles', 'Détails', '详情', 'विवरण', 'التفاصيل', 'Detalhes'],
+    'Add ID': ['Magdagdag ng ID', 'Añadir identificación', "Ajouter une pièce d'identité", '添加证件', 'आईडी जोड़ें', 'إضافة هوية', 'Adicionar documento'],
+    'Delete ID': ['Burahin ang ID', 'Eliminar identificación', "Supprimer la pièce d'identité", '删除证件', 'आईडी हटाएँ', 'حذف الهوية', 'Excluir documento'],
+    'Delete': ['Burahin', 'Eliminar', 'Supprimer', '删除', 'हटाएँ', 'حذف', 'Excluir'],
+    'No front picture yet': ['Wala pang larawan sa harap', 'Aún no hay imagen frontal', "Pas encore d'image du recto", '尚无正面图片', 'अभी तक कोई अगला चित्र नहीं', 'لا توجد صورة أمامية بعد', 'Ainda sem imagem da frente'],
+    'No back picture yet': ['Wala pang larawan sa likod', 'Aún no hay imagen del reverso', "Pas encore d'image du verso", '尚无背面图片', 'अभी तक कोई पिछला चित्र नहीं', 'لا توجد صورة خلفية بعد', 'Ainda sem imagem do verso'],
+    'This ID and its pictures will be permanently deleted.': ['Permanenteng buburahin ang ID na ito at ang mga larawan nito.', 'Esta identificación y sus imágenes se eliminarán permanentemente.', "Cette pièce d'identité et ses images seront définitivement supprimées.", '此证件及其图片将被永久删除。', 'यह आईडी और इसके चित्र हमेशा के लिए हटा दिए जाएँगे।', 'سيتم حذف هذه الهوية وصورها نهائيًا.', 'Este documento e suas imagens serão excluídos permanentemente.'],
+    "This can't be undone.": ['Hindi na ito maibabalik.', 'Esto no se puede deshacer.', 'Cette action est irréversible.', '此操作无法撤销。', 'इसे वापस नहीं किया जा सकता।', 'لا يمكن التراجع عن هذا.', 'Isto não pode ser desfeito.'],
+    // ----- Calculator -----
+    'Clear': ['I-clear', 'Borrar', 'Effacer', '清除', 'साफ़ करें', 'مسح', 'Limpar'],
+    'No history yet': ['Wala pang kasaysayan', 'Aún no hay historial', "Pas encore d'historique", '暂无历史记录', 'अभी तक कोई इतिहास नहीं', 'لا يوجد سجل بعد', 'Ainda sem histórico'],
+    // ----- Converter: categories -----
+    'Data': ['Data', 'Datos', 'Données', '数据', 'डेटा', 'البيانات', 'Dados'],
+    'Date': ['Petsa', 'Fecha', 'Date', '日期', 'तारीख़', 'التاريخ', 'Data'],
+    'Discount': ['Diskwento', 'Descuento', 'Remise', '折扣', 'छूट', 'الخصم', 'Desconto'],
+    'Volume': ['Volume', 'Volumen', 'Volume', '体积', 'आयतन', 'الحجم', 'Volume'],
+    'Speed': ['Bilis', 'Velocidad', 'Vitesse', '速度', 'गति', 'السرعة', 'Velocidade'],
+    'Length': ['Haba', 'Longitud', 'Longueur', '长度', 'लंबाई', 'الطول', 'Comprimento'],
+    'Mass': ['Masa', 'Masa', 'Masse', '质量', 'द्रव्यमान', 'الكتلة', 'Massa'],
+    'Area': ['Lawak', 'Área', 'Surface', '面积', 'क्षेत्रफल', 'المساحة', 'Área'],
+    'Time': ['Oras', 'Tiempo', 'Temps', '时间', 'समय', 'الوقت', 'Tempo'],
+    'Temperature': ['Temperatura', 'Temperatura', 'Température', '温度', 'तापमान', 'درجة الحرارة', 'Temperatura'],
+    'Numeral system': ['Sistema ng numero', 'Sistema numérico', 'Système numérique', '进制', 'संख्या प्रणाली', 'النظام العددي', 'Sistema numérico'],
+    'BMI': ['BMI', 'IMC', 'IMC', 'BMI', 'बीएमआई', 'مؤشر كتلة الجسم', 'IMC'],
+    // ----- Converter: Finance -----
+    'Loan': ['Utang', 'Préstamo', 'Prêt', '贷款', 'ऋण', 'قرض', 'Empréstimo'],
+    'Simple interest': ['Simpleng interes', 'Interés simple', 'Intérêt simple', '单利', 'साधारण ब्याज', 'فائدة بسيطة', 'Juros simples'],
+    'Compound interest': ['Tambalang interes', 'Interés compuesto', 'Intérêt composé', '复利', 'चक्रवृद्धि ब्याज', 'فائدة مركبة', 'Juros compostos'],
+    'Tax / VAT': ['Buwis / VAT', 'Impuesto / IVA', 'Taxe / TVA', '税 / 增值税', 'कर / वैट', 'ضريبة / ض.ق.م', 'Imposto / IVA'],
+    'Yearly': ['Taun-taon', 'Anual', 'Annuel', '每年', 'वार्षिक', 'سنويًا', 'Anual'],
+    'Semi-annual': ['Kada anim na buwan', 'Semestral', 'Semestriel', '每半年', 'अर्धवार्षिक', 'نصف سنوي', 'Semestral'],
+    'Quarterly': ['Kada quarter', 'Trimestral', 'Trimestriel', '每季度', 'त्रैमासिक', 'ربع سنوي', 'Trimestral'],
+    'Monthly': ['Buwan-buwan', 'Mensual', 'Mensuel', '每月', 'मासिक', 'شهريًا', 'Mensal'],
+    'Daily': ['Araw-araw', 'Diario', 'Quotidien', '每天', 'दैनिक', 'يوميًا', 'Diário'],
+    'Add tax': ['Magdagdag ng buwis', 'Añadir impuesto', 'Ajouter la taxe', '加税', 'कर जोड़ें', 'إضافة الضريبة', 'Adicionar imposto'],
+    'Remove tax': ['Alisin ang buwis', 'Quitar impuesto', 'Retirer la taxe', '去税', 'कर हटाएँ', 'إزالة الضريبة', 'Remover imposto'],
+    'Monthly payment': ['Buwanang bayad', 'Pago mensual', 'Mensualité', '月供', 'मासिक भुगतान', 'القسط الشهري', 'Pagamento mensal'],
+    'Loan amount': ['Halaga ng utang', 'Monto del préstamo', 'Montant du prêt', '贷款金额', 'ऋण राशि', 'مبلغ القرض', 'Valor do empréstimo'],
+    'Interest rate per year': ['Interes kada taon', 'Tasa de interés anual', "Taux d'intérêt annuel", '年利率', 'वार्षिक ब्याज दर', 'معدل الفائدة السنوي', 'Taxa de juros anual'],
+    'Term': ['Termino', 'Plazo', 'Durée', '期限', 'अवधि', 'المدة', 'Prazo'],
+    'Interest': ['Interes', 'Interés', 'Intérêt', '利息', 'ब्याज', 'الفائدة', 'Juros'],
+    'Principal': ['Puhunan', 'Capital', 'Capital', '本金', 'मूलधन', 'المبلغ الأصلي', 'Principal'],
+    'Future value': ['Halaga sa hinaharap', 'Valor futuro', 'Valeur future', '终值', 'भविष्य मूल्य', 'القيمة المستقبلية', 'Valor futuro'],
+    'Interest earned': ['Kinitang interes', 'Interés ganado', 'Intérêts gagnés', '已赚利息', 'अर्जित ब्याज', 'الفائدة المكتسبة', 'Juros ganhos'],
+    'Total with tax': ['Kabuuan kasama ang buwis', 'Total con impuesto', 'Total avec taxe', '含税总额', 'कर सहित कुल', 'الإجمالي مع الضريبة', 'Total com imposto'],
+    'Price without tax': ['Presyo na walang buwis', 'Precio sin impuesto', 'Prix hors taxe', '不含税价格', 'कर रहित मूल्य', 'السعر بدون ضريبة', 'Preço sem imposto'],
+    'Amount': ['Halaga', 'Importe', 'Montant', '金额', 'राशि', 'المبلغ', 'Valor'],
+    'Tax rate': ['Rate ng buwis', 'Tasa de impuesto', 'Taux de taxe', '税率', 'कर दर', 'معدل الضريبة', 'Taxa de imposto'],
+    'Tax': ['Buwis', 'Impuesto', 'Taxe', '税', 'कर', 'الضريبة', 'Imposto'],
+    'Amount without tax': ['Halaga na walang buwis', 'Importe sin impuesto', 'Montant hors taxe', '不含税金额', 'कर रहित राशि', 'المبلغ بدون ضريبة', 'Valor sem imposto'],
+    'Amount with tax': ['Halaga kasama ang buwis', 'Importe con impuesto', 'Montant avec taxe', '含税金额', 'कर सहित राशि', 'المبلغ مع الضريبة', 'Valor com imposto'],
+    'Total payment': ['Kabuuang bayad', 'Pago total', 'Paiement total', '总还款额', 'कुल भुगतान', 'إجمالي الدفع', 'Pagamento total'],
+    'Total interest': ['Kabuuang interes', 'Interés total', 'Intérêts totaux', '总利息', 'कुल ब्याज', 'إجمالي الفائدة', 'Juros totais'],
+    'Total amount': ['Kabuuang halaga', 'Importe total', 'Montant total', '总金额', 'कुल राशि', 'المبلغ الإجمالي', 'Valor total'],
+    // ----- Converter: Date -----
+    'Date difference': ['Pagkakaiba ng petsa', 'Diferencia de fechas', 'Écart entre dates', '日期差', 'तारीख़ का अंतर', 'الفرق بين التواريخ', 'Diferença de datas'],
+    'Add / subtract': ['Idagdag / ibawas', 'Sumar / restar', 'Ajouter / soustraire', '加 / 减', 'जोड़ें / घटाएँ', 'إضافة / طرح', 'Somar / subtrair'],
+    'Difference': ['Pagkakaiba', 'Diferencia', 'Écart', '差值', 'अंतर', 'الفرق', 'Diferença'],
+    'From': ['Mula', 'Desde', 'De', '从', 'से', 'من', 'De'],
+    'To': ['Hanggang', 'Hasta', 'À', '至', 'तक', 'إلى', 'Até'],
+    'Result date': ['Petsa ng resulta', 'Fecha resultante', 'Date obtenue', '结果日期', 'परिणाम तारीख़', 'تاريخ النتيجة', 'Data resultante'],
+    'Start date': ['Petsa ng simula', 'Fecha de inicio', 'Date de début', '开始日期', 'प्रारंभ तिथि', 'تاريخ البدء', 'Data de início'],
+    'Add': ['Idagdag', 'Sumar', 'Ajouter', '加', 'जोड़ें', 'إضافة', 'Somar'],
+    'Subtract': ['Ibawas', 'Restar', 'Soustraire', '减', 'घटाएँ', 'طرح', 'Subtrair'],
+    'Years': ['Mga taon', 'Años', 'Années', '年', 'वर्ष', 'سنوات', 'Anos'],
+    'Months': ['Mga buwan', 'Meses', 'Mois', '月', 'महीने', 'أشهر', 'Meses'],
+    'Days': ['Mga araw', 'Días', 'Jours', '天', 'दिन', 'أيام', 'Dias'],
+    'Weekday': ['Araw ng linggo', 'Día de la semana', 'Jour de la semaine', '星期', 'सप्ताह का दिन', 'يوم الأسبوع', 'Dia da semana'],
+    'Days from start': ['Araw mula sa simula', 'Días desde el inicio', 'Jours depuis le début', '距开始天数', 'आरंभ से दिन', 'أيام منذ البداية', 'Dias desde o início'],
+    'Total days': ['Kabuuang araw', 'Días totales', 'Total de jours', '总天数', 'कुल दिन', 'إجمالي الأيام', 'Total de dias'],
+    'Weeks': ['Mga linggo', 'Semanas', 'Semaines', '周数', 'सप्ताह', 'أسابيع', 'Semanas'],
+    'Total months': ['Kabuuang buwan', 'Meses totales', 'Total de mois', '总月数', 'कुल महीने', 'إجمالي الأشهر', 'Total de meses'],
+    // ----- Converter: Discount -----
+    'Original price': ['Orihinal na presyo', 'Precio original', 'Prix initial', '原价', 'मूल कीमत', 'السعر الأصلي', 'Preço original'],
+    'Extra discount (optional)': ['Dagdag na diskwento (opsyonal)', 'Descuento extra (opcional)', 'Remise supplémentaire (facultatif)', '额外折扣（可选）', 'अतिरिक्त छूट (वैकल्पिक)', 'خصم إضافي (اختياري)', 'Desconto extra (opcional)'],
+    'Tax (optional)': ['Buwis (opsyonal)', 'Impuesto (opcional)', 'Taxe (facultatif)', '税（可选）', 'कर (वैकल्पिक)', 'الضريبة (اختياري)', 'Imposto (opcional)'],
+    'Final price': ['Pinal na presyo', 'Precio final', 'Prix final', '最终价格', 'अंतिम कीमत', 'السعر النهائي', 'Preço final'],
+    'You save': ['Natipid mo', 'Ahorras', 'Vous économisez', '你节省', 'आपकी बचत', 'توفّر', 'Você economiza'],
+    'Total discount': ['Kabuuang diskwento', 'Descuento total', 'Remise totale', '总折扣', 'कुल छूट', 'إجمالي الخصم', 'Desconto total'],
+    'Price after discount': ['Presyo pagkatapos ng diskwento', 'Precio tras el descuento', 'Prix après remise', '折后价格', 'छूट के बाद कीमत', 'السعر بعد الخصم', 'Preço após desconto'],
+    // ----- Converter: BMI -----
+    'Metric': ['Metric', 'Métrico', 'Métrique', '公制', 'मीट्रिक', 'متري', 'Métrico'],
+    'Imperial': ['Imperial', 'Imperial', 'Impérial', '英制', 'इंपीरियल', 'إمبراطوري', 'Imperial'],
+    'Height': ['Taas', 'Altura', 'Taille', '身高', 'ऊँचाई', 'الطول', 'Altura'],
+    'Weight': ['Timbang', 'Peso', 'Poids', '体重', 'वज़न', 'الوزن', 'Peso'],
+    'Inches': ['Pulgada', 'Pulgadas', 'Pouces', '英寸', 'इंच', 'بوصات', 'Polegadas'],
+    'Your BMI': ['Iyong BMI', 'Tu IMC', 'Votre IMC', '你的 BMI', 'आपका बीएमआई', 'مؤشر كتلة جسمك', 'Seu IMC'],
+    'Underweight': ['Kulang sa timbang', 'Bajo peso', 'Insuffisance pondérale', '体重过轻', 'कम वज़न', 'نقص الوزن', 'Abaixo do peso'],
+    'Normal weight': ['Normal na timbang', 'Peso normal', 'Poids normal', '体重正常', 'सामान्य वज़न', 'وزن طبيعي', 'Peso normal'],
+    'Overweight': ['Sobra sa timbang', 'Sobrepeso', 'Surpoids', '超重', 'अधिक वज़न', 'زيادة الوزن', 'Sobrepeso'],
+    'Obese': ['Obese', 'Obesidad', 'Obésité', '肥胖', 'मोटापा', 'سمنة', 'Obesidade'],
+    'Healthy weight range': ['Malusog na saklaw ng timbang', 'Rango de peso saludable', 'Plage de poids sain', '健康体重范围', 'स्वस्थ वज़न सीमा', 'نطاق الوزن الصحي', 'Faixa de peso saudável'],
+    // ----- Converter: Numeral system -----
+    'Binary': ['Binary', 'Binario', 'Binaire', '二进制', 'बाइनरी', 'ثنائي', 'Binário'],
+    'Octal': ['Octal', 'Octal', 'Octal', '八进制', 'ऑक्टल', 'ثماني', 'Octal'],
+    'Decimal': ['Decimal', 'Decimal', 'Décimal', '十进制', 'दशमलव', 'عشري', 'Decimal'],
+    'Hexadecimal': ['Hexadecimal', 'Hexadecimal', 'Hexadécimal', '十六进制', 'हेक्साडेसिमल', 'سداسي عشري', 'Hexadecimal'],
+  };
+  
   static const Map<String, Map<String, String>> _table = {
     'fil': {
       'Settings': 'Mga Setting', 'Appearance': 'Hitsura',
@@ -206,6 +335,8 @@ class AppStrings {
       'Unlock': 'Desbloquear', 'Momentum is locked': 'O Momentum está bloqueado',
       'Unlock Momentum': 'Desbloquear o Momentum',
     },
+
+    
   };
 }
 
@@ -253,6 +384,9 @@ class AppConstants {
   static const String prefCurrency = 'settings.currency';
   static const String prefLocation = 'settings.location';
   static const String prefLanguage = 'settings.language';
+
+  static const String prefProfile = 'profile.data';
+  static const String profileFolder = 'profile';
 
   // Security is kept in SharedPreferences (not the database) so it is not
   // written into backup files.
