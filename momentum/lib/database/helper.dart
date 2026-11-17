@@ -1756,6 +1756,13 @@ class DatabaseHelper {
         for (final r in await db.query(
           'settings',
           columns: ['value'],
+          where: 'name = ?',
+          whereArgs: [AppConstants.prefFontLibrary],
+        ))
+          ..._fontPaths(r['value']),
+        for (final r in await db.query(
+          'settings',
+          columns: ['value'],
           where: 'name LIKE ?',
           whereArgs: ['$_themePrefix%'],
         ))
@@ -1764,12 +1771,14 @@ class DatabaseHelper {
       await _rebuild(db);
       await db.delete(
         'settings',
-        where: 'name LIKE ? OR name = ? OR name LIKE ? OR name LIKE ?',
+        where:
+            'name LIKE ? OR name = ? OR name LIKE ? OR name LIKE ? OR name = ?',
         whereArgs: [
           '${AppConstants.prefCategoryOrder}%',
           AppConstants.prefTypeOrder,
           'categoryIcons.%',
           '$_themePrefix%',
+          AppConstants.prefFontLibrary,
         ],
       );
       for (final key in _designPrefs) {
@@ -1951,6 +1960,14 @@ class DatabaseHelper {
               written,
             );
           }
+          if (entry.key == 'settings' &&
+              map['name'] == AppConstants.prefFontLibrary) {
+            map['value'] = await _restoreFontLibrary(
+              map['value'],
+              row['fonts_base64'],
+              written,
+            );
+          }
           rows.add(map);
         }
         data[entry.key] = rows;
@@ -1988,6 +2005,13 @@ class DatabaseHelper {
           whereArgs: [AppConstants.prefIconLibrary],
         ))
           ..._libraryPaths(row['value']),
+        for (final row in await db.query(
+          'settings',
+          columns: ['value'],
+          where: 'name = ?',
+          whereArgs: [AppConstants.prefFontLibrary],
+        ))
+          ..._fontPaths(row['value']),
         for (final t in _iconTables)
           ...(await db.query(
             t,
@@ -2001,6 +2025,9 @@ class DatabaseHelper {
         for (final row in data['settings']!)
           if (row['name'] == AppConstants.prefIconLibrary)
             ..._libraryPaths(row['value']),
+        for (final row in data['settings']!)
+          if (row['name'] == AppConstants.prefFontLibrary)
+            ..._fontPaths(row['value']),
         for (final t in _iconTables)
           for (final row in data[t]!) _iconImageOf(row['icon']),
       };
@@ -2087,6 +2114,68 @@ class DatabaseHelper {
       return [];
     }
     return [];
+  }
+
+    /// File paths of the imported fonts saved in the font library value.
+  List<String> _fontPaths(Object? value) {
+    try {
+      final list = jsonDecode('$value');
+      if (list is List) {
+        return [
+          for (final entry in list)
+            if (entry is Map && entry['path'] is String)
+              entry['path'] as String,
+        ];
+      }
+    } on FormatException {
+      return [];
+    }
+    return [];
+  }
+
+  /// Writes the backed-up font files into the fonts folder and returns the
+  /// library JSON pointing at the new files.
+  Future<Object?> _restoreFontLibrary(
+    Object? value,
+    Object? fonts,
+    List<String> written,
+  ) async {
+    final bytesByPath = <String, String>{};
+    if (fonts is List) {
+      for (final f in fonts) {
+        if (f is Map && f['path'] is String && f['b64'] is String) {
+          bytesByPath[f['path'] as String] = f['b64'] as String;
+        }
+      }
+    }
+    final out = <Map<String, Object?>>[];
+    try {
+      final list = jsonDecode('$value');
+      if (list is List) {
+        for (final entry in list) {
+          if (entry is! Map) continue;
+          final oldPath = entry['path'];
+          final b64 = oldPath is String ? bytesByPath[oldPath] : null;
+          if (b64 == null) continue; // file wasn't in the backup
+          try {
+            final path = await _writeImage(
+              base64Decode(b64),
+              oldPath as String,
+              folder: AppConstants.fontFolder,
+            );
+            written.add(path);
+            out.add({
+              'label': entry['label'],
+              'family': entry['family'],
+              'path': path,
+            });
+          } catch (_) {}
+        }
+      }
+    } on FormatException {
+      // Unreadable list: no fonts restored.
+    }
+    return jsonEncode(out);
   }
 
   Future<Object?> _restoreIconLibrary(
@@ -2197,6 +2286,21 @@ class DatabaseHelper {
           }
         } catch (_) {}
       }
+    }
+    if (name == AppConstants.prefFontLibrary) {
+      final out = <Map<String, String>>[];
+      for (final path in _fontPaths(row['value'])) {
+        try {
+          final file = File(path);
+          if (await file.exists()) {
+            out.add({
+              'path': path,
+              'b64': base64Encode(await file.readAsBytes()),
+            });
+          }
+        } catch (_) {}
+      }
+      copy['fonts_base64'] = out;
     }
     if (name == AppConstants.prefIconLibrary) {
       final out = <Map<String, String>>[];
