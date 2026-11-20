@@ -1,6 +1,6 @@
 # DOCUMENTATION | Momentum
 
-Momentum is a minimalist personal tracking application designed to help users organize and manage important aspects of their daily lives in one centralized platform. The application combines finance, scheduling, and health tracking into a simple and intuitive system, allowing users to monitor their progress, manage daily responsibilities, and maintain better personal habits. This documentation provides an overview of Momentum, including its purpose, features, system structure, functionality, and other important information needed to understand and use the application.
+Momentum is a minimalist personal tracking application that brings finance, scheduling, and health into one offline-first app. Today the **Finance** pillar is fully built (accounts, transactions, reminders, analytics, categories, trash, backups), along with a set of general tools (calculator, converter), a profile, search, deep personalization, and app security. **Schedule** and **Health** are still placeholders.
 
 ---
 
@@ -10,90 +10,184 @@ Momentum is a minimalist personal tracking application designed to help users or
 2. [Features and Functionality](#features-and-functionality)
 3. [Technologies and Dependencies](#technologies-and-dependencies)
 4. [System & Project Architecture](#system--project-architecture)
-5. [Installation and Configuration](#installation-and-configuration)
-6. [Application Design and UI](#application-design-and-ui)
-7. [Cross-Platform Development](#cross-platform-development)
-8. [Testing and Quality Assurance](#testing-and-quality-assurance)
-9. [Security and Privacy](#security-and-privacy)
-10. [References](#references)
+5. [Database](#database)
+6. [Installation and Configuration](#installation-and-configuration)
+7. [Application Design and UI](#application-design-and-ui)
+8. [Cross-Platform Notes](#cross-platform-notes)
+9. [Testing and Quality Assurance](#testing-and-quality-assurance)
+10. [Security and Privacy](#security-and-privacy)
+11. [Known Limitations and Roadmap](#known-limitations-and-roadmap)
+12. [References](#references)
 
 ---
 
 ## Project Overview
 
 **Name:** Momentum
-**Version:** 1.0.0 
-**Type:** Cross-platform mobile/web application
+**Version:** 1.0.0 (build 1)
+**Type:** Flutter mobile application (portrait only)
 **Purpose:** Replace separate apps for money, time, and health with one organized, offline-capable tracker.
 
 ### Goals
 
 - Keep personal tracking simple, accessible, and easy to maintain.
-- Work offline first by storing data locally on the device.
-- Sync data across devices and platforms through a backend (planned).
-- Offer a clean interface that users can personalize with themes and text sizes.
+- Work fully offline by storing all data in a local SQLite database.
+- Let the user personalize almost everything (colors, fonts, language, currency, time zone).
+- Sync across devices through a backend (planned).
 
 ### The Three Pillars
 
 | Area | Purpose | Status |
 |------|---------|--------|
-| Finance | Income, expenses, savings, budgets, spending habits | Scaffolded (placeholder screen) |
-| Schedule | Tasks, appointments, deadlines, events, daily activities | Scaffolded (placeholder screen) |
-| Health | Habits, fitness activities, wellness goals, progress | Scaffolded (placeholder screen) |
+| Finance | Accounts, income, expenses, transfers, reminders, budgets, analytics | **Implemented** |
+| Schedule | Tasks, appointments, deadlines, events | Placeholder screen |
+| Health | Habits, fitness, wellness goals | Placeholder screen |
 
 ---
 
 ## Features and Functionality
 
-### Implemented
+### Navigation
 
-**Navigation**
-- **Bottom navigation bar** with three destinations: Accounts, Schedule, and Health.
-- **Swipeable pages:** users can swipe between the three main pages in the same order as the bottom bar. Swiping does not loop; the first and last pages are clamped.
-- **Page state preservation:** each page stays alive while off-screen so its state is not lost when switching.
-- **Navigation drawer** opened from the menu button in the app bar, containing:
-  - A gray header showing the app name
-  - **Profile** (pinned at the top)
-  - **Pages:** Accounts, Schedule, Health (highlights the current page)
-  - **Preferences:** Settings, Categories
-  - **Help & Support:** FAQ, Rate, Feedback
-  - A footer showing the app name and version (e.g. `Momentum V: 1.0.0`)
-- **Search** button in the app bar that opens a dedicated search screen with an auto-focused text field.
+- **Bottom navigation bar** (Finance, Schedule, Health) and **swipeable pages** in the same order (no looping). Pages are kept alive while off-screen.
+- **Transparent app bar** with a menu button, the app title, and a search button. Pages draw behind it.
+- **Navigation drawer** with the sections:
+  - **Pages:** Finance, Schedule, Health
+  - **Tools:** Calculator, Converter
+  - **Preferences:** Settings, Categories, Database
+  - **Help & Support:** FAQ, Rate, Feedback, About
+  - A **Profile tile** (shows the profile picture, username, and name once both a picture and a username are set) and a **version footer**.
+- **Floating + button** on the Finance page. Pressing it fans out four small buttons: **Income, Expense, Transfer, Reminder**. The button hides while scrolling down and returns when scrolling up. Tapping the page or scrolling retracts the small buttons.
 
-**Settings (Appearance)**
-- **Theme picker** with 10 options: Light, Dark, Red, Yellow, Orange, Brown, Blue, Green, Violet, Pink.
-  - Until the user picks a theme, the app follows the system light/dark setting.
-  - Once a theme is chosen it is applied everywhere and remembered between launches.
-- **Text size control** with a slider and five steps: Smallest (0.8×), Small (0.9×), Default (1.0×), Big (1.15×), Biggest (1.3×). The multiplier is applied on top of the system text scale and affects every page, drawer, and dialog.
-- **Persistence:** theme and text size are saved with `shared_preferences` and restored before the first frame.
+### Finance
 
-**Shared utilities**
-- Currency formatting in Philippine peso (e.g. `1234.5` → `₱1,234.50`), with negative-number support.
-- Date formatting (`Oct 11, 2026`), time formatting (`14:05`), same-day comparison, and string capitalization.
+**Total Balance card (top of the page)**
+- Shows the total balance of all active accounts, the account count, and income / expense totals for the date range last chosen in Analytics (this month by default).
+- Tap the balance to open **Transaction History**; tap the income / expense figures to open **Analytics**.
+- Long press to theme it (color, pattern, picture, corner style).
 
-**Error model**
-- A sealed `Failure` class with typed subclasses: `DatabaseFailure`, `NetworkFailure`, `AuthFailure`, `SyncFailure`, `ValidationFailure`, and `UnknownFailure`. Each carries a user-friendly default message.
+**My Accounts**
+- Accounts are grouped by **account type** (Cash, Bank, Digital Bank, Credit, E-Wallet, Investment, Assets, Debt, Business, plus any the user adds). Within a type, the most recently used account comes first.
+- **Card view:** horizontally scrolling cards using the real ID-1 card ratio (85.60 × 53.98 mm). Tap a card to flip it.
+  - *Front:* category icon, account name, balance, category tag.
+  - *Back:* note title and note body, type icon, and a button that opens a **linked installed app** (tap to open, long press to change or remove).
+- **List view:** one row per account.
+- **Eye button** hides all amounts behind `****`.
+- **View button:** tap toggles card / list view; **long press** enters rearrange mode to drag account types into a new order (saved).
+- **Account pop-up** (long press a card or row): the card slides in from the top and the account's history slides up from the bottom. From there the user can:
+  - See history grouped by month and day (days can be collapsed), swipe a transaction to move it to the trash, or tap it for its receipt.
+  - Tap the net balance to switch to account-level **Analytics**; tap Income / Expense to filter the list or open that kind's charts.
+  - Tap the account name to return to history, long press it to edit the account.
+  - Change the date range with the date filter.
+- **Add / Edit Account:** name, initial balance (new accounts only), type, category, account theme, and a note (30-character title + 120-character body). Editing also offers **Delete Account** (moves it to the trash).
+- **Account themes** (accounts, the Finance background, the Total Balance card, and the History and Analytics headers): a custom color, one of six patterns (Dots, Stripes, Grid, Waves, Diamonds, Circles) **or** a picture from camera / gallery, and one of eleven corner styles (Rounded, Soft, Sharp, Square, Pill, Beveled, Squircle, Leaf, Reverse leaf, Top round, Bottom round). Long press the Finance background, the Total Balance card, or the History / Analytics headers to edit their themes.
 
-### Scaffolded (placeholder screens)
+**Transactions**
+- Four pop-ups, opened from the + button: **Income**, **Expense**, **Transfer**, **Reminder**. Each can also be reopened to **edit**.
+- Fields: title, amount, date and time (calendar with hour / minute wheels), category, account (grouped by account type in the Finance order), an optional picture (camera / gallery), and an optional note.
+- **Transfer:** From / To accounts with a swap button; the account chosen on one side is crossed out on the other.
+- **Receipt pop-up:** a ticket-style summary (colored top, scalloped edge, dashed rows, picture, note, total) with an edit button. Reminders show a **Mark as Done** button and an **Overdue** badge when late.
+- Money is stored as whole integer cents (see [Database](#database)). Account balances are computed by a SQL view, so they always match the transactions.
 
-These screens exist and are reachable, but currently display only a centered label:
+**Reminders**
+- Type (income or expense), title, amount, due date, optional category and account, **repeat** rule (none, daily, weekly, monthly, yearly), picture, note.
+- Shown in a **Reminders** section at the top of History, with overdue ones in a darker tone. Swipe to delete.
+- **Mark as Done** turns the reminder into a real transaction (asking for an account if none was set) and schedules the next occurrence for repeating reminders.
+- *Push notifications are not delivered yet* (see [Known Limitations](#known-limitations-and-roadmap)).
 
-- Accounts, Schedule, Health (main pages)
-- Profile, Categories, FAQ, Rate, Feedback
-- Search (has the search field, no search logic yet)
-- Settings sections **Localization**, **Security**, and **Storage** (headers only)
+**Transaction History panel**
+- Drops down from the top and stops above the nav bar. Tap the handle or swipe it up to close.
+- Date filter with tabs **Day, Week, Month, Year, All, Custom**; arrows step between periods. The last used filter is remembered while the app is open.
+- Tap the Income / Expense totals to filter the list; the third total is the net.
 
-### Planned
+**Analytics panel**
+- Same drop-down behavior and date filter as History; header totals for Income, Expense, and Net.
+- Default view contains:
+  - **Account Analytics:** bar chart of income vs. expense per account, grouped by type.
+  - **Transaction Count:** a GitHub-style grid of day boxes (calendar layout for Day / Week / Month, week columns for longer ranges), colored by the busiest transaction kind of each day, with a glow and a detail bubble.
+  - **Balance Over Time:** income and expense line graph with tappable nodes, pinch zoom (sideways and vertical), drag to pan, zoom buttons, and double-tap to reset. Selecting a day box selects the matching node and vice versa.
+  - **Category Analytics:** side-by-side donut charts for income and expense categories.
+- Pressing Income, Expense, or Net opens a focused view (income-only, expense-only, or the account overview with per-account rows).
+- **Category pop-up:** line graph and transaction list for one category (optionally limited to one account). Expense categories with a budget show the remaining amount.
+- All charts are drawn with `CustomPainter`; no chart package is used.
 
-- **Finance:** transactions, accounts, income/expense tracking, budgets, savings, and history.
-- **Schedule:** tasks, appointments, deadlines, events, and a calendar view.
-- **Health:** records, habit and fitness tracking, wellness goals, and history.
-- **Trash:** recovery area for deleted items.
-- **Authentication:** sign-in and account management.
-- **Notifications:** reminders for schedule and health items.
-- **Synchronization:** two-way sync between the local database and the server.
-- **Localization, Security, and Storage settings.**
-- **Categories management** shared across features.
+### Categories
+
+A tabbed screen (**Finance**, Schedule, Health — the last two say "coming soon"). The Finance tab has:
+
+- **Accounts:** Types and Categories.
+- **Transactions:** Income, Expense, and Transfer (the Transfer category is locked).
+- Add with **+**, edit with the pen or by tapping, **swipe left to delete** (with a confirmation pop-up), **drag the handle to reorder** (order is saved).
+- Each item has a name and an icon chosen from 29 built-in glyphs or **imported pictures** (multi-select from the gallery; hold an icon for 3 seconds to remove it). Income and expense categories also have a **color**, and expense categories have an optional **budget**.
+
+### Search
+
+A full-screen search over **accounts, categories, transactions, and reminders**. Every typed word must match somewhere in the item (name, type, category, note, amount, date, etc.). Each section shows up to 25 results and links straight to the relevant pop-up, receipt, or editor.
+
+### Profile
+
+- Name, username (3–20 letters, digits, `.` or `_`), bio (120 characters), **profile picture**, and **banner picture**.
+- **Identification:** any number of ID cards, each with a front picture, a back picture, a name, and details. Cards flip like account cards; long press a card to edit or delete it. The section can be collapsed.
+- Stored as one JSON value in the `settings` table, so it is included in backups.
+
+### Tools
+
+**Calculator**
+- Standard and **scientific** mode (parentheses, π, e, sin / cos / tan, ln, log, x², √, xʸ, 1/x, n!, %), DEG / RAD toggle, memory (MC, MR, M+, M−), live result preview, and a 50-entry history.
+- A hand-written recursive-descent expression parser (no `eval` package).
+- Can be **floated**: a draggable, minimizable window living in the root overlay that stays on top of every page. Only one calculator (full screen or floating) is shown at a time.
+
+**Converter** — 14 categories, each with a built-in keypad:
+
+| Category | Notes |
+|----------|-------|
+| Currency | 27 currencies, **live rates** from `open.er-api.com` (cached for one hour, with offline fallback to approximate built-in rates) |
+| Finance | Loan payment, simple interest, compound interest (yearly to daily), tax / VAT (add or remove) |
+| Data | Bit through TiB (decimal and binary prefixes) |
+| Date | Difference between two dates; add / subtract years, months, days |
+| Discount | Up to two stacked discounts plus tax |
+| Volume, Speed, Length, Mass, Area, Time, Temperature | Unit conversion; temperature allows negatives |
+| Numeral system | Binary, octal, decimal, hexadecimal (arbitrary size via `BigInt`) |
+| BMI | Metric or imperial, category color, healthy weight range, gauge |
+
+### Settings
+
+- **Appearance**
+  - **Theme:** follows the system until a choice is made. *General Color* opens a picker for three parts — **Main** (background), **Accent** (nav bar, drawer header, settings groups, pop-ups) and **Glyph** (text, icons, buttons). Accent and Glyph can follow Main automatically. *Specific Color* sets the colors for **Income, Expense, Transfer, Reminder**, and the **Delete** and **Done** actions.
+  - **Font:** font style (8 built-in options plus **imported `.ttf` / `.otf` files**), font size (5 steps: 0.8× – 1.3×), and bold text.
+  - **Animation:** on / off and speed (5 steps, implemented with Flutter's `timeDilation`).
+- **Localization**
+  - **Currency:** 27 currencies. Changing it offers to **convert all saved amounts** (accounts, transactions, reminders, budgets) with an editable, live-fetched exchange rate, or to change only the sign.
+  - **Location:** 29 places with fixed standard-time UTC offsets. `Utils.now()` uses it for everything the user sees or saves.
+  - **Language:** English, Filipino, Spanish, French, Chinese, Hindi, Arabic, Portuguese. Translation is partial (see below).
+- **Security:** App Security switch with PIN and biometrics (see [Security and Privacy](#security-and-privacy)).
+- **Notifications:** six switches (push, reminder alerts, budget alerts, daily summary, sound, vibration). **These are samples and do nothing yet.**
+
+### Database screen
+
+- Live counts of accounts, transactions, reminders, and categories.
+- **Trash bin**, **Export data**, **Import data**, and **Clear all data & reset** (see [Database](#database)).
+
+### Trash
+
+- Lists deleted accounts and transactions grouped by the day they were deleted, with search.
+- **Swipe right to restore, swipe left to delete forever**, or use the item menu. **Empty trash** removes everything.
+- Anything deleted in an **earlier month** is purged automatically (at app start and whenever Trash opens).
+- Restoring a transaction also restores the account(s) it belongs to. Deleting an account forever also deletes its transactions.
+
+### Localization system
+
+- `'Some text'.tr` looks up the English text as a key and returns the translation for the chosen language, falling back to English.
+- Two tables exist in `AppStrings`: a per-language map for navigation / settings / security labels, and a list-based table (order: fil, es, fr, zh, hi, ar, pt) for profile, calculator, and converter text.
+- Many screens (e.g. Finance, Categories, receipts, and most pop-up text) still use plain English strings.
+
+### Placeholders
+
+Schedule, Health, **FAQ, Rate, Feedback, About** show a centered label only. `services/notification.dart` is an empty file.
+
+### Error model
+
+A sealed `Failure` class with typed subclasses: `DatabaseFailure`, `NetworkFailure`, `AuthFailure`, `SyncFailure`, `ValidationFailure`, `UnknownFailure`. Each has a user-friendly default message. Currently the database layer produces `DatabaseFailure` and `ValidationFailure` (for example "That name already exists" or "Pick two different accounts"); the others are reserved for the planned backend.
 
 ---
 
@@ -103,12 +197,12 @@ These screens exist and are reachable, but currently display only a centered lab
 
 | Technology | Role | Status |
 |------------|------|--------|
-| Flutter | Cross-platform UI framework (Android, iOS, Web) | In use |
-| Dart | Application language (SDK `^3.13.5`) | In use |
+| Flutter / Dart (`^3.13.5`) | UI framework and language | In use |
 | Material 3 | Design system (`useMaterial3: true`) | In use |
-| SQLite | Local on-device database (`momentum.db`, schema version 1) | Planned |
-| PostgreSQL | Server-side database for synced data | Planned |
-| REST API | Auth, sync, and data management between app and backend | Planned |
+| SQLite (`sqflite`) | Local database `momentum.db` | **In use** |
+| `local_auth` + `crypto` | Biometrics and salted PIN hashing | **In use** |
+| `open.er-api.com` | Live exchange rates (plain `dart:io` HTTP) | **In use** |
+| PostgreSQL + REST API | Server sync | Planned |
 | Git & GitHub | Version control | In use |
 
 ### Package Dependencies (`pubspec.yaml`)
@@ -116,8 +210,16 @@ These screens exist and are reachable, but currently display only a centered lab
 | Package | Version | Purpose |
 |---------|---------|---------|
 | `flutter` | SDK | Framework |
-| `shared_preferences` | ^2.3.2 | Persist theme and text size |
 | `cupertino_icons` | ^1.0.8 | iOS-style icon font |
+| `shared_preferences` | ^2.3.2 | Security settings, legacy settings migration, appearance values included in backups |
+| `sqflite` | ^2.4.1 | Local SQLite database |
+| `path` | ^1.9.0 | File path handling |
+| `path_provider` | ^2.1.4 | App documents directory (pictures, fonts) |
+| `file_picker` | ^10.3.0 | Import fonts and backups, save exported backups |
+| `image_picker` | ^1.1.2 | Camera / gallery pictures |
+| `installed_apps` | ^1.5.2 | List and launch apps linked to an account card (Android) |
+| `local_auth` | ^2.3.0 | Fingerprint / Face unlock |
+| `crypto` | ^3.0.6 | SHA-256 for the PIN hash |
 
 ### Dev Dependencies
 
@@ -126,7 +228,9 @@ These screens exist and are reachable, but currently display only a centered lab
 | `flutter_test` | SDK | Widget and unit testing |
 | `flutter_lints` | ^6.0.0 | Recommended lint rules |
 
-> SQLite, HTTP, and state-management packages have not been added yet. They will be introduced as the database and sync layers are built.
+### Assets
+
+`lib/database/schema.sql` and `lib/database/seed.sql` are bundled as assets.
 
 ---
 
@@ -136,49 +240,131 @@ These screens exist and are reachable, but currently display only a centered lab
 
 ```
 momentum/
-├── lib/          
+├── lib/
 │   ├── core/
+│   │   ├── constants.dart        # app constants, currencies, locations, languages, translations
+│   │   ├── failures.dart         # typed errors
+│   │   ├── font.dart             # built-in and imported fonts
+│   │   ├── themes.dart           # AppTheme, AppAccent
+│   │   ├── utils.dart            # formatting and date helpers
+│   │   └── screens/
+│   │       ├── about.dart        # placeholder
+│   │       ├── calculator.dart   # full screen + floating calculator
+│   │       ├── categories.dart   # category management
+│   │       ├── converter.dart    # 14 converters
+│   │       ├── faq.dart          # placeholder
+│   │       ├── feedback.dart     # placeholder
+│   │       ├── profile.dart      # profile + ID cards
+│   │       ├── rate.dart         # placeholder
+│   │       ├── search.dart       # global search
+│   │       ├── settings.dart     # AppSettings + Settings screen
+│   │       └── trash.dart        # Trash + shared confirm dialog
 │   ├── database/
+│   │   ├── database.dart         # Database screen
+│   │   ├── helper.dart           # DatabaseHelper (all SQL)
+│   │   ├── schema.sql
+│   │   └── seed.sql
 │   ├── features/
+│   │   ├── finance.dart          # entire Finance feature
+│   │   ├── schedule.dart         # placeholder
+│   │   └── health.dart           # placeholder (class is named HistoryScreen)
 │   ├── services/
-│   └── main.dart   
+│   │   ├── authentication.dart   # PIN, biometrics, lock gate
+│   │   ├── exchange.dart         # live exchange rates
+│   │   └── notification.dart     # empty
+│   └── main.dart
 ├── pubspec.yaml
 ├── README.md
 └── DOCUMENTATION.md
 ```
 
-### Architecture Overview
-
-The project is organized by **layer** for shared code and by **feature** for domain code:
-
-- **`core/`**: code used across the whole app (constants, themes, utilities, error types, and general-purpose screens).
-- **`features/`**: one folder per tracking area (`finance`, `health`, `schedule`), each split into `models/` and `screens/`.
-- **`database/`**: SQL schema and seed data for the local SQLite database.
-- **`services/`**: backend-facing and platform services (authentication, notifications, synchronization).
-
 ### Key Components
 
-**`MomentumApp`** (`main.dart`)
-Root widget. Listens to `AppSettings` and rebuilds the whole app on any setting change. It selects the theme (system light/dark if no choice yet, otherwise the chosen theme) and wraps the navigator in a `MediaQuery` that applies the user's text scale.
+**`main()`** (`main.dart`)
+Locks the app to portrait, loads `AppSettings` and `AppProfile`, runs the month-end trash purge, then starts the app.
 
-**`HomeShell`** (`main.dart`)
-Main scaffold holding the app bar, drawer, `PageView`, and `NavigationBar`. The bottom bar and drawer share a single `_select(index)` method that animates the `PageView` to the chosen page (250 ms, ease-in-out). A flag prevents the swipe callback from fighting the animation.
+**`MomentumApp`**
+Listens to `AppSettings` and rebuilds the whole app on any change. It picks the theme (system light / dark by default, otherwise a built-in or custom theme), applies the chosen font, and wraps the navigator in a `MediaQuery` that applies the text scale and bold setting. The navigator is wrapped by `AppLockGate`.
 
-**`AppSettings`** (`core/screens/settings.dart`)
-Singleton `ChangeNotifier` that stores the selected theme and text size and persists them through `SharedPreferences`. `load()` is called in `main()` before `runApp`.
+**`HomeShell`**
+Scaffold with the transparent app bar, drawer, `PageView`, `NavigationBar`, and the animated + button layer. Bottom bar and drawer share one `_select(index)` method.
 
-**`AppTheme` / `AppThemeOption`** (`core/themes.dart`)
-Defines the ten selectable themes and builds a `ThemeData` for each from a hand-tuned `ColorScheme`. A shared `_build` method applies consistent styling to the app bar, navigation bar, drawer, list tiles, dividers, and cards.
+**`AppSettings`** (`settings.dart`)
+Singleton `ChangeNotifier` holding theme, colors, fonts, text size, animation, currency, location, language, and security state. Settings are saved in the database `settings` table (security stays in `SharedPreferences`). `load()` also migrates older `SharedPreferences` values into the database once.
 
-**`AppConstants`** (`core/constants.dart`)
-Central place for the app name, version, database name/version, a spacing scale (4 / 8 / 16 / 24 / 32), and corner radii (8 / 12 / 20).
+**`AppTheme` / `AppAccent`** (`themes.dart`)
+Builds `ThemeData` from the built-in Light / Dark schemes or from a seed color. A `ThemeExtension` (`AppAccent`) carries the **accent background** and the **glyph foreground** so any widget can read them with `AppTheme.accentOf(context)`. Helper functions compute readable text colors and contrast.
 
-### Data Flow (Target Design)
+**`DatabaseHelper`** (`helper.dart`)
+Singleton that opens the database, repairs it when needed, and holds every query (accounts, categories, transactions, reminders, trash, settings, backups). A `changes` `ValueNotifier` is bumped after every write so open screens reload themselves.
 
-1. The UI reads and writes to the **local SQLite database**, so the app works offline.
-2. The **synchronization service** pushes and pulls changes through the **REST API**.
-3. The backend stores the canonical copy in **PostgreSQL** for cross-device access.
-4. Errors from the database, network, authentication, and sync layers are surfaced as typed `Failure` objects.
+**`AppProfile`** (`profile.dart`)
+`ChangeNotifier` for the profile data; reloads when the database changes (import / reset).
+
+**`ExchangeRates`** (`exchange.dart`)
+In-memory cache of USD-based rates, refreshed when older than one hour. Falls back to the last good rates, then to the approximate values in `AppConstants.currencies`.
+
+**`AppLockGate` / `AppSecurity`** (`authentication.dart`)
+Lock screen and PIN / biometric logic (see Security).
+
+### State Management
+
+No state-management package is used. The app relies on `ChangeNotifier`, `ValueNotifier`, and `ListenableBuilder`:
+
+| Notifier | Purpose |
+|----------|---------|
+| `AppSettings.instance` | Theme, font, language, currency, security |
+| `AppProfile.instance` | Profile data |
+| `DatabaseHelper.changes` | "Data changed, reload" signal |
+| `_accountThemes`, `_accountApps` (in `finance.dart`) | Per-account look and linked app, stored in `settings` |
+| `_analyticsRange` | Date range shared between Analytics and the Total Balance card |
+| `CalculatorFloat.pos`, `_CalcEngine.shared` | Floating calculator position and shared calculation |
+
+### Constants
+
+`AppConstants` is the single home for shared values: app name and version, database and asset names, money settings, preference keys, security limits, the currency / location / language lists, the spacing scale (4 / 8 / 12 / 16 / 24 / 32), radii (8 / 12 / 20), opacity levels, pop-up paddings, card geometry, and animation / text-size tables. `AppStrings` (translations) lives in the same file.
+
+---
+
+## Database
+
+**Engine:** SQLite via `sqflite`. **File:** `momentum.db`, version `1`. Money is stored as **whole integer cents** (`centavosPerPeso = 100`); the helper converts to and from `double` amounts.
+
+### Tables
+
+| Table | Contents |
+|-------|----------|
+| `account_types` | Name, icon, color |
+| `account_categories` | Name, sort order, icon, color |
+| `accounts` | Name, type, category, initial balance, note title / body, created, `deleted_at` |
+| `categories` | Name, kind (`income` / `expense` / `transfer`), icon, color, budget |
+| `transactions` | Type, amount, account, destination account (transfers), category, title, note, picture path, date, `deleted_at` |
+| `reminders` | Type, title, amount, category, account, due date, repeat rule, note, picture path, done flag |
+| `settings` | Name / value pairs (theme, colors, fonts, language, profile JSON, per-account themes and linked apps, category order, etc.) |
+| `account_balances` (view) | Current balance per account: initial balance + income − expense − transfers out + transfers in (ignores trashed rows) |
+
+### Self-repair
+
+There is no `onCreate`. Every time the database opens, `_ensureReady` adds any missing columns to older files, runs `schema.sql` (all `IF NOT EXISTS`), and checks that the schema and default data are valid. If not, it drops and rebuilds the finance tables from `schema.sql` and `seed.sql` in one transaction. Default icons are filled in for seed items that have none.
+
+### Seed data
+
+9 account types, 11 account categories, a starting **Cash** account with a zero balance, 12 income categories, 13 expense categories, and the locked **Transfer** category.
+
+### Soft delete and trash
+
+Accounts and transactions get a `deleted_at` timestamp instead of being removed. Trash can restore them or delete them permanently (including picture files). Items deleted in an earlier month are purged automatically.
+
+### Backup (Export / Import)
+
+- **Export** writes one JSON file (`momentum_backup_YYYYMMDD_HHMMSS.json`) with every table (trash included), the appearance values from `SharedPreferences`, and **base64 copies** of transaction / reminder pictures, category icons, account theme pictures, profile pictures, and imported fonts.
+- **Import** validates the file (`app: "momentum"`, `tables` present, account types and the Transfer category exist), then replaces everything in one transaction; pictures are written back to the app folders. A bad file changes nothing. Settings are reloaded afterwards.
+- **Clear all data & reset** rebuilds the database from the seed files, deletes saved pictures, and resets appearance and localization settings.
+- Security settings (PIN, biometrics) are intentionally **not** part of backups.
+
+### Currency conversion
+
+Changing the currency can multiply every saved amount (initial balances, transactions, reminders, budgets) by an exchange rate in a single transaction. Amounts never drop below one cent.
 
 ---
 
@@ -187,146 +373,155 @@ Central place for the app name, version, database name/version, a spacing scale 
 ### Prerequisites
 
 - [Flutter SDK](https://docs.flutter.dev/get-started/install) with a Dart SDK compatible with `^3.13.5`
-- An IDE such as Android Studio or VS Code with the Flutter and Dart plugins
-- For Android: Android SDK and an emulator or device
+- Android Studio or VS Code with the Flutter and Dart plugins
+- Android SDK and an emulator or device (primary target, see [Cross-Platform Notes](#cross-platform-notes))
 - For iOS: macOS with Xcode
-- For Web: a Chromium-based browser
 
 ### Setup
 
 ```bash
-# 1. Clone the repository
 git clone <repository-url>
 cd momentum
-
-# 2. Install dependencies
 flutter pub get
-
-# 3. Check your environment
 flutter doctor
-
-# 4. Run the app
 flutter run
 ```
 
-To target a specific platform:
+### Platform configuration
 
-```bash
-flutter run -d chrome      # Web
-flutter run -d <device-id> # Android or iOS device/emulator
-```
+- **Biometrics (`local_auth`):** Android needs the `USE_BIOMETRIC` permission and `MainActivity` extending `FlutterFragmentActivity`; iOS needs `NSFaceIDUsageDescription` in `Info.plist`.
+- **Camera / gallery (`image_picker`):** iOS needs camera and photo-library usage descriptions.
+- **Installed apps (`installed_apps`):** Android only. Listing installed apps may require the `QUERY_ALL_PACKAGES` permission (and Play Store justification) on Android 11+.
+- **Internet:** Android needs the `INTERNET` permission for live exchange rates.
 
-### Configuration Notes
+### Configuration notes
 
 - **Version:** `AppConstants.appVersion` must be kept in sync manually with `version` in `pubspec.yaml`.
-- **Currency:** the default symbol is `₱` (set in `Utils.formatCurrency`) and can be overridden per call.
-- **Saved settings:** theme and text size are stored under the keys `settings.theme` and `settings.textSizeIndex`.
-- **Database:** name `momentum.db`, version `1` (defined in `AppConstants`). The schema and seed files are not yet populated.
+- **Default currency:** US dollar (`$`). It can be changed in Settings > Localization > Currency.
+- **Default location:** America (Eastern, UTC−5, standard time, no daylight saving).
+- **Custom fonts:** to bundle fonts with the app, add a `fonts:` section in `pubspec.yaml` and an entry in `AppFonts.builtIn`.
+- **Exchange-rate provider:** change `_url` in `services/exchange.dart` to use a keyed provider.
 
 ---
 
 ## Application Design and UI
 
-### Design Principles
+### Design principles
 
-- **Minimalist:** simple layouts, outlined icons, and little visual noise.
-- **Consistent:** spacing and radii come from `AppConstants`; colors come from the active `ColorScheme`.
-- **Personalizable:** ten themes and five text sizes, applied instantly app-wide.
-- **Accessible:** text scaling builds on the system text scale, and controls carry tooltips.
+- **Minimalist and consistent:** spacing, radii, and opacity levels come from `AppConstants`.
+- **One color language:** every panel uses the **Accent** color as its background and the **Glyph** color for text, icons, and buttons. Pop-ups, bottom sheets, cards, and settings groups all follow it.
+- **Personalizable:** colors, fonts, text size, animation speed, card shapes, and pictures.
+- **Responsive to text size:** cards, buttons, and icons follow the font setting only partly (`cardFollow`, `textFollow`, `addButtonFollow`) so layouts stay balanced.
 
-### Layout
+### Shared UI patterns
 
-- **App bar:** menu button (left), "Momentum" title, search button (right).
-- **Body:** three swipeable pages.
-- **Bottom navigation:** compact 56 px bar with Accounts, Schedule, and Health.
-- **Drawer:** header, profile shortcut, page links, preference links, help links, and a version footer.
+- Rounded **bottom sheets** with a drag handle for forms and pickers (account, transaction, profile, ID, theme, app picker).
+- **Chip pickers** (icon + name) for types, categories, accounts, repeat, and camera / gallery choices.
+- **Confirmation pop-ups** (`showConfirmDialog`): a colored top with a zigzag edge, an item chip, explanatory points, and Cancel / Confirm buttons. Destructive actions use the red Delete color.
+- **Receipt** pop-up with a scalloped edge and dashed separators.
+- Top-down **History / Analytics** panels and the two-part **account pop-up** use custom slide transitions.
 
 ### Themes
 
-| Theme | Brightness | Description |
-|-------|------------|-------------|
-| Light | Light | Light gray surface with black accents |
-| Dark | Dark | Black surface with gray accents |
-| Red | Dark | Faded brick red, cream text |
-| Yellow | Light | Mustard, dark brown text |
-| Orange | Dark | Rust orange, cream text |
-| Brown | Dark | Coffee brown, cream text |
-| Blue | Dark | Dusty denim blue, cream text |
-| Green | Dark | Sage/olive green, cream text |
-| Violet | Dark | Dusty plum, cream text |
-| Pink | Dark | Dusty rose, cream text |
-
-The color themes follow a vintage, muted palette. When a color theme is chosen, it is applied to both the light and dark slots of `MaterialApp`, so it always takes effect regardless of the system setting.
-
-### Settings Screen
-
-Settings are grouped under section headers (Appearance, Localization, Security, Storage). Each group is shown as a single rounded card with thin dividers between items. Light and Dark use fixed neutral fills; color themes use a darker shade of their own palette.
+- **Built-in:** Light (white / gray with black accents) and Dark (black / gray). Until the user picks one, the app follows the system light / dark setting.
+- **Custom:** any Main, Accent, and Glyph color via the General Color picker (hex field plus Hue / Saturation / Brightness sliders). Readable defaults for Accent and Glyph are derived from Main with contrast checks.
 
 ---
 
-## Cross-Platform Development
+## Cross-Platform Notes
 
-Momentum uses a **single Flutter codebase** targeting:
+The code is a single Flutter codebase, but several dependencies make **Android the primary target**:
 
-- **Android**
-- **iOS**
-- **Web**
+- `installed_apps` is Android-only (the linked-app button on card backs).
+- The app uses `dart:io` (`File`, `HttpClient`) and `sqflite`, which are not available on Flutter web without changes.
+- The orientation is locked to portrait and the layout is phone-oriented.
 
-### Considerations
-
-- **Shared UI:** all screens are built with Material 3 widgets, so layouts behave consistently across platforms.
-- **Persistence:** `shared_preferences` works on all three targets. The planned SQLite layer will need a web-compatible approach (for example a WebAssembly-based SQLite package), since native SQLite is not available in the browser by default.
-- **Safe areas and insets:** the drawer header accounts for the top safe-area padding on devices with notches or status bars.
-- **Responsive layout:** the current layout is phone-oriented. Tablet and wide web layouts have not yet been designed.
+iOS should work for everything except the linked-app feature once the platform permissions above are configured. Web, desktop, and tablet layouts are not currently supported.
 
 ---
 
 ## Testing and Quality Assurance
 
-### Current State
+### Current state
 
-- `flutter_test` and `flutter_lints` are included in dev dependencies.
-- Lint rules are controlled by `analysis_options.yaml` (the Flutter recommended set).
+- `flutter_test` and `flutter_lints` are in dev dependencies; lint rules are in `analysis_options.yaml`.
 - No automated tests have been written yet.
 
 ### Commands
 
 ```bash
-flutter analyze    # Static analysis and lint checks
-flutter test       # Run unit and widget tests
+flutter analyze
+flutter test
 ```
 
-### Recommended Test Plan
+### Recommended test plan
 
-| Area | Test Type | What to Verify |
+| Area | Test type | What to verify |
 |------|-----------|----------------|
-| `Utils` | Unit | Currency formatting (negatives, thousands, decimals), date/time formatting, `isSameDay`, `capitalize` |
-| `AppSettings` | Unit | Loading saved values, ignoring invalid saved values, persistence on change, no notification when unchanged |
-| Theme selection | Widget | System theme followed by default; chosen theme persists across restart |
-| Text scaling | Widget | Each size applies the expected multiplier on top of the system scale |
-| Navigation | Widget | Bottom bar, swipe, and drawer all select the same page; no swipe past first/last page |
-| Drawer | Widget | Each item opens the correct screen and closes the drawer |
-| Database (future) | Integration | Schema creation, migrations, CRUD for each feature |
-| Sync (future) | Integration | Offline edits, conflict handling, retry after `SyncFailure` |
+| `Utils` | Unit | Currency formatting (negatives, thousands), `now()` offset, date / time formatting |
+| Calculator parser (`_Parser`) | Unit | Precedence, implicit multiplication, `%`, `!`, DEG vs. RAD, division by zero, invalid input |
+| Converters | Unit | Unit factors, temperature, numeral systems, date difference / add, loan and interest formulas |
+| `DatabaseHelper` | Integration | Self-repair, balances view, transfers, soft delete / restore / purge, currency conversion, export → import round trip |
+| `AppSettings` | Unit | Loading saved values, ignoring invalid values, migration from `SharedPreferences` |
+| `AppSecurity` | Unit | PIN hash / verify, lockout after 5 attempts |
+| Navigation | Widget | Bottom bar, swipe, and drawer select the same page; no swipe past first / last |
+| Finance flows | Widget | Add / edit account, add income / expense / transfer / reminder, mark reminder done |
+| Localization | Widget | Language change updates `.tr` text; missing keys fall back to English |
 
 ---
 
 ## Security and Privacy
 
-### Current State
+### Current state
 
-- All data currently stored is limited to two non-sensitive UI preferences (theme and text size), saved locally on the device.
-- No user accounts, network calls, or personal records exist yet.
+- **All data stays on the device** in a local SQLite database. The only network call is the exchange-rate request, which sends no personal data.
+- **App Security:** an optional lock for the whole app.
+  - Turning it on requires creating a **4–6 digit PIN**.
+  - Optionally add **Touch ID / Face ID** (only methods the phone actually supports are listed; each must be verified once when enabled).
+  - The PIN is stored as a **salted SHA-256 hash** (random 16-byte salt) in `SharedPreferences`, never in plain text and never in backups.
+  - The app locks at start and after being in the background for **30 seconds**.
+  - **5 wrong PIN attempts** trigger a 30-second wait.
+  - **Forgot PIN?** requires the phone's own screen lock (PIN / pattern / biometrics) and then removes the app PIN and turns App Security off, so nobody is locked out permanently.
+- Back navigation is blocked while the app is locked.
+- Error messages come from `Failure` types and avoid technical detail.
 
-### Planned Measures
+### Planned measures
 
-- **Local data:** finance, schedule, and health records stored in the on-device SQLite database. Consider encrypting the database (for example SQLCipher) given the sensitivity of finance and health data.
-- **Authentication:** token-based sign-in over HTTPS, with tokens kept in secure platform storage (Keychain on iOS, Keystore on Android) rather than in `shared_preferences`.
-- **Transport security:** all REST API traffic over TLS.
-- **Server storage:** PostgreSQL with per-user data isolation, hashed credentials, and regular backups.
-- **Privacy controls:** a Security section in Settings (planned), plus a Storage section for managing and clearing local data and a Trash area for recoverable deletions.
-- **Data minimization:** collect only what is needed for tracking and sync; no data is shared with third parties.
-- **Error handling:** user-facing messages from `Failure` types avoid exposing technical details.
+- Encrypting the local database (e.g. SQLCipher), given the sensitivity of finance and ID pictures.
+- Token-based authentication over HTTPS with tokens in secure platform storage (Keychain / Keystore).
+- Per-user data isolation, hashed credentials, and regular backups on the server.
+- Storing ID card pictures in a protected location.
+
+### Privacy notes
+
+- Profile and ID card pictures are copied into the app's private documents folder and included (base64) in exported backups. Treat backup files as sensitive.
+- The PIN hash is deliberately excluded from backups, so restoring a backup never changes the lock.
+
+---
+
+## Known Limitations and Roadmap
+
+### Known limitations
+
+- Schedule, Health, FAQ, Rate, Feedback, and About are placeholders.
+- The Notifications settings are non-functional samples, and reminders do not fire push notifications (`services/notification.dart` is empty).
+- Translations cover only part of the interface.
+- `features/health.dart` defines the class `HistoryScreen` (name left over from an earlier version) even though it is the Health page.
+- All of Finance (about 8,000 lines) lives in a single file, `features/finance.dart`.
+- `AppConstants` still uses the names `centavosPerPeso` and mentions pesos in some comments, although the app now supports 27 currencies.
+- Some appearance keys are read from `SharedPreferences` for backups (`_appearancePrefs`) while the live settings are stored in the database `settings` table; this is a leftover of the migration and should be unified.
+- There are no automated tests.
+
+### Roadmap
+
+- **Schedule:** tasks, appointments, deadlines, events, calendar view.
+- **Health:** records, habits, fitness tracking, wellness goals.
+- **Notifications:** local notifications for reminders, budgets, and a daily summary.
+- **Budgets:** surface the existing per-category budgets (alerts when almost used).
+- **Content screens:** FAQ, Rate, Feedback, About.
+- **Backend:** authentication, PostgreSQL, REST API, two-way synchronization.
+- **Localization:** complete the translation tables for all screens.
+- **Code structure:** split `finance.dart` into smaller files (models, sheets, charts, pop-ups) and add tests.
 
 ---
 
@@ -335,13 +530,19 @@ flutter test       # Run unit and widget tests
 - [Flutter documentation](https://docs.flutter.dev/)
 - [Dart language documentation](https://dart.dev/guides)
 - [Material 3 design guidelines](https://m3.material.io/)
-- [`shared_preferences` package](https://pub.dev/packages/shared_preferences)
-- [`flutter_lints` package](https://pub.dev/packages/flutter_lints)
+- [`sqflite`](https://pub.dev/packages/sqflite)
+- [`shared_preferences`](https://pub.dev/packages/shared_preferences)
+- [`local_auth`](https://pub.dev/packages/local_auth)
+- [`image_picker`](https://pub.dev/packages/image_picker)
+- [`file_picker`](https://pub.dev/packages/file_picker)
+- [`installed_apps`](https://pub.dev/packages/installed_apps)
+- [`crypto`](https://pub.dev/packages/crypto)
+- [`flutter_lints`](https://pub.dev/packages/flutter_lints)
+- [Open Exchange Rates API (open.er-api.com)](https://www.exchangerate-api.com/docs/free)
 - [SQLite documentation](https://www.sqlite.org/docs.html)
-- [PostgreSQL documentation](https://www.postgresql.org/docs/)
 - [Flutter testing overview](https://docs.flutter.dev/testing/overview)
 - Project README: [`README.md`](README.md)
 
 ---
 
-*Last Updated: October 2026*
+*Last Updated: November 2026*

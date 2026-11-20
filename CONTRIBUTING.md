@@ -4,8 +4,6 @@ Thanks for your interest in contributing to Momentum! Whether you're fixing a bu
 
 By participating, you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
-> **Heads up:** Momentum is in early development (v1.0.0). The app shell, navigation, theming, and settings are implemented, while the finance, schedule, and health screens, the database layer, and the backend services are still scaffolded. See [`DOCUMENTATION.md`](DOCUMENTATION.md) for the current status of each area before picking something to work on.
-
 ---
 
 ### Ways to Contribute
