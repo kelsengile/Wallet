@@ -267,6 +267,31 @@ static final _sections = <_DrawerSection>[
     _animating = false;
   }
 
+  /// Thin vertical line between pages. Hidden when a page is at rest.
+  Widget _pageLine(BuildContext context) {
+    final theme = Theme.of(context);
+    return ListenableBuilder(
+      listenable: _pageController,
+      builder: (context, _) {
+        var swiping = false;
+        if (_pageController.hasClients &&
+            _pageController.position.haveDimensions) {
+          final p = _pageController.page ?? _index.toDouble();
+          swiping = (p - p.round()).abs() > 0.001;
+        }
+        return AnimatedOpacity(
+          opacity: swiping ? 1 : 0,
+          duration: const Duration(milliseconds: 120),
+          child: ColoredBox(
+            color: theme.colorScheme.onSurface.withValues(
+              alpha: AppConstants.dividerAlpha,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   void _openPage(Widget screen) {
     Navigator.of(context).pop(); // close drawer
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
@@ -700,7 +725,24 @@ static final _sections = <_DrawerSection>[
                   });
                 },
                 children: [
-                  for (final d in _destinations) _KeepAlive(child: d.screen),
+                  for (var i = 0; i < _destinations.length; i++)
+                    _KeepAlive(
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          _destinations[i].screen,
+                          // Separator on the right edge (not on the last page)
+                          if (i < _destinations.length - 1)
+                            Positioned(
+                              top: 0,
+                              bottom: 0,
+                              right: 0,
+                              width: 1,
+                              child: _pageLine(context),
+                            ),
+                        ],
+                      ),
+                    ),
                 ],
               ),
             ),
