@@ -19,6 +19,7 @@ import 'database/database.dart';
 import 'database/helper.dart';
 import 'features/finance.dart';
 import 'services/authentication.dart';
+import 'services/notification.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -34,6 +35,7 @@ Future<void> main() async {
     await DatabaseHelper.instance.purgeExpiredTrash();
   } catch (_) {}
 
+  NotificationService.instance.start();
   runApp(const WalletApp());
 }
 
@@ -123,9 +125,10 @@ const _financeAddActions = <_AddAction>[
 class _DrawerItem {
   final String label;
   final IconData icon;
-  final Widget screen;
+  final Widget? screen;
+  final void Function(BuildContext context)? action;
 
-  const _DrawerItem(this.label, this.icon, this.screen);
+  const _DrawerItem(this.label, this.icon, [this.screen, this.action]);
 }
 
 class _DrawerSection {
@@ -193,7 +196,7 @@ class _HomeShellState extends State<HomeShell>
     ]),
     _DrawerSection('Help & Support'.tr, [
       _DrawerItem('FAQ'.tr, Icons.help_outline, FaqScreen()),
-      _DrawerItem('Rate'.tr, Icons.star_outline, RateScreen()),
+      _DrawerItem('Rate'.tr, Icons.star_outline, null, openRepository),
       _DrawerItem('Feedback'.tr, Icons.feedback_outlined, FeedbackScreen()),
       _DrawerItem('About'.tr, Icons.info_outline, AboutScreen()),
     ]),
@@ -202,6 +205,16 @@ class _HomeShellState extends State<HomeShell>
   void _openPage(Widget screen) {
     Navigator.of(context).pop(); // close drawer
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
+  }
+
+  void _openItem(_DrawerItem item) {
+    final screen = item.screen;
+    if (screen != null) {
+      _openPage(screen);
+      return;
+    }
+    Navigator.of(context).pop();
+    item.action?.call(context);
   }
 
   // ---------- + button ----------
@@ -538,7 +551,7 @@ class _HomeShellState extends State<HomeShell>
                       _buildTile(
                         icon: item.icon,
                         label: item.label,
-                        onTap: () => _openPage(item.screen),
+                        onTap: () => _openItem(item),
                       ),
                     for (final section in _sections) ...[
                       const Divider(
@@ -551,7 +564,7 @@ class _HomeShellState extends State<HomeShell>
                         _buildTile(
                           icon: item.icon,
                           label: item.label,
-                          onTap: () => _openPage(item.screen),
+                          onTap: () => _openItem(item),
                         ),
                     ],
                     const SizedBox(height: AppConstants.spaceMd),

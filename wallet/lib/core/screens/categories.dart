@@ -711,6 +711,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
       body: _financeTab(context),
     );
   }
+}
 
 /// Biggest text on the screen: "Accounts" and "Transactions".
 class _SectionHeader extends StatelessWidget {

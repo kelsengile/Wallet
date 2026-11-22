@@ -1,24 +1,13 @@
 import 'package:flutter/material.dart';
 
-import '../constants.dart';
+import '../links.dart';
 
-class RateScreen extends StatelessWidget {
-  const RateScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.star_outline),
-            SizedBox(width: AppConstants.spaceSm),
-            Text('Rate'),
-          ],
-        ),
-      ),
-      body: const Center(child: Text('Rate')),
+Future<void> openRepository(BuildContext context) async {
+  final ok = await Links.openRepository();
+  if (ok || !context.mounted) return;
+  ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(
+      const SnackBar(content: Text('Couldn\'t open GitHub. Try again later.')),
     );
-  }
 }

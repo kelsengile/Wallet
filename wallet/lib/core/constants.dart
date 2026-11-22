@@ -356,6 +356,25 @@ class AppConstants {
   static const String databaseName = 'Wallet.db';
   static const int databaseVersion = 1;
 
+  // ---------- About / contact (EDIT THESE 3) ----------
+  static const String developerName = 'Your Name';
+  static const String developerEmail = 'yourname@gmail.com';
+  static const String repositoryUrl = 'https://github.com/your-username/wallet';
+
+  // ---------- Notifications ----------
+  static const String prefNotifPush = 'settings.notif.push';
+  static const String prefNotifReminders = 'settings.notif.reminders';
+  static const String prefNotifBudget = 'settings.notif.budget';
+  static const String prefNotifSummary = 'settings.notif.summary';
+  static const String prefNotifSound = 'settings.notif.sound';
+  static const String prefNotifVibration = 'settings.notif.vibration';
+
+  /// Daily summary time (24h, in the app's Location time).
+  static const int notifySummaryHour = 20;
+
+  /// Budget alert starts at this share of the budget (and again at 100%).
+  static const double budgetWarnRatio = 0.8;
+
   // ---------- Database ----------
   static const String schemaAsset = 'lib/database/schema.sql';
   static const String seedAsset = 'lib/database/seed.sql';
