@@ -1,6 +1,6 @@
-# SECURITY POLICY | Momentum
+# SECURITY POLICY | Wallet
 
-Momentum is designed to hold personal finance, schedule, and health information, so protecting user data is a core priority. This policy explains how to report vulnerabilities and what you can expect from us in response.
+Wallet is designed to hold personal finance information, including accounts, transactions, and optional ID card pictures, so protecting user data is a core priority. This policy explains how to report vulnerabilities and what you can expect from us in response.
 
 ---
 
@@ -8,12 +8,13 @@ Momentum is designed to hold personal finance, schedule, and health information,
 
 Security concerns relevant to this project include, but are not limited to:
 
-- Exposure or leakage of personal finance, schedule, or health data
+- Exposure or leakage of personal finance data or ID pictures
 - Weaknesses in the local SQLite database or how its data is stored on the device
-- Authentication and session issues, such as insecure token handling or storage
-- Vulnerabilities in the REST API or the synchronization service, including unauthorized access to another user's data
+- Weaknesses in the app lock (PIN hashing, biometric handling, lockout behavior)
+- Exposure of sensitive data through backup files (export and import)
+- Authentication and session issues, such as insecure token handling or storage (once a backend exists)
+- Vulnerabilities in a future REST API or synchronization service, including unauthorized access to another user's data
 - Insecure network communication (for example, missing or misconfigured TLS)
-- Server-side issues in the PostgreSQL backend, such as injection or broken access control
 - Vulnerabilities in third-party dependencies or build tooling
 - Sensitive information written to logs, error messages, or crash reports
 
@@ -34,11 +35,11 @@ Please include as much of the following as possible:
 
 - A description of the vulnerability and its potential impact
 - Steps to reproduce the issue
-- Affected version(s), platform (Android, iOS, or Web), and environment
+- Affected version(s), platform (Android or iOS), and environment
 - Proof-of-concept code, screenshots, or logs, if available
 - Any suggested fix or mitigation
 
-Please use test data only. Do not include real personal information in your report.
+Please use test data only. Do not include real personal or financial information in your report.
 
 ---
 
@@ -53,14 +54,20 @@ Please use test data only. Do not include real personal information in your repo
 
 ### Security Practices
 
-The project's planned security measures, described in [`DOCUMENTATION.md`](DOCUMENTATION.md), include:
+**Currently in place** (see [`DOCUMENTATION.md`](DOCUMENTATION.md)):
 
-- **Local data:** Finance, schedule, and health records stored on-device, with database encryption under consideration.
+- **Local data:** All finance records stay on the device in a local SQLite database. The only network request is for exchange rates and it sends no personal data.
+- **App lock:** Optional PIN (4–6 digits) stored as a salted SHA-256 hash, with optional fingerprint or face unlock, a 30-second background timeout, and a lockout after repeated wrong attempts.
+- **Backups:** The PIN and security settings are never included in exported backups.
+- **Error handling:** User-facing messages that avoid exposing technical details.
+
+**Planned:**
+
+- **Database encryption:** Encrypting the local database (for example with SQLCipher).
 - **Authentication:** Token-based sign-in over HTTPS, with tokens kept in secure platform storage (Keychain on iOS, Keystore on Android) rather than in `shared_preferences`.
 - **Transport security:** All REST API traffic over TLS.
 - **Server storage:** Per-user data isolation, hashed credentials, and regular backups.
 - **Data minimization:** Collecting only what is needed for tracking and sync, with no data shared with third parties.
-- **Error handling:** User-facing messages that avoid exposing technical details.
 
 ---
 
@@ -77,4 +84,4 @@ We will not pursue action against researchers who follow this policy and report 
 
 ---
 
-*Last Updated: October 2026*
+*Last Updated: November 2026*

@@ -1,6 +1,6 @@
-# CONTRIBUTING | Momentum
+# CONTRIBUTING | Wallet
 
-Thanks for your interest in contributing to Momentum! Whether you're fixing a bug, building out a feature, improving the design, or cleaning up documentation, every contribution helps. Please take a moment to read this guide before getting started.
+Thanks for your interest in contributing to Wallet! Whether you're fixing a bug, building out a feature, improving the design, or cleaning up documentation, every contribution helps. Please take a moment to read this guide before getting started.
 
 By participating, you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
@@ -9,10 +9,11 @@ By participating, you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 ### Ways to Contribute
 
 - **Report bugs:** Found something broken? Let us know.
-- **Suggest features:** Have an idea for finance, schedule, or health tracking?
-- **Write code:** Build out scaffolded screens, the SQLite layer, sync, or fix issues.
-- **Improve design:** Refine layouts, themes, accessibility, or tablet and web responsiveness.
+- **Suggest features:** Have an idea for budgets, reminders, analytics, or other finance tools?
+- **Write code:** Build out notifications, the placeholder screens (FAQ, Rate, Feedback, About), sync, or fix issues.
+- **Improve design:** Refine layouts, themes, accessibility, or tablet responsiveness.
 - **Write tests:** The project has no automated tests yet, so unit and widget tests are very welcome.
+- **Improve translations:** Many screens still use English-only text.
 - **Improve documentation:** Fix typos, clarify instructions, or fill in missing details.
 
 ---
@@ -22,8 +23,8 @@ By participating, you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 1. **Fork** the repository on GitHub.
 2. **Clone** your fork locally:
 ```bash
-   git clone https://github.com/kelsengile/Momentum.git
-   cd momentum
+   git clone https://github.com/kelsengile/Wallet.git
+   cd Wallet
 ```
 3. **Install dependencies:**
 ```bash
@@ -53,10 +54,10 @@ Before opening a new issue, please search existing issues to avoid duplicates. A
 - A clear, descriptive title
 - Steps to reproduce the problem
 - Expected behavior vs. actual behavior
-- Your Flutter version, target platform (Android, iOS, or Web), and device or browser
+- Your Flutter version, target platform (Android or iOS), and device
 - Screenshots, screen recordings, or logs if available
 
-**Please do not include real financial, schedule, or health information in bug reports.** Use made-up sample data instead.
+**Please do not include real financial information, account details, or ID pictures in bug reports.** Use made-up sample data instead.
 
 ---
 
@@ -68,14 +69,14 @@ Open an issue describing:
 - How you imagine it working in the app
 - Any alternatives you considered
 
-Momentum is intentionally minimalist, so features that keep things simple and focused are more likely to be accepted.
+Wallet is intentionally minimalist and focused on personal finance, so features that keep things simple are more likely to be accepted.
 
 ---
 
 ### Development Guidelines
 
 **Project Structure**
-- Shared code goes in `lib/core/`, domain code goes in `lib/features/` (split into `models/` and `screens/` per area), database files go in `lib/database/`, and backend-facing services go in `lib/services/`.
+- Shared code goes in `lib/core/`, the Finance feature goes in `lib/features/`, database files go in `lib/database/`, and backend-facing services go in `lib/services/`.
 - Follow the existing structure when adding new files.
 
 **Dart & Flutter**
@@ -86,8 +87,13 @@ Momentum is intentionally minimalist, so features that keep things simple and fo
 ```
 - Keep widgets small and focused, and comment non-obvious logic.
 - Use `AppConstants` for spacing, radii, and app-wide values rather than hard-coded numbers.
-- Take colors from the active `ColorScheme` instead of hard-coding them, so every theme keeps working.
+- Take colors from the active theme (`ColorScheme` and `AppTheme.accentOf(context)`) instead of hard-coding them, so every theme keeps working.
 - Make sure new screens respect the user's text size setting and include tooltips on icon buttons.
+- Wrap new user-facing text with `.tr` and add translations where practical.
+
+**Money**
+- Amounts are stored as whole integer cents. Convert in `DatabaseHelper`, never store floating point money in the database.
+- Use `Utils.formatCurrency` and `AppConstants.currencySymbol` for display, and `Utils.now()` for the current time.
 
 **Errors**
 - Use the typed `Failure` classes (`DatabaseFailure`, `NetworkFailure`, `AuthFailure`, `SyncFailure`, `ValidationFailure`, `UnknownFailure`) instead of surfacing raw exceptions.
@@ -95,7 +101,7 @@ Momentum is intentionally minimalist, so features that keep things simple and fo
 
 **Dependencies**
 - Open an issue before adding a new package so we can discuss whether it's needed.
-- Prefer well-maintained packages with broad platform support, since Momentum targets Android, iOS, and Web.
+- Prefer well-maintained packages with broad platform support.
 
 **Versioning**
 - If you change the app version, update both `AppConstants.appVersion` and `version` in `pubspec.yaml`.
@@ -116,7 +122,7 @@ flutter analyze
 flutter test
 ```
 
-If you add or change functionality, please add tests where practical. Utilities, settings, and navigation behavior are good places to start. See the testing section of [`DOCUMENTATION.md`](DOCUMENTATION.md) for the recommended test plan.
+If you add or change functionality, please add tests where practical. Utilities, the calculator parser, converters, and database behavior are good places to start. See the testing section of [`DOCUMENTATION.md`](DOCUMENTATION.md) for the recommended test plan.
 
 ---
 
@@ -125,9 +131,9 @@ If you add or change functionality, please add tests where practical. Utilities,
 Write clear, concise commit messages in the present tense:
 
 ```
-Add transaction model to finance feature
+Add budget alert to expense categories
 Fix text size not applying to drawer
-Update documentation with sync design notes
+Update documentation with backup notes
 ```
 
 ---
@@ -158,4 +164,4 @@ If you're unsure about anything, open an issue or reach out to the maintainers. 
 
 ---
 
-*Last Updated: October 2026*
+*Last Updated: November 2026*
