@@ -1,8 +1,8 @@
-# CODE OF CONDUCT | Momentum
+# CODE OF CONDUCT | Wallet
 
 ### Our Pledge
 
-We pledge to make participation in the Momentum community a welcoming, respectful, and harassment-free experience for everyone, regardless of age, background, identity, experience level, nationality, or personal beliefs. Whether you are reporting a bug, suggesting a feature, contributing code, or giving design feedback, we expect everyone to help keep this a positive and supportive space.
+We pledge to make participation in the Wallet community a welcoming, respectful, and harassment-free experience for everyone, regardless of age, background, identity, experience level, nationality, or personal beliefs. Whether you are reporting a bug, suggesting a feature, contributing code, or giving design feedback, we expect everyone to help keep this a positive and supportive space.
 
 ### Our Standards
 
@@ -18,7 +18,7 @@ We pledge to make participation in the Momentum community a welcoming, respectfu
 - Trolling, deliberate disruption, or personal attacks
 - Discrimination or hate speech of any kind
 - Sexualized language or imagery, or unwelcome advances
-- Publishing others' private information without permission, including personal finance, schedule, or health details shared in issues or screenshots
+- Publishing others' private information without permission, including personal financial details, account information, or ID pictures shared in issues or screenshots
 - Any other conduct that would reasonably be considered inappropriate in a professional or community setting
 
 ### Scope
@@ -47,4 +47,4 @@ This Code of Conduct is adapted from the [Contributor Covenant](https://www.cont
 
 ---
 
-*Last Updated: October 2026*
+*Last Updated: November 2026*
