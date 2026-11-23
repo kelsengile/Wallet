@@ -12,6 +12,21 @@ import '../themes.dart';
 import '../utils.dart';
 import '../../services/exchange.dart';
 import '../../services/authentication.dart';
+import '../../services/notification.dart';
+
+/// The notification switches in Settings > Notifications.
+enum NotificationOption {
+  push(AppConstants.prefNotifPush, false),
+  reminders(AppConstants.prefNotifReminders, true),
+  budget(AppConstants.prefNotifBudget, true),
+  summary(AppConstants.prefNotifSummary, false),
+  sound(AppConstants.prefNotifSound, true),
+  vibration(AppConstants.prefNotifVibration, true);
+
+  final String prefKey;
+  final bool defaultValue;
+  const NotificationOption(this.prefKey, this.defaultValue);
+}
 
 /// Colors a pop-up: [background] behind, [foreground] for text, buttons,
 /// sliders and switches. Built on top of [base].
@@ -317,7 +332,13 @@ class AppSettings extends ChangeNotifier {
     _language = AppConstants.languageByCode(_store[AppConstants.prefLanguage]);
     AppConstants.languageCode = _language.code;
     await _loadSecurity();
+    _notif.clear();
+    for (final o in NotificationOption.values) {
+      final v = _store[o.prefKey];
+      if (v != null) _notif[o] = v == 'true';
+    }
     notifyListeners();
+    NotificationService.instance.scheduleSync();
     _rebuildEverything();
   }
 
@@ -331,12 +352,37 @@ class AppSettings extends ChangeNotifier {
   AppLanguage _language = AppConstants.languages.first;
   AppLanguage get language => _language;
 
+  // ---- Notifications ----
+  final Map<NotificationOption, bool> _notif = {};
+
+  bool notif(NotificationOption o) => _notif[o] ?? o.defaultValue;
+
+  Future<bool> setPush(bool on) async {
+    if (on && !await NotificationService.instance.requestPermission()) {
+      return false;
+    }
+    _notif[NotificationOption.push] = on;
+    _save(NotificationOption.push.prefKey, '$on');
+    notifyListeners();
+    NotificationService.instance.scheduleSync();
+    return true;
+  }
+
+  void setNotif(NotificationOption o, bool value) {
+    if (notif(o) == value) return;
+    _notif[o] = value;
+    _save(o.prefKey, '$value');
+    notifyListeners();
+    NotificationService.instance.scheduleSync();
+  }
+
   void setCurrency(AppCurrency c) {
     if (c.code == _currency.code) return;
     _currency = c;
     AppConstants.currencySymbol = c.symbol;
     _save(AppConstants.prefCurrency, c.code);
     notifyListeners();
+    NotificationService.instance.scheduleSync();
     _rebuildEverything();
   }
 
@@ -346,6 +392,7 @@ class AppSettings extends ChangeNotifier {
     AppConstants.locationOffsetMinutes = l.utcMinutes;
     _save(AppConstants.prefLocation, l.id);
     notifyListeners();
+    NotificationService.instance.scheduleSync();
     _rebuildEverything();
   }
 
@@ -610,7 +657,7 @@ class SettingsScreen extends StatelessWidget {
               _SecuritySection(settings: settings),
               const SizedBox(height: AppConstants.spaceSm),
               _SectionHeader('Notifications'),
-              const _NotificationsSection(),
+              _NotificationsSection(settings: settings),
             ],
           );
         },
@@ -2838,61 +2885,106 @@ class _AnimationConfigDialog extends StatelessWidget {
 }
 
 // ------------------------------------------------------------------
-// Notifications section (sample items, they do nothing yet)
+// Notifications section
 // ------------------------------------------------------------------
 
 class _NotificationsSection extends StatefulWidget {
-  const _NotificationsSection();
+  final AppSettings settings;
+  const _NotificationsSection({required this.settings});
 
   @override
   State<_NotificationsSection> createState() => _NotificationsSectionState();
 }
 
 class _NotificationsSectionState extends State<_NotificationsSection> {
-  bool _push = true;
-  bool _reminders = true;
-  bool _budget = false;
-  bool _summary = false;
-  bool _sound = true;
-  bool _vibration = true;
+  bool _busy = false;
 
-  Widget _tile(
-    IconData icon,
-    String title,
-    String subtitle,
-    bool value,
-    ValueChanged<bool> onChanged,
-  ) {
-    return SwitchListTile(
-      secondary: Icon(icon),
-      title: Text(title.tr),
-      subtitle: Text(subtitle),
-      value: value,
-      onChanged: onChanged,
-    );
+  void _say(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _togglePush(bool on) async {
+    setState(() => _busy = true);
+    try {
+      final ok = await widget.settings.setPush(on);
+      if (!ok) {
+        _say(
+          'Notifications are blocked for Wallet. '
+          'Allow them in your phone settings.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _toggleReminders(bool on) async {
+    if (on) await NotificationService.instance.requestExactAlarms();
+    widget.settings.setNotif(NotificationOption.reminders, on);
+  }
+
+  Future<void> _test() async {
+    if (!await NotificationService.instance.areEnabled()) {
+      _say('Notifications are blocked. Allow them in your phone settings.');
+      return;
+    }
+    await NotificationService.instance.showTest();
   }
 
   @override
   Widget build(BuildContext context) {
-    return _SettingGroup(
-      children: [
-        _tile(Icons.notifications_outlined, 'Push notifications',
-            'Allow Wallet to send alerts', _push,
-            (v) => setState(() => _push = v)),
-        _tile(Icons.alarm, 'Reminder alerts',
-            'Notify me when a reminder is due', _reminders,
-            (v) => setState(() => _reminders = v)),
-        _tile(Icons.account_balance_wallet_outlined, 'Budget alerts',
-            'Warn me when a budget is almost used', _budget,
-            (v) => setState(() => _budget = v)),
-        _tile(Icons.summarize_outlined, 'Daily summary',
-            'A short recap every evening', _summary,
-            (v) => setState(() => _summary = v)),
-        _tile(Icons.volume_up_outlined, 'Sound', 'Play a sound with alerts',
-            _sound, (v) => setState(() => _sound = v)),
-        _tile(Icons.vibration, 'Vibration', 'Vibrate with alerts', _vibration,
-            (v) => setState(() => _vibration = v)),
-      ],
+    final s = widget.settings;
+    return ListenableBuilder(
+      listenable: s,
+      builder: (context, _) {
+        final master = s.notif(NotificationOption.push);
+
+        Widget tile(
+          IconData icon,
+          String title,
+          String subtitle,
+          NotificationOption option,
+          ValueChanged<bool>? onChanged,
+        ) => SwitchListTile(
+          secondary: Icon(icon),
+          title: Text(title.tr),
+          subtitle: Text(subtitle),
+          value: s.notif(option),
+          onChanged: onChanged,
+        );
+
+        return _SettingGroup(
+          children: [
+            tile(Icons.notifications_outlined, 'Push notifications',
+                'Allow Wallet to send alerts', NotificationOption.push,
+                _busy ? null : _togglePush),
+            tile(Icons.alarm, 'Reminder alerts',
+                'Notify me when a reminder is due', NotificationOption.reminders,
+                master ? _toggleReminders : null),
+            tile(Icons.account_balance_wallet_outlined, 'Budget alerts',
+                'Warn me at 80% and 100% of a budget', NotificationOption.budget,
+                master ? (v) => s.setNotif(NotificationOption.budget, v) : null),
+            tile(Icons.summarize_outlined, 'Daily summary',
+                'A short recap every evening at 8 PM', NotificationOption.summary,
+                master ? (v) => s.setNotif(NotificationOption.summary, v) : null),
+            tile(Icons.volume_up_outlined, 'Sound',
+                'Play a sound with alerts', NotificationOption.sound,
+                master ? (v) => s.setNotif(NotificationOption.sound, v) : null),
+            tile(Icons.vibration, 'Vibration',
+                'Vibrate with alerts', NotificationOption.vibration,
+                master ? (v) => s.setNotif(NotificationOption.vibration, v) : null),
+            if (master)
+              ListTile(
+                leading: const Icon(Icons.notifications_active_outlined),
+                title: const Text('Send a test notification'),
+                onTap: _test,
+              ),
+          ],
+        );
+      },
     );
   }
 }

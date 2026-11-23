@@ -246,6 +246,12 @@ class DatabaseHelper {
     AppConstants.prefCurrency,
     AppConstants.prefLocation,
     AppConstants.prefLanguage,
+    AppConstants.prefNotifPush,
+    AppConstants.prefNotifReminders,
+    AppConstants.prefNotifBudget,
+    AppConstants.prefNotifSummary,
+    AppConstants.prefNotifSound,
+    AppConstants.prefNotifVibration,
   ];
 
   Future<void> _clearDesignPrefs() async {
