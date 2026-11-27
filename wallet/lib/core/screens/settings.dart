@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/scheduler.dart' show timeDilation;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -84,10 +84,8 @@ Widget _accentDialog(
       // (chosen font), not the screen behind it.
       title: Builder(
         builder: (context) {
-          final style = Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: fg,
-              );
+          final style = Theme.of(context).textTheme.headlineSmall
+              ?.copyWith(fontWeight: FontWeight.bold, color: fg);
           return Row(
             children: [
               // Icon inside a rounded box, like the "New Account" header.
@@ -176,12 +174,7 @@ enum ActionColorType {
   final String prefKey;
   final Color defaultColor;
 
-  const ActionColorType(
-    this.label,
-    this.icon,
-    this.prefKey,
-    this.defaultColor,
-  );
+  const ActionColorType(this.label, this.icon, this.prefKey, this.defaultColor);
 }
 
 /// Marks every widget dirty so all text, currency signs and times redraw
@@ -263,7 +256,9 @@ class AppSettings extends ChangeNotifier {
           await db.setSetting(name, text);
         }
       }
-      await prefs.remove(key); // so an old value can't come back after an import
+      await prefs.remove(
+        key,
+      ); // so an old value can't come back after an import
     }
     _store[flag] = '1';
     await db.setSetting(flag, '1');
@@ -287,7 +282,8 @@ class AppSettings extends ChangeNotifier {
     }
 
     final sizeIndex = int.tryParse(_store[AppConstants.prefTextSize] ?? '');
-    _textSizeIndex = (sizeIndex != null &&
+    _textSizeIndex =
+        (sizeIndex != null &&
             sizeIndex >= 0 &&
             sizeIndex < AppConstants.textSizeLabels.length)
         ? sizeIndex
@@ -296,7 +292,8 @@ class AppSettings extends ChangeNotifier {
     _animEnabled = _store[AppConstants.prefAnimEnabled] != 'false';
 
     final animIndex = int.tryParse(_store[AppConstants.prefAnimSpeed] ?? '');
-    _animSpeedIndex = (animIndex != null &&
+    _animSpeedIndex =
+        (animIndex != null &&
             animIndex >= 0 &&
             animIndex < AppConstants.animSpeedLabels.length)
         ? animIndex
@@ -316,12 +313,13 @@ class AppSettings extends ChangeNotifier {
     for (final type in TransactionColorType.values) {
       final c = colorOf(type.prefKey);
       if (c != null) _transactionColors[type] = c;
-    }    _actionColors.clear();
+    }
+    _actionColors.clear();
     for (final type in ActionColorType.values) {
       final c = colorOf(type.prefKey);
       if (c != null) _actionColors[type] = c;
     }
-    
+
     await AppFonts.loadImported(_store);
     _fontStyle = AppFonts.byLabel(_store[AppConstants.prefFontStyle]);
     _boldText = _store[AppConstants.prefBoldText] == 'true';
@@ -417,7 +415,7 @@ class AppSettings extends ChangeNotifier {
       _securityEnabled = prefs.getBool(AppConstants.prefSecurityOn) ?? false;
       final names =
           prefs.getStringList(AppConstants.prefSecurityMethods) ??
-              const <String>[];
+          const <String>[];
       _securityMethods = {
         for (final m in SecurityMethod.values)
           if (m != SecurityMethod.pin && names.contains(m.name)) m,
@@ -478,11 +476,7 @@ class AppSettings extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setCustomTheme({
-    required Color background,
-    Color? accent,
-    Color? text,
-  }) {
+  void setCustomTheme({required Color background, Color? accent, Color? text}) {
     _customColor = background;
     _accentColor = accent;
     _textColor = text;
@@ -582,8 +576,9 @@ class AppSettings extends ChangeNotifier {
 
   /// "Off" = animations finish almost instantly. (timeDilation must stay > 0.)
   void _applyAnimSpeed() {
-    timeDilation =
-        _animEnabled ? AppConstants.animTimeDilations[_animSpeedIndex] : 0.001;
+    timeDilation = _animEnabled
+        ? AppConstants.animTimeDilations[_animSpeedIndex]
+        : 0.001;
   }
 
   void setAnimEnabled(bool value) {
@@ -996,7 +991,9 @@ class _PinDialogState extends State<_PinDialog> {
               cursorColor: fg,
               style: TextStyle(color: fg),
               keyboardType: TextInputType.number,
-              textInputAction: last ? TextInputAction.done : TextInputAction.next,
+              textInputAction: last
+                  ? TextInputAction.done
+                  : TextInputAction.next,
               inputFormatters: [
                 FilteringTextInputFormatter.digitsOnly,
                 LengthLimitingTextInputFormatter(AppConstants.pinMaxLength),
@@ -1130,9 +1127,11 @@ Future<void> _showLocationFlow(BuildContext context, AppSettings s) async {
       icon: Icons.location_on_outlined,
       initial: AppConstants.locations.indexWhere((l) => l.id == s.location.id),
       items: [
-        for (final l in AppConstants.locations) (l.name, _utcLabel(l.utcMinutes)),
+        for (final l in AppConstants.locations)
+          (l.name, _utcLabel(l.utcMinutes)),
       ],
-      note: (i) => 'Time there now: ${_clockAt(AppConstants.locations[i].utcMinutes)}',
+      note: (i) =>
+          'Time there now: ${_clockAt(AppConstants.locations[i].utcMinutes)}',
     ),
   );
   if (index == null) return;
@@ -1146,7 +1145,9 @@ Future<void> _showLanguageFlow(BuildContext context, AppSettings s) async {
     builder: (_) => _ChoiceDialog(
       title: 'Language'.tr,
       icon: Icons.language,
-      initial: AppConstants.languages.indexWhere((l) => l.code == s.language.code),
+      initial: AppConstants.languages.indexWhere(
+        (l) => l.code == s.language.code,
+      ),
       items: [for (final l in AppConstants.languages) (l.native, l.name)],
     ),
   );
@@ -1290,8 +1291,9 @@ class _ConvertDialogState extends State<_ConvertDialog> {
   Future<void> _fetchLive() async {
     final ok = await ExchangeRates.instance.refresh();
     if (!mounted) return;
-    final live =
-        ok ? ExchangeRates.instance.rate(widget.from.code, widget.to.code) : null;
+    final live = ok
+        ? ExchangeRates.instance.rate(widget.from.code, widget.to.code)
+        : null;
     setState(() {
       _loadingRate = false;
       if (live != null) {
@@ -1340,9 +1342,9 @@ class _ConvertDialogState extends State<_ConvertDialog> {
           final status = _loadingRate
               ? 'Getting the latest rate…'
               : _live
-                  ? 'Live rate · updated ${_updatedText()}'
-                  : 'Couldn\'t get a live rate, so this one is approximate. '
-                      'Check your connection or edit it.';
+              ? 'Live rate · updated ${_updatedText()}'
+              : 'Couldn\'t get a live rate, so this one is approximate. '
+                    'Check your connection or edit it.';
           return SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -1475,8 +1477,9 @@ class _SettingGroup extends StatelessWidget {
     final groupTheme = theme.copyWith(
       colorScheme: theme.colorScheme.copyWith(
         onSurface: accent.foreground,
-        onSurfaceVariant:
-            accent.foreground.withValues(alpha: AppConstants.mutedAlpha),
+        onSurfaceVariant: accent.foreground.withValues(
+          alpha: AppConstants.mutedAlpha,
+        ),
       ),
       listTileTheme: theme.listTileTheme.copyWith(
         iconColor: accent.foreground,
@@ -1693,19 +1696,14 @@ class _FontStyleDialogState extends State<_FontStyleDialog> {
       _error = null;
     });
     try {
-      final picked = await FilePicker.platform.pickFiles(
+      final picked = await FilePicker.pickFiles(
         dialogTitle: 'Import font',
         type: FileType.custom,
         allowedExtensions: const ['ttf', 'otf'],
-        withData: true,
       );
-      if (picked == null || picked.files.isEmpty) return; // cancelled
-      final file = picked.files.single;
-      final bytes = file.bytes;
-      if (bytes == null) {
-        if (mounted) setState(() => _error = 'Couldn\'t read that file.');
-        return;
-      }
+      if (picked.isEmpty) return; // cancelled
+      final file = picked.single;
+      final bytes = await file.readAsBytes();
       final font = await AppFonts.importFont(file.name, bytes);
       if (!mounted) return;
       setState(() => _selected = font); // highlighted; Apply uses it
@@ -1802,7 +1800,7 @@ class _FontStyleDialogState extends State<_FontStyleDialog> {
           child: Row(
             children: [
               IconButton.filled(
-                tooltip: 'Import font',              
+                tooltip: 'Import font',
                 onPressed: _busy ? null : _import,
                 icon: _busy
                     ? SizedBox(
@@ -1874,7 +1872,8 @@ class _ThemeConfigDialog extends StatelessWidget {
                     context: context,
                     barrierColor: AppConstants.popupBarrier,
                     builder: (_) => _GeneralColorDialog(
-                      initial: settings.customColor ??
+                      initial:
+                          settings.customColor ??
                           Theme.of(context).colorScheme.surface,
                       settings: settings,
                     ),
@@ -1962,7 +1961,7 @@ class _SpecificColorDialog extends StatelessWidget {
                       ),
                     ),
                   ),
-                  Padding(
+                Padding(
                   padding: const EdgeInsets.only(
                     top: AppConstants.spaceSm,
                     bottom: AppConstants.spaceSm,
@@ -2183,13 +2182,10 @@ class _TransactionColorDialogState extends State<_TransactionColorDialog> {
                 cursorColor: hexTextColor,
                 inputFormatters: [
                   FilteringTextInputFormatter.allow(RegExp(r'[#0-9a-fA-F]')),
-                  LengthLimitingTextInputFormatter(
-                    AppConstants.hexInputLength,
-                  ),
+                  LengthLimitingTextInputFormatter(AppConstants.hexInputLength),
                   TextInputFormatter.withFunction(
-                    (oldValue, newValue) => newValue.copyWith(
-                      text: newValue.text.toUpperCase(),
-                    ),
+                    (oldValue, newValue) =>
+                        newValue.copyWith(text: newValue.text.toUpperCase()),
                   ),
                 ],
                 style: TextStyle(
@@ -2468,9 +2464,7 @@ class _GeneralColorDialogState extends State<_GeneralColorDialog> {
     _accent = HSVColor.fromColor(
       s.accentColor ?? AppTheme.accentFor(widget.initial),
     );
-    _text = HSVColor.fromColor(
-      s.textColor ?? AppTheme.onColor(widget.initial),
-    );
+    _text = HSVColor.fromColor(s.textColor ?? AppTheme.onColor(widget.initial));
     _hexController = TextEditingController(text: _hex(_bg.toColor()));
   }
 
@@ -2559,11 +2553,7 @@ class _GeneralColorDialogState extends State<_GeneralColorDialog> {
     // the real app. The pop-up is drawn on the accent being picked, with
     // the glyph color being picked, like the Categories pop-ups.
     final baseTheme = AppFonts.apply(
-      AppTheme.fromColor(
-        bgColor,
-        accent: accentColor,
-        text: glyphColor,
-      ),
+      AppTheme.fromColor(bgColor, accent: accentColor, text: glyphColor),
       widget.settings.fontFamily,
     );
 
@@ -2618,9 +2608,7 @@ class _GeneralColorDialogState extends State<_GeneralColorDialog> {
                 color: color,
                 borderRadius: BorderRadius.circular(AppConstants.radiusMd),
                 border: Border.all(
-                  color: glyphColor.withValues(
-                    alpha: AppConstants.borderAlpha,
-                  ),
+                  color: glyphColor.withValues(alpha: AppConstants.borderAlpha),
                 ),
               ),
               child: TextField(
@@ -2633,13 +2621,10 @@ class _GeneralColorDialogState extends State<_GeneralColorDialog> {
                 cursorColor: hexTextColor,
                 inputFormatters: [
                   FilteringTextInputFormatter.allow(RegExp(r'[#0-9a-fA-F]')),
-                  LengthLimitingTextInputFormatter(
-                    AppConstants.hexInputLength,
-                  ),
+                  LengthLimitingTextInputFormatter(AppConstants.hexInputLength),
                   TextInputFormatter.withFunction(
-                    (oldValue, newValue) => newValue.copyWith(
-                      text: newValue.text.toUpperCase(),
-                    ),
+                    (oldValue, newValue) =>
+                        newValue.copyWith(text: newValue.text.toUpperCase()),
                   ),
                 ],
                 style: TextStyle(
@@ -2840,13 +2825,15 @@ class _AnimationConfigDialog extends StatelessWidget {
                             children: [
                               Text(
                                 'Animation speed',
-                                style: theme.textTheme.bodyLarge
-                                    ?.copyWith(color: fg),
+                                style: theme.textTheme.bodyLarge?.copyWith(
+                                  color: fg,
+                                ),
                               ),
                               Text(
                                 settings.animSpeedLabel,
-                                style: theme.textTheme.bodyMedium
-                                    ?.copyWith(color: fgSoft),
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: fgSoft,
+                                ),
                               ),
                             ],
                           ),
@@ -2958,24 +2945,50 @@ class _NotificationsSectionState extends State<_NotificationsSection> {
 
         return _SettingGroup(
           children: [
-            tile(Icons.notifications_outlined, 'Push notifications',
-                'Allow Wallet to send alerts', NotificationOption.push,
-                _busy ? null : _togglePush),
-            tile(Icons.alarm, 'Reminder alerts',
-                'Notify me when a reminder is due', NotificationOption.reminders,
-                master ? _toggleReminders : null),
-            tile(Icons.account_balance_wallet_outlined, 'Budget alerts',
-                'Warn me at 80% and 100% of a budget', NotificationOption.budget,
-                master ? (v) => s.setNotif(NotificationOption.budget, v) : null),
-            tile(Icons.summarize_outlined, 'Daily summary',
-                'A short recap every evening at 8 PM', NotificationOption.summary,
-                master ? (v) => s.setNotif(NotificationOption.summary, v) : null),
-            tile(Icons.volume_up_outlined, 'Sound',
-                'Play a sound with alerts', NotificationOption.sound,
-                master ? (v) => s.setNotif(NotificationOption.sound, v) : null),
-            tile(Icons.vibration, 'Vibration',
-                'Vibrate with alerts', NotificationOption.vibration,
-                master ? (v) => s.setNotif(NotificationOption.vibration, v) : null),
+            tile(
+              Icons.notifications_outlined,
+              'Push notifications',
+              'Allow Wallet to send alerts',
+              NotificationOption.push,
+              _busy ? null : _togglePush,
+            ),
+            tile(
+              Icons.alarm,
+              'Reminder alerts',
+              'Notify me when a reminder is due',
+              NotificationOption.reminders,
+              master ? _toggleReminders : null,
+            ),
+            tile(
+              Icons.account_balance_wallet_outlined,
+              'Budget alerts',
+              'Warn me at 80% and 100% of a budget',
+              NotificationOption.budget,
+              master ? (v) => s.setNotif(NotificationOption.budget, v) : null,
+            ),
+            tile(
+              Icons.summarize_outlined,
+              'Daily summary',
+              'A short recap every evening at 8 PM',
+              NotificationOption.summary,
+              master ? (v) => s.setNotif(NotificationOption.summary, v) : null,
+            ),
+            tile(
+              Icons.volume_up_outlined,
+              'Sound',
+              'Play a sound with alerts',
+              NotificationOption.sound,
+              master ? (v) => s.setNotif(NotificationOption.sound, v) : null,
+            ),
+            tile(
+              Icons.vibration,
+              'Vibration',
+              'Vibrate with alerts',
+              NotificationOption.vibration,
+              master
+                  ? (v) => s.setNotif(NotificationOption.vibration, v)
+                  : null,
+            ),
             if (master)
               ListTile(
                 leading: const Icon(Icons.notifications_active_outlined),

@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../core/constants.dart';
 import '../core/failures.dart';
@@ -77,11 +77,9 @@ class _DatabaseScreenState extends State<DatabaseScreen> {
     return _run(() async {
       final json = await _db.exportToJson();
       final bytes = Uint8List.fromList(utf8.encode(json));
-      final saved = await FilePicker.platform.saveFile(
+      final saved = await FilePicker.saveFile(
         dialogTitle: 'Export data',
         fileName: _backupFileName(),
-        type: FileType.custom,
-        allowedExtensions: const ['json'],
         bytes: bytes,
       );
       if (saved != null) _say('Data exported.');
@@ -114,19 +112,14 @@ class _DatabaseScreenState extends State<DatabaseScreen> {
     if (!ok) return;
 
     await _run(() async {
-      final picked = await FilePicker.platform.pickFiles(
+      final picked = await FilePicker.pickFiles(
         dialogTitle: 'Import data',
         type: FileType.custom,
         allowedExtensions: const ['json'],
-        withData: true,
       );
-      if (picked == null || picked.files.isEmpty) return; // cancelled
+      if (picked.isEmpty) return; // cancelled
 
-      final bytes = picked.files.single.bytes;
-      if (bytes == null) {
-        _say('Couldn\'t read that file.');
-        return;
-      }
+      final bytes = await picked.single.readAsBytes();
 
       final String text;
       try {

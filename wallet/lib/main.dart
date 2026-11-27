@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart'; // ScrollDirection
 import 'package:flutter/services.dart';
 
@@ -432,7 +432,6 @@ class _HomeShellState extends State<HomeShell>
     );
   }
 
-  /// Top of the drawer: just the app name.
   Widget _buildDrawerHeader(BuildContext context) {
     final theme = Theme.of(context);
     final accent = AppTheme.accentOf(context);
@@ -445,14 +444,28 @@ class _HomeShellState extends State<HomeShell>
         AppConstants.spaceLg,
         AppConstants.spaceMd,
       ),
-      child: Text(
-        AppConstants.appName,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.headlineSmall?.copyWith(
-          fontWeight: FontWeight.w700,
-          color: accent.foreground,
-        ),
+      child: Row(
+        children: [
+          Image.asset(
+            'assets/images/wallet_logo.png',
+            height: 32,
+            width: 32,
+            fit: BoxFit.contain,
+            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+          ),
+          const SizedBox(width: AppConstants.spaceSm),
+          Flexible(
+            child: Text(
+              AppConstants.appName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: accent.foreground,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -515,12 +528,29 @@ class _HomeShellState extends State<HomeShell>
           ),
         ),
         titleSpacing: 0,
-        title: Text(
-          AppConstants.appName,
-          style: textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w700,
-            color: barColor,
-          ),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(
+              'assets/images/wallet_logo.png',
+              height: 28,
+              width: 28,
+              fit: BoxFit.contain,
+              errorBuilder: (_, _, _) => const SizedBox.shrink(),
+            ),
+            const SizedBox(width: AppConstants.spaceSm),
+            Flexible(
+              child: Text(
+                AppConstants.appName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: barColor,
+                ),
+              ),
+            ),
+          ],
         ),
         actions: [
           IconButton(

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// A currency the app can show.
 class AppCurrency {
@@ -355,11 +355,12 @@ class AppConstants {
   static const String appVersion = '1.0.0'; // keep in sync with pubspec.yaml
   static const String databaseName = 'Wallet.db';
   static const int databaseVersion = 1;
+  static const String logoAsset = 'assets/images/wallet_logo.png';
 
   // ---------- About / contact (EDIT THESE 3) ----------
   static const String developerName = 'Your Name';
-  static const String developerEmail = 'yourname@gmail.com';
-  static const String repositoryUrl = 'https://github.com/your-username/wallet';
+  static const String developerEmail = 'kelsengile.dev@gmail.com';
+  static const String repositoryUrl = 'https://github.com/kelsengile/wallet';
 
   // ---------- Notifications ----------
   static const String prefNotifPush = 'settings.notif.push';
