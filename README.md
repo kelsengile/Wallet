@@ -1,7 +1,9 @@
 <br>
 <p align="center">
   <a href="https://github.com/kelsengile/Wallet">
-    <img src="wallet/assets/images/title.png" alt="Wallet" height="70">
+    <img src="wallet/assets/images/wallet_logo.png" alt="Wallet" height="70">
+    <br>
+    <img src="wallet/assets/images/title.png" alt="Wallet" height="65">
   </a>
 </p>
 
