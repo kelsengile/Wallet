@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 
 import '../core/constants.dart';
@@ -44,9 +45,9 @@ class NotificationService with WidgetsBindingObserver {
 
   Future<void> init() async {
     if (_ready) return;
-    tz.initializeTimeZones();
+    tz_data.initializeTimeZones();
     await _plugin.initialize(
-      const InitializationSettings(
+      settings: const InitializationSettings(
         android: AndroidInitializationSettings('@mipmap/ic_launcher'),
         iOS: DarwinInitializationSettings(
           requestAlertPermission: false,
@@ -150,10 +151,10 @@ class NotificationService with WidgetsBindingObserver {
   Future<void> showTest() async {
     await init();
     await _plugin.show(
-      _testId,
-      AppConstants.appName,
-      'Notifications are working.',
-      _details(),
+      id: _testId,
+      title: AppConstants.appName,
+      body: 'Notifications are working.',
+      notificationDetails: _details(),
     );
   }
 
@@ -165,11 +166,11 @@ class NotificationService with WidgetsBindingObserver {
     bool exact,
   ) async {
     Future<void> schedule(AndroidScheduleMode mode) => _plugin.zonedSchedule(
-      id,
-      title,
-      body,
-      when,
-      _details(),
+      id: id,
+      title: title,
+      body: body,
+      scheduledDate: when,
+      notificationDetails: _details(),
       androidScheduleMode: mode,
     );
     try {
@@ -234,7 +235,7 @@ class NotificationService with WidgetsBindingObserver {
   Future<void> _syncOnce() async {
     await init();
     for (final p in await _plugin.pendingNotificationRequests()) {
-      await _plugin.cancel(p.id);
+      await _plugin.cancel(id: p.id);
     }
 
     final s = AppSettings.instance;
@@ -345,7 +346,12 @@ class NotificationService with WidgetsBindingObserver {
             ? 'You have spent ${_money(used)} of your ${_money(budget)} budget.'
             : '${(ratio * 100).floor()}% used · '
                   '${_money(budget - used)} left of ${_money(budget)}';
-        await _plugin.show(_budgetBase + c.id, title, body, _details());
+        await _plugin.show(
+          id: _budgetBase + c.id,
+          title: title,
+          body: body,
+          notificationDetails: _details(),
+        );
       }
       if (level != savedLevel) await prefs.setString(key, '$month:$level');
     }

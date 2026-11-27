@@ -2,14 +2,13 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/gestures.dart';
 import 'package:installed_apps/installed_apps.dart';
-import 'package:installed_apps/app_info.dart';
 
 import '../core/constants.dart';
 import '../core/failures.dart';
@@ -248,7 +247,11 @@ Future<Map<String, Uint8List?>>? _installedAppIcons;
 Future<Uint8List?> _appIcon(String package) async {
   _installedAppIcons ??= () async {
     try {
-      final apps = await InstalledApps.getInstalledApps(false, true);
+      final apps = await InstalledApps.getInstalledApps(
+        excludeSystemApps: false,
+        excludeNonLaunchableApps: true,
+        withIcon: true,
+      );
       return {for (final a in apps) a.packageName: a.icon};
     } catch (_) {
       return <String, Uint8List?>{};
@@ -824,8 +827,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
       // Income / expense of the date range kept in Analytics (this month
       // until a range was picked, same as the Analytics pop-up).
       final range =
-          _analyticsRange.value ??
-          _HistoryRange.of(_Period.month, Utils.now());
+          _analyticsRange.value ?? _HistoryRange.of(_Period.month, Utils.now());
       final from = range.from;
       final until = range.until;
       var income = 0.0;
@@ -1232,7 +1234,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                                 listView: _listView,
                               ),
                             // Room for the floating + button.
-                            SizedBox(height: _addButtonClearanceOf(context)),
+                            SizedBox(height: _financeListBottomGap),
                           ],
                         ),
                 ),
@@ -2717,12 +2719,12 @@ class _AccountTypeSection extends StatelessWidget {
             ),
             child: Column(
               children: [
-                for (final account in accounts)
+                for (var i = 0; i < accounts.length; i++)
                   Padding(
-                    padding: const EdgeInsets.only(
-                      bottom: AppConstants.spaceSm,
+                    padding: EdgeInsets.only(
+                      bottom: i == accounts.length - 1 ? 0 : AppConstants.spaceSm,
                     ),
-                    child: _AccountListTile(account: account, hidden: hidden),
+                    child: _AccountListTile(account: accounts[i], hidden: hidden),
                   ),
               ],
             ),
@@ -3191,8 +3193,7 @@ class _CardAppButton extends StatelessWidget {
         CategoryItem(0, 'Change app'),
         CategoryItem(1, 'Remove app'),
       ],
-      iconFor: (item) =>
-          item.id == 0 ? Icons.swap_horiz : Icons.link_off,
+      iconFor: (item) => item.id == 0 ? Icons.swap_horiz : Icons.link_off,
     );
     if (picked == null || !context.mounted) return;
     if (picked.id == 0) {
@@ -3295,7 +3296,11 @@ class _AppPickerSheetState extends State<_AppPickerSheet> {
   Future<void> _load() async {
     try {
       // true = leave out system apps, true = with icons
-      final apps = await InstalledApps.getInstalledApps(true, true);
+      final apps = await InstalledApps.getInstalledApps(
+        excludeSystemApps: true,
+        excludeNonLaunchableApps: true,
+        withIcon: true,
+      );
       apps.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
       if (!mounted) return;
       setState(() {
@@ -3318,7 +3323,10 @@ class _AppPickerSheetState extends State<_AppPickerSheet> {
     final q = _search.text.trim().toLowerCase();
     final shown = q.isEmpty
         ? _apps
-        : [for (final a in _apps) if (a.name.toLowerCase().contains(q)) a];
+        : [
+            for (final a in _apps)
+              if (a.name.toLowerCase().contains(q)) a,
+          ];
 
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
@@ -3347,10 +3355,8 @@ class _AppPickerSheetState extends State<_AppPickerSheet> {
               const SizedBox(height: AppConstants.spaceLg),
               Text(
                 'Choose an app',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: fg,
-                ),
+                style: Theme.of(context).textTheme.titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w700, color: fg),
               ),
               const SizedBox(height: AppConstants.spaceMd),
               TextField(
@@ -3373,8 +3379,10 @@ class _AppPickerSheetState extends State<_AppPickerSheet> {
                       )
                     : shown.isEmpty
                     ? Center(
-                        child: Text('No apps found',
-                            style: TextStyle(color: muted)),
+                        child: Text(
+                          'No apps found',
+                          style: TextStyle(color: muted),
+                        ),
                       )
                     : ListView.builder(
                         itemCount: shown.length,
@@ -3523,15 +3531,11 @@ class _CardBack extends StatelessWidget {
               color: fg.withValues(alpha: AppConstants.mutedAlpha),
             ),
           ),
-         // Open-app button, bottom right
+          // Open-app button, bottom right
           Positioned(
             right: 40 * u,
             bottom: 28 * u,
-            child: _CardAppButton(
-              accountId: account.id,
-              look: look,
-              u: u,
-            ),
+            child: _CardAppButton(accountId: account.id, look: look, u: u),
           ),
         ],
       ),
@@ -4946,6 +4950,14 @@ class _AccountViewSheetState extends State<_AccountViewSheet> {
 /// Height of the bottom nav bar in main.dart. The history panel stops here.
 const double _navBarHeight = 0;
 
+/// Space under the last account card on the Finance screen.
+/// 0 = no space. Make it bigger if the floating + button covers the card.
+const double _financeListBottomGap = 12;
+
+/// Empty space left under the History / Analytics panels, below the
+/// pull-up handle. Make it bigger for more room to grab the handle.
+const double _panelBottomGap = 36;
+
 const List<String> _weekdayLong = [
   'Monday',
   'Tuesday',
@@ -5109,7 +5121,10 @@ class _HistoryRange {
 /// bottom nav bar. Tap the dim area below, tap the handle, or swipe the
 /// handle up to close it.
 Future<void> showTransactionHistory(BuildContext context) {
-  final bottom = MediaQuery.viewPaddingOf(context).bottom + _navBarHeight;
+  final bottom =
+      MediaQuery.viewPaddingOf(context).bottom +
+      _navBarHeight +
+      _panelBottomGap;
   return showGeneralDialog<void>(
     context: context,
     barrierDismissible: true,
@@ -6097,7 +6112,10 @@ final ValueNotifier<_HistoryRange?> _analyticsRange =
 
 /// Opens Analytics. Same drop-down from the top as the history.
 Future<void> showAnalytics(BuildContext context) {
-  final bottom = MediaQuery.viewPaddingOf(context).bottom + _navBarHeight;
+  final bottom =
+      MediaQuery.viewPaddingOf(context).bottom +
+      _navBarHeight +
+      _panelBottomGap;
   return showGeneralDialog<void>(
     context: context,
     barrierDismissible: true,
@@ -6138,8 +6156,7 @@ class _AnalyticsPanelState extends State<_AnalyticsPanel> {
   void initState() {
     super.initState();
     _range =
-        _analyticsRange.value ??
-        _HistoryRange.of(_Period.month, Utils.now());
+        _analyticsRange.value ?? _HistoryRange.of(_Period.month, Utils.now());
     _load();
     _db.changes.addListener(_load);
   }
