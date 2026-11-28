@@ -1,0 +1,62 @@
+name: Build iOS IPA (unsigned)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # lets you start a build manually from the Actions tab
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    # The Flutter project lives in the wallet/ folder, so every "run" step
+    # starts there.
+    defaults:
+      run:
+        working-directory: wallet
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Show versions
+        run: flutter --version
+
+      - name: Get packages
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos
+
+      - name: Run tests
+        run: |
+          if [ -d test ]; then
+            flutter test
+          else
+            echo "No test folder, skipping."
+          fi
+
+      - name: Build iOS (no codesign)
+        run: flutter build ios --release --no-codesign --build-number=${{ github.run_number }}
+
+      - name: Package IPA
+        run: |
+          mkdir -p Payload
+          cp -R build/ios/iphoneos/Runner.app Payload/
+          zip -r app-unsigned.ipa Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: wallet-ios-unsigned
+          # upload-artifact ignores working-directory, so the path includes wallet/
+          path: wallet/app-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
