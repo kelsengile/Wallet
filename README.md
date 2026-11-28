@@ -40,7 +40,7 @@
 
 Wallet is a minimalist personal finance application designed to bring your money into one simple and organized place. Instead of juggling notes, spreadsheets, and separate apps, Wallet gives you a single space to track your accounts, record income and expenses, plan with reminders and budgets, and understand your spending habits through clear analytics. With a clean and straightforward interface, the application focuses on making personal finance simple, accessible, and easy to maintain, and everything works offline on your own device.
 
-**Download:** Android: [Wallet-1.0.0.apk](https://github.com/kelsengile/Wallet/blob/master/Wallet-1.0.0.apk) IOS: [Wallet-1.0.0.ipa]()
+**Download:** Android: [Wallet-1.0.0.apk](https://github.com/kelsengile/Wallet/blob/master/Wallet-1.0.0.apk) IOS: [Wallet-1.0.0.ipa](https://github.com/kelsengile/Wallet/blob/master/release/ios/Wallet-1.0.0.ipa)
 
 **Features**
 - Accounts — Keep cash, bank, e-wallet, credit, investment, and other accounts in one place, with flippable cards and a list view.
