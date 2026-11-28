@@ -358,7 +358,7 @@ class AppConstants {
   static const String logoAsset = 'assets/images/wallet_logo.png';
 
   // ---------- About / contact (EDIT THESE 3) ----------
-  static const String developerName = 'Your Name';
+  static const String developerName = 'Kelsen Gile';
   static const String developerEmail = 'kelsengile.dev@gmail.com';
   static const String repositoryUrl = 'https://github.com/kelsengile/wallet';
 
